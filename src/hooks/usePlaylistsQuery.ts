@@ -16,7 +16,7 @@ export function usePlaylistsQuery() {
   const rawQuery = createRawPlaylistsQuery();
 
   // subscribe to updates and propagate to signalz
-  const unsubscribe = rawQuery.subscribe((value) => {
+  const unsubscribe = rawQuery.subscribe((value: Playlist[]) => {
     setPlaylists([...value]); // Force new array reference for reactivity
   });
 

@@ -9,6 +9,47 @@ import { mutateAndNotify } from "./indexedDBService.js";
 import { triggerSongUpdateWithOptions } from "./songReactivity.js";
 import type { Playlist } from "../types/playlist.js";
 
+// interface for standalone song data structure
+export interface StandaloneSongData {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  originalFilename: string;
+  fileSize: number;
+  sha: string;
+  imageExtension?: string;
+  imageMimeType?: string;
+  safeFilename?: string;
+  mimeType?: string;
+}
+
+// interface for standalone playlist data structure
+export interface StandalonePlaylistData {
+  id: string;
+  title: string;
+  description?: string;
+  rev?: number;
+  imageExtension?: string;
+  imageMimeType?: string;
+  safeFilename?: string;
+}
+
+// Interface for complete standalone data
+export interface StandaloneData {
+  playlist: StandalonePlaylistData;
+  songs: StandaloneSongData[];
+}
+
+// Interface for callback functions
+interface StandaloneCallbacks {
+  setSelectedPlaylist: (playlist: Playlist) => void;
+  setPlaylistSongs: (songs: import("../types/playlist.js").Song[]) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+  setError: (error: string) => void;
+}
+
 // Loading progress signal
 const [standaloneLoadingProgress, setStandaloneLoadingProgress] = createSignal<{
   current: number;
@@ -26,8 +67,8 @@ const loadingImages = new Set<string>();
 /**
  * Create a song object from playlist data
  */
-function createSongFromData(
-  songData: unknown,
+function createSongFromStandaloneData(
+  songData: StandaloneSongData,
   index: number,
   playlistId: string,
   standaloneFilePath: string,
@@ -75,9 +116,12 @@ function createSongFromData(
  */
 async function smartUpdatePlaylistWithSongs(
   existingPlaylist: Playlist | null,
-  existingSongs: any[],
-  playlistData: any
-): Promise<{ playlist: Playlist; songs: any[] }> {
+  existingSongs: import("../types/playlist.js").Song[],
+  playlistData: StandaloneData
+): Promise<{
+  playlist: Playlist;
+  songs: import("../types/playlist.js").Song[];
+}> {
   // create or update playlist
   const playlistToUpdate = {
     id: playlistData.playlist.id,
@@ -117,11 +161,13 @@ async function smartUpdatePlaylistWithSongs(
   });
 
   // smart song updating: preserve audio data when sha matches
-  const updatedSongs: any[] = [];
+  const updatedSongs: import("../types/playlist.js").Song[] = [];
   const finalSongIds: string[] = [];
 
   for (let i = 0; i < playlistData.songs.length; i++) {
     const songData = playlistData.songs[i];
+    if (!songData) continue;
+
     const standaloneFilePath = `data/${songData.safeFilename || songData.originalFilename}`;
 
     setStandaloneLoadingProgress({
@@ -166,7 +212,7 @@ async function smartUpdatePlaylistWithSongs(
       }
     } else {
       // sha different or missing - create new song without audio data (lazy loading)
-      finalSong = createSongFromData(
+      finalSong = createSongFromStandaloneData(
         songData,
         i,
         finalPlaylist.id,
@@ -203,9 +249,10 @@ async function smartUpdatePlaylistWithSongs(
 /**
  * create a new playlist with all songs (used for first-time loading)
  */
-async function createNewPlaylist(
-  playlistData: any
-): Promise<{ playlist: Playlist; songs: any[] }> {
+async function createNewPlaylist(playlistData: StandaloneData): Promise<{
+  playlist: Playlist;
+  songs: import("../types/playlist.js").Song[];
+}> {
   // create playlist using service function to trigger reactive updates
   const playlistToCreate = {
     id: playlistData.playlist.id, // Override the auto-generated ID
@@ -247,16 +294,18 @@ async function createNewPlaylist(
   });
 
   // create and store songs
-  const virtualSongs: any[] = [];
+  const virtualSongs: import("../types/playlist.js").Song[] = [];
   const finalSongIds: string[] = [];
 
   // create placeholder songs for all songs first so ui shows complete list
   for (let i = 0; i < playlistData.songs.length; i++) {
     const songData = playlistData.songs[i];
+    if (!songData) continue;
+
     const standaloneFilePath = `data/${songData.safeFilename || songData.originalFilename}`;
 
     // create song without audio data initially for lazy loading
-    const song = createSongFromData(
+    const song = createSongFromStandaloneData(
       songData,
       i,
       finalPlaylist.id,
@@ -298,13 +347,8 @@ async function createNewPlaylist(
  * Initialize standalone playlist from embedded data
  */
 export async function initializeStandalonePlaylist(
-  playlistData: any,
-  callbacks: {
-    setSelectedPlaylist: (playlist: Playlist) => void;
-    setPlaylistSongs: (songs: any[]) => void;
-    setSidebarCollapsed: (collapsed: boolean) => void;
-    setError: (error: string) => void;
-  }
+  playlistData: StandaloneData,
+  callbacks: StandaloneCallbacks
 ): Promise<void> {
   try {
     // Validate input data
@@ -351,7 +395,7 @@ export async function initializeStandalonePlaylist(
     );
 
     let finalPlaylist: Playlist;
-    let finalSongs: any[];
+    let finalSongs: import("../types/playlist.js").Song[];
 
     if (existingPlaylist) {
       // check if playlist revision has changed and needs full reload
@@ -363,7 +407,8 @@ export async function initializeStandalonePlaylist(
         // load existing songs for this playlist
         const existingSongs = await db.getAll(SONGS_STORE);
         const playlistSongs = existingSongs.filter(
-          (song: any) => song.playlistId === existingPlaylist.id
+          (song: import("../types/playlist.js").Song) =>
+            song.playlistId === existingPlaylist.id
         );
 
         // smart update that preserves audio data when sha matches
@@ -386,7 +431,8 @@ export async function initializeStandalonePlaylist(
         // just use existing data without any processing
         const existingSongs = await db.getAll(SONGS_STORE);
         const playlistSongs = existingSongs.filter(
-          (song: any) => song.playlistId === existingPlaylist.id
+          (song: import("../types/playlist.js").Song) =>
+            song.playlistId === existingPlaylist.id
         );
 
         finalPlaylist = existingPlaylist;
@@ -515,7 +561,9 @@ export async function loadStandaloneSongAudioData(
 /**
  * Check if a song needs audio data to be loaded
  */
-export async function songNeedsAudioData(song: any): Promise<boolean> {
+export async function songNeedsAudioData(
+  song: import("../types/playlist.js").Song
+): Promise<boolean> {
   // Check the database directly for the most up-to-date audio data
   try {
     const db = await setupDB();
@@ -546,13 +594,8 @@ export async function songNeedsAudioData(song: any): Promise<boolean> {
  */
 async function loadStandaloneImages(
   playlist: Playlist,
-  songs: any[],
-  callbacks: {
-    setSelectedPlaylist: (playlist: Playlist) => void;
-    setPlaylistSongs: (songs: any[]) => void;
-    setSidebarCollapsed: (collapsed: boolean) => void;
-    setError: (error: string) => void;
-  }
+  songs: import("../types/playlist.js").Song[],
+  callbacks: StandaloneCallbacks
 ): Promise<void> {
   // For file:// protocol, images work directly from paths, no need to load into IndexedDB
   // For HTTP/HTTPS, load images from files into IndexedDB
@@ -570,7 +613,9 @@ async function loadStandaloneImages(
       const updatedPlaylist = await loadImageIntoIndexedDB(playlist, true);
       if (updatedPlaylist) {
         // Update the selectedPlaylist signal to trigger UI reactivity
-        callbacks.setSelectedPlaylist(updatedPlaylist);
+        if ("songIds" in updatedPlaylist) {
+          callbacks.setSelectedPlaylist(updatedPlaylist as Playlist);
+        }
       }
     }
 
@@ -591,7 +636,9 @@ async function loadStandaloneImages(
         const db = await setupDB();
         const allSongs = await db.getAll(SONGS_STORE);
         const updatedPlaylistSongs = allSongs
-          .filter((song: any) => playlist.songIds.includes(song.id))
+          .filter((song: import("../types/playlist.js").Song) =>
+            playlist.songIds.includes(song.id)
+          )
           .sort((a, b) => {
             const indexA = playlist.songIds.indexOf(a.id);
             const indexB = playlist.songIds.indexOf(b.id);
@@ -614,18 +661,21 @@ async function loadStandaloneImages(
  * Load a single image file into IndexedDB
  */
 async function loadImageIntoIndexedDB(
-  item: any,
+  item: Playlist | import("../types/playlist.js").Song,
   isPlaylist: boolean
-): Promise<any> {
+): Promise<Playlist | import("../types/playlist.js").Song | null> {
   try {
-    // Double-check that we actually need to load this image
+    // double-check that we actually need to load this image
     if (item.imageData && item.imageData.byteLength > 0) {
-      return; // Already has image data
+      return item; // already has image data
     }
 
-    // Check if this image is already being loaded
+    if (!item.imageFilePath) {
+      return item; // no image file path
+    }
+
     if (loadingImages.has(item.imageFilePath)) {
-      return null; // Already loading
+      return null; // already loading
     }
 
     // Mark as loading

@@ -138,7 +138,7 @@ function PlaylistzInner() {
         fallback={
           <div class="flex items-center justify-center h-full">
             <div class="text-center">
-              <div class="inline-block animate-spin rounded-full h-8 w-8"></div>
+              <div class="inline-block animate-spin rounded-full h-8 w-8" />
               <p class="text-lg">loading playlistz...</p>
             </div>
           </div>

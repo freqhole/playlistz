@@ -1,10 +1,12 @@
 // Global type declarations for playlistz
 
+import type { StandaloneData } from "../services/standaloneService.js";
+
 declare global {
   interface Window {
     STANDALONE_MODE?: boolean;
-    DEFERRED_PLAYLIST_DATA?: unknown;
-    initializeStandalonePlaylist?: (playlistData: unknown) => void;
+    DEFERRED_PLAYLIST_DATA?: StandaloneData;
+    initializeStandalonePlaylist?: (playlistData: StandaloneData) => void;
   }
 }
 

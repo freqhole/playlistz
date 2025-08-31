@@ -135,7 +135,7 @@ export function PlaylistSidebar() {
           <Show
             when={!isCreating()}
             fallback={
-              <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             }
           >
             <svg
@@ -162,7 +162,7 @@ export function PlaylistSidebar() {
           when={isInitialized()}
           fallback={
             <div class="p-6 text-center">
-              <div class="inline-block w-6 h-6 border-2 border-magenta-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+              <div class="inline-block w-6 h-6 border-2 border-magenta-500 border-t-transparent rounded-full animate-spin mb-3" />
               <p class="text-gray-400 text-sm">loading playlistz...</p>
             </div>
           }
@@ -241,27 +241,31 @@ export function PlaylistSidebar() {
                                 playlist,
                                 "thumbnail"
                               );
-                              return imageUrl ? (
-                                <img
-                                  src={imageUrl}
-                                  alt={playlist.title}
-                                  class="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div class="w-full h-full flex items-center justify-center">
-                                  <svg
-                                    width="100"
-                                    height="100"
-                                    viewBox="0 0 100 100"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                  >
-                                    <path
-                                      d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
-                                      fill="#FF00FF"
+                              return (
+                                <>
+                                  {imageUrl ? (
+                                    <img
+                                      src={imageUrl}
+                                      alt={playlist.title}
+                                      class="w-full h-full object-cover"
                                     />
-                                  </svg>
-                                </div>
+                                  ) : (
+                                    <div class="w-full h-full flex items-center justify-center">
+                                      <svg
+                                        width="100"
+                                        height="100"
+                                        viewBox="0 0 100 100"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                      >
+                                        <path
+                                          d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
+                                          fill="#FF00FF"
+                                        />
+                                      </svg>
+                                    </div>
+                                  )}
+                                </>
                               );
                             })()}
                           </Show>

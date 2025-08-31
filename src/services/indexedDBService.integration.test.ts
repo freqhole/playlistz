@@ -78,7 +78,7 @@ describe("IndexedDB Service Integration Tests", () => {
     await new Promise<void>((resolve) => {
       createRoot(async (dispose) => {
         const playlistQuery = createPlaylistsQuery();
-        const unsubscribe = playlistQuery.subscribe((playlists) => {
+        const unsubscribe = playlistQuery.subscribe((playlists: Playlist[]) => {
           updateCount++;
           finalCount = playlists.length;
         });
@@ -113,11 +113,11 @@ describe("IndexedDB Service Integration Tests", () => {
         const query1 = createPlaylistsQuery();
         const query2 = createPlaylistsQuery();
 
-        const unsubscribe1 = query1.subscribe((playlists) => {
+        const unsubscribe1 = query1.subscribe((playlists: Playlist[]) => {
           query1Count = playlists.length;
         });
 
-        const unsubscribe2 = query2.subscribe((playlists) => {
+        const unsubscribe2 = query2.subscribe((playlists: Playlist[]) => {
           query2Count = playlists.length;
         });
 
@@ -151,7 +151,7 @@ describe("IndexedDB Service Integration Tests", () => {
         const [playlists, setPlaylists] = createSignal<Playlist[]>([]);
 
         const playlistQuery = createPlaylistsQuery();
-        const unsubscribe = playlistQuery.subscribe((value) => {
+        const unsubscribe = playlistQuery.subscribe((value: Playlist[]) => {
           backendCount = value.length;
           setPlaylists([...value]);
           uiCount = playlists().length;

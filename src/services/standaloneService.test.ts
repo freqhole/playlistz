@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { createMockSong } from "../utils/mockData.js";
 
 // Mock dependencies using factory pattern
 vi.mock("./indexedDBService.js", () => ({
@@ -192,7 +193,7 @@ describe("Standalone Service", () => {
     });
 
     it("should handle invalid playlist data", async () => {
-      const invalidData = null;
+      const invalidData = {} as any; // empty object instead of null
 
       await initializeStandalonePlaylist(invalidData, mockCallbacks);
 
@@ -282,10 +283,10 @@ describe("Standalone Service", () => {
     });
 
     it("should return true for song without audio data", async () => {
-      const mockSong = {
+      const mockSong = createMockSong({
         id: "test-song",
-        title: "Test Song",
-      };
+        title: "test song",
+      });
 
       mockDB.get.mockResolvedValue(mockSong);
 
@@ -295,11 +296,11 @@ describe("Standalone Service", () => {
     });
 
     it("should return false for song with audio data", async () => {
-      const mockSong = {
+      const mockSong = createMockSong({
         id: "test-song",
-        title: "Test Song",
-        audioData: new ArrayBuffer(1000),
-      };
+        title: "test song",
+        audioData: new ArrayBuffer(1024),
+      });
 
       mockDB.get.mockResolvedValue(mockSong);
 
@@ -309,10 +310,10 @@ describe("Standalone Service", () => {
     });
 
     it("should return true for song not in database", async () => {
-      const mockSong = {
+      const mockSong = createMockSong({
         id: "non-existent-song",
-        title: "Non-existent Song",
-      };
+        title: "non-existent song",
+      });
 
       mockDB.get.mockResolvedValue(undefined);
 
@@ -322,16 +323,16 @@ describe("Standalone Service", () => {
     });
 
     it("should handle database errors gracefully", async () => {
-      const mockSong = {
+      const mockSong = createMockSong({
         id: "test-song",
-        title: "Test Song",
-      };
+        title: "test song",
+      });
 
-      vi.mocked(setupDB).mockRejectedValue(new Error("Database error"));
+      mockDB.get.mockRejectedValue(new Error("database error"));
 
       const result = await songNeedsAudioData(mockSong);
 
-      expect(result).toBe(true); // Default to needing data on error
+      expect(result).toBe(true);
     });
 
     it("should return false for file protocol", async () => {
@@ -342,13 +343,12 @@ describe("Standalone Service", () => {
         writable: true,
       });
 
-      const mockSong = {
+      const mockSong = createMockSong({
         id: "test-song",
-        title: "Test Song",
+        title: "test song",
         standaloneFilePath: "file:///path/to/song.mp3",
-      };
+      });
 
-      // Mock the database to return the song
       mockDB.get.mockResolvedValue(mockSong);
 
       const result = await songNeedsAudioData(mockSong);

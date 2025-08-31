@@ -413,7 +413,7 @@ export function SongEditModal(props: SongEditModalProps) {
             <Show
               when={!isLoading()}
               fallback={
-                <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               }
             >
               <svg

@@ -1,19 +1,30 @@
-// IndexedDB Service with Reactive Queries
-// Based on the existing demo pattern but adapted for music playlists
+// indexeddb service with reactive queries
+// based on the existing demo pattern but adapted for music playlists
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { Playlist, Song } from "../types/playlist.js";
 import { triggerSongUpdateWithOptions } from "./songReactivity.js";
 import { calculateSHA256 } from "../utils/hashUtils.js";
+import {
+  isPlaylist,
+  isSong,
+  isValidStoreName,
+  hasId,
+  hasSongIds,
+  hasAudioData,
+  mergePlaylistUpdates,
+  mergeSongUpdates,
+  safeArray,
+} from "../utils/typeGuards.js";
 
-// Simple signal implementation (matching the demo pattern)
+// simple signal implementation (matching the demo pattern)
 interface Signal<T> {
   get: () => T;
   set: (value: T) => void;
   subscribe: (fn: (value: T) => void) => () => void;
 }
 
-// Using Signal directly instead of empty interface extension
+// using signal directly instead of empty interface extension
 
 function createSignal<T>(initial: T): Signal<T> {
   let value = initial;
@@ -35,13 +46,13 @@ function createSignal<T>(initial: T): Signal<T> {
   };
 }
 
-// Database configuration
+// database configuration
 export const DB_NAME = "musicPlaylistDB";
 export const DB_VERSION = 3;
 export const PLAYLISTS_STORE = "playlists";
 export const SONGS_STORE = "songs";
 
-// Database schema definition
+// database schema definition
 interface PlaylistDB extends DBSchema {
   playlists: {
     key: string;
@@ -54,10 +65,10 @@ interface PlaylistDB extends DBSchema {
   };
 }
 
-// Database connection cache to prevent excessive setupDB calls
+// database connection cache to prevent excessive setupdb calls
 let cachedDB: Promise<IDBPDatabase<PlaylistDB>> | null = null;
 
-// Database setup with caching
+// database setup with caching
 export async function setupDB(): Promise<IDBPDatabase<PlaylistDB>> {
   if (cachedDB) {
     return cachedDB;
@@ -103,7 +114,7 @@ interface LiveQueryConfig {
   limit?: number | null;
 }
 
-// Simple diff function (avoiding microdiff dependency)
+// simple diff function (avoiding microdiff dependency)
 function arraysDiffer<T>(a: T[], b: T[]): boolean {
   if (a.length !== b.length) return true;
   return a.some((item, index) => {
@@ -114,8 +125,8 @@ function arraysDiffer<T>(a: T[], b: T[]): boolean {
   });
 }
 
-// Create live query (returns both custom signal and SolidJS integration)
-// Global registry to track all live queries for direct updates
+// create live query (returns both custom signal and solidjs integration)
+// global registry to track all live queries for direct updates
 const globalQueryRegistry = new Map<string, Set<() => void>>();
 
 export function createLiveQuery<T>({
@@ -124,7 +135,7 @@ export function createLiveQuery<T>({
   queryFn,
   fields = [],
   limit = null,
-}: LiveQueryConfig): ExtendedSignal<T[]> {
+}: LiveQueryConfig): Signal<T[]> {
   const signal = createSignal<T[]>([]);
   const bc = new BroadcastChannel(`${dbName}-changes`);
   let last: T[] = [];
@@ -132,19 +143,29 @@ export function createLiveQuery<T>({
   async function fetchAndUpdate() {
     try {
       const db = await setupDB();
-      let items = await db.getAll(storeName as any);
+      if (!isValidStoreName(storeName)) {
+        throw new Error(`invalid store name: ${storeName}`);
+      }
+
+      let items = await db.getAll(storeName);
 
       if (queryFn) items = items.filter(queryFn);
       if (limit) items = items.slice(0, limit);
 
-      const filtered = items.map((item) => {
-        if (fields.length === 0) return item;
+      const filtered = items.map((item): T => {
+        if (fields.length === 0) return item as T;
 
-        const out: any = { id: item.id };
-        for (const f of fields) {
-          out[f] = item[f];
+        if (!hasId(item)) {
+          throw new Error("item missing required id field");
         }
-        return out;
+
+        const out: Record<string, unknown> = { id: item.id };
+        for (const f of fields) {
+          if (typeof item === "object" && item !== null) {
+            out[f] = (item as unknown as Record<string, unknown>)[f];
+          }
+        }
+        return out as T;
       });
 
       if (arraysDiffer(last, filtered)) {
@@ -152,11 +173,11 @@ export function createLiveQuery<T>({
         signal.set(filtered);
       }
     } catch (error) {
-      console.error("error in fetchAndUpdate:", error);
+      console.error("error in fetchandupdate:", error);
     }
   }
 
-  // Register this query in the global registry for direct updates
+  // register this query in the global registry for direct updates
   const registryKey = `${dbName}-${storeName}`;
   if (!globalQueryRegistry.has(registryKey)) {
     globalQueryRegistry.set(registryKey, new Set());
@@ -164,17 +185,17 @@ export function createLiveQuery<T>({
   const querySet = globalQueryRegistry.get(registryKey)!;
   querySet.add(fetchAndUpdate);
 
-  // BroadcastChannel listener (for cross-tab updates)
+  // broadcastchannel listener (for cross-tab updates)
   bc.onmessage = (e) => {
     if (e.data?.type === "mutation" && e.data.store === storeName) {
       fetchAndUpdate();
     }
   };
 
-  // Initial fetch
+  // initial fetch
   fetchAndUpdate();
 
-  // Return signal with cleanup function
+  // return signal with cleanup function
   const originalSignal = signal;
   return {
     ...originalSignal,
@@ -182,7 +203,7 @@ export function createLiveQuery<T>({
       const unsubscribe = originalSignal.subscribe(fn);
       return () => {
         unsubscribe();
-        // Remove from registry when unsubscribing
+        // remove from registry when unsubscribing
         querySet.delete(fetchAndUpdate);
         if (querySet.size === 0) {
           globalQueryRegistry.delete(registryKey);
@@ -190,33 +211,70 @@ export function createLiveQuery<T>({
         bc.close();
       };
     },
-  } as ExtendedSignal<T[]>;
+  };
 }
 
-// Mutation with notification (matching demo pattern)
-interface MutationConfig {
+// mutation with notification (matching demo pattern)
+interface MutationConfig<T extends Playlist | Song> {
   dbName: string;
   storeName: string;
   key: string;
-  updateFn: (current: any) => any;
+  updateFn: (current: T | null) => T;
 }
 
-export async function mutateAndNotify({
+async function mutatePlaylist(config: {
+  key: string;
+  updateFn: (current: Playlist | null) => Playlist;
+}): Promise<void> {
+  const db = await setupDB();
+  const tx = db.transaction("playlists", "readwrite");
+  const store = tx.objectStore("playlists");
+
+  const current = await store.get(config.key);
+  const currentPlaylist = current && isPlaylist(current) ? current : null;
+  const updated = config.updateFn(currentPlaylist);
+
+  await store.put(updated);
+  await tx.done;
+}
+
+async function mutateSong(config: {
+  key: string;
+  updateFn: (current: Song | null) => Song;
+}): Promise<void> {
+  const db = await setupDB();
+  const tx = db.transaction("songs", "readwrite");
+  const store = tx.objectStore("songs");
+
+  const current = await store.get(config.key);
+  const currentSong = current && isSong(current) ? current : null;
+  const updated = config.updateFn(currentSong);
+
+  await store.put(updated);
+  await tx.done;
+}
+
+export async function mutateAndNotify<T extends Playlist | Song>({
   dbName,
   storeName,
   key,
   updateFn,
-}: MutationConfig): Promise<void> {
-  const db = await setupDB();
-  const tx = db.transaction(storeName as any, "readwrite");
-  const store = tx.objectStore(storeName as any);
+}: MutationConfig<T>): Promise<void> {
+  if (storeName === "playlists") {
+    await mutatePlaylist({
+      key,
+      updateFn: updateFn as (current: Playlist | null) => Playlist,
+    });
+  } else if (storeName === "songs") {
+    await mutateSong({
+      key,
+      updateFn: updateFn as (current: Song | null) => Song,
+    });
+  } else {
+    throw new Error(`invalid store name: ${storeName}`);
+  }
 
-  const current = await store.get(key);
-  const updated = await updateFn(current || { id: key });
-  await store.put(updated);
-  await tx.done;
-
-  // Direct updates to same-tab queries (immediate)
+  // direct updates to same-tab queries (immediate)
   const registryKey = `${dbName}-${storeName}`;
   const querySet = globalQueryRegistry.get(registryKey);
   if (querySet) {
@@ -269,15 +327,14 @@ export async function updatePlaylist(
   id: string,
   updates: Partial<Playlist>
 ): Promise<void> {
-  await mutateAndNotify({
-    dbName: DB_NAME,
-    storeName: PLAYLISTS_STORE,
+  await mutatePlaylist({
     key: id,
-    updateFn: (current) => ({
-      ...current,
-      ...updates,
-      updatedAt: Date.now(),
-    }),
+    updateFn: (current) => {
+      if (!current) {
+        throw new Error(`playlist ${id} not found`);
+      }
+      return mergePlaylistUpdates(current, updates);
+    },
   });
 }
 
@@ -358,19 +415,21 @@ export async function addSongToPlaylist(
     updateFn: () => songForDB,
   });
 
-  // Update playlist's song list
-  await mutateAndNotify({
-    dbName: DB_NAME,
-    storeName: PLAYLISTS_STORE,
+  // update playlist's song list
+  await mutatePlaylist({
     key: playlistId,
-    updateFn: (playlist) => ({
-      ...playlist,
-      songIds: [...(playlist.songIds || []), songId],
-      updatedAt: now,
-    }),
+    updateFn: (playlist) => {
+      if (!playlist) {
+        throw new Error(`playlist ${playlistId} not found`);
+      }
+      const currentSongIds = safeArray(playlist, "songIds", []);
+      return mergePlaylistUpdates(playlist, {
+        songIds: [...currentSongIds, songId],
+      });
+    },
   });
 
-  // Trigger reactivity for UI updates
+  // trigger reactivity for ui updates
   triggerSongUpdateWithOptions({
     songId: song.id,
     type: "create",
@@ -384,18 +443,17 @@ export async function updateSong(
   id: string,
   updates: Partial<Song>
 ): Promise<void> {
-  await mutateAndNotify({
-    dbName: DB_NAME,
-    storeName: SONGS_STORE,
+  await mutateSong({
     key: id,
-    updateFn: (current) => ({
-      ...current,
-      ...updates,
-      updatedAt: Date.now(),
-    }),
+    updateFn: (current) => {
+      if (!current) {
+        throw new Error(`song ${id} not found`);
+      }
+      return mergeSongUpdates(current, updates);
+    },
   });
 
-  // Trigger reactivity for UI updates
+  // trigger reactivity for ui updates
   triggerSongUpdateWithOptions({
     songId: id,
     type: "edit",
@@ -411,18 +469,20 @@ export async function deleteSong(songId: string): Promise<void> {
   if (!song) return;
 
   // Remove song from playlist's songIds
-  await mutateAndNotify({
-    dbName: DB_NAME,
-    storeName: PLAYLISTS_STORE,
+  await mutatePlaylist({
     key: song.playlistId,
-    updateFn: (playlist) => ({
-      ...playlist,
-      songIds: (playlist.songIds || []).filter((id: string) => id !== songId),
-      updatedAt: Date.now(),
-    }),
+    updateFn: (playlist) => {
+      if (!playlist) {
+        throw new Error(`playlist ${song.playlistId} not found`);
+      }
+      const currentSongIds = safeArray(playlist, "songIds", []);
+      return mergePlaylistUpdates(playlist, {
+        songIds: currentSongIds.filter((id: string) => id !== songId),
+      });
+    },
   });
 
-  // Delete the song
+  // delete the song
   const tx = db.transaction(SONGS_STORE, "readwrite");
   await tx.objectStore(SONGS_STORE).delete(songId);
   await tx.done;
@@ -441,24 +501,23 @@ export async function reorderSongs(
   fromIndex: number,
   toIndex: number
 ): Promise<void> {
-  await mutateAndNotify({
-    dbName: DB_NAME,
-    storeName: PLAYLISTS_STORE,
+  await mutatePlaylist({
     key: playlistId,
     updateFn: (playlist) => {
-      const songIds = [...(playlist.songIds || [])];
+      if (!playlist) {
+        throw new Error(`playlist ${playlistId} not found`);
+      }
+      const songIds = [...safeArray(playlist, "songIds", [])];
       const [movedSong] = songIds.splice(fromIndex, 1);
-      songIds.splice(toIndex, 0, movedSong);
+      if (movedSong) {
+        songIds.splice(toIndex, 0, movedSong);
+      }
 
-      return {
-        ...playlist,
-        songIds,
-        updatedAt: Date.now(),
-      };
+      return mergePlaylistUpdates(playlist, { songIds });
     },
   });
 
-  // Update position field on all affected songs
+  // update position field on all affected songs
   const db = await setupDB();
   const tx = db.transaction(SONGS_STORE, "readwrite");
   const store = tx.objectStore(SONGS_STORE);
@@ -476,11 +535,12 @@ export async function reorderSongs(
         dbName: DB_NAME,
         storeName: SONGS_STORE,
         key: song.id,
-        updateFn: (current) => ({
-          ...current,
-          position: 0, // Will be updated with proper logic
-          updatedAt: Date.now(),
-        }),
+        updateFn: (current) => {
+          if (!current || !isSong(current)) {
+            throw new Error(`song ${song.id} not found`);
+          }
+          return mergeSongUpdates(current, { position: 0 });
+        },
       })
     );
     cursor = await cursor.continue();
@@ -512,7 +572,10 @@ export function createPlaylistSongsQuery(playlistId: string) {
   return createLiveQuery<Song>({
     dbName: DB_NAME,
     storeName: SONGS_STORE,
-    queryFn: (song) => song.playlistId === playlistId,
+    queryFn: (item: unknown) => {
+      if (!isSong(item)) return false;
+      return item.playlistId === playlistId;
+    },
     fields: [
       "title",
       "artist",
@@ -615,14 +678,14 @@ export async function getSongsWithAudioData(
 }
 
 /**
- * Validate that a song has valid audio data
+ * validate that a song has valid audio data
  */
-export function hasValidAudioData(song: any): boolean {
-  return !!(song.audioData && song.audioData.byteLength > 0 && song.mimeType);
+export function hasValidAudioData(song: Song): boolean {
+  return hasAudioData(song);
 }
 
 /**
- * Clean up invalid songs that don't have proper audio data
+ * clean up invalid songs that don't have proper audio data
  */
 export async function cleanupInvalidSongs(): Promise<number> {
   try {
@@ -682,15 +745,21 @@ export async function removeSongFromPlaylist(
     storeName: PLAYLISTS_STORE,
     key: playlistId,
     updateFn: (playlist) => {
-      if (!playlist || !playlist.songIds) {
-        console.warn(`Playlist ${playlistId} not found or has no songIds`);
-        return playlist; // Return unchanged if playlist doesn't exist
+      if (!playlist || !hasSongIds(playlist)) {
+        console.warn(`playlist ${playlistId} not found or has no songids`);
+        return (
+          playlist || {
+            id: playlistId,
+            title: "",
+            songIds: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+        );
       }
-      return {
-        ...playlist,
+      return mergePlaylistUpdates(playlist, {
         songIds: playlist.songIds.filter((id: string) => id !== songId),
-        updatedAt: Date.now(),
-      };
+      });
     },
   });
 
@@ -712,7 +781,7 @@ export async function removeSongFromPlaylist(
     bc.close();
   }
 
-  // Trigger reactivity for UI updates
+  // trigger reactivity for ui updates
   triggerSongUpdateWithOptions({
     songId,
     type: "delete",

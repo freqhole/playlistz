@@ -70,18 +70,20 @@ export function usePlaylistManager() {
       await setupDB();
 
       const playlistQuery = createPlaylistsQuery();
-      playlistsQueryUnsubscribe = playlistQuery.subscribe((value) => {
-        setPlaylists([...value]); // force new array reference
+      playlistsQueryUnsubscribe = playlistQuery.subscribe(
+        (value: Playlist[]) => {
+          setPlaylists([...value]); // force new array reference
 
-        // update selected playlist if it exists in the new data
-        const current = selectedPlaylist();
-        if (current) {
-          const updated = value.find((p) => p.id === current.id);
-          if (updated) {
-            setSelectedPlaylist(updated);
+          // update selected playlist if it exists in the new data
+          const current = selectedPlaylist();
+          if (current) {
+            const updated = value.find((p: Playlist) => p.id === current.id);
+            if (updated) {
+              setSelectedPlaylist(updated);
+            }
           }
         }
-      });
+      );
 
       // check to init standalone mode (offline support)
       if (window.STANDALONE_MODE) {
@@ -90,7 +92,7 @@ export function usePlaylistManager() {
 
         // handle deferred playlist data from standalone initialization
         const deferredData = window.DEFERRED_PLAYLIST_DATA;
-        if (deferredData) {
+        if (deferredData && deferredData.playlist && deferredData.songs) {
           try {
             await initializeStandalonePlaylist(deferredData, {
               setSelectedPlaylist,
@@ -192,9 +194,9 @@ export function usePlaylistManager() {
     if (playlist && playlist.songIds.length > 0) {
       // create reactive query for this playlist's songs
       const songsQuery = createPlaylistSongsQuery(playlist.id);
-      songsQueryUnsubscribe = songsQuery.subscribe((songs) => {
+      songsQueryUnsubscribe = songsQuery.subscribe((songs: Song[]) => {
         // sort songs according to playlist order
-        const sortedSongs = songs.sort((a, b) => {
+        const sortedSongs = songs.sort((a: Song, b: Song) => {
           const indexA = playlist.songIds.indexOf(a.id);
           const indexB = playlist.songIds.indexOf(b.id);
           return indexA - indexB;

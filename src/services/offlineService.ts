@@ -314,14 +314,24 @@ export async function initializeOfflineSupport(
 export async function getStorageInfo(): Promise<{
   quota?: number;
   usage?: number;
+  usagePercentage?: number;
+  persistent?: boolean;
+  error?: string;
   quotaFormatted?: string;
   usageFormatted?: string;
   usagePercent?: number;
-  persistent?: boolean;
-  error?: string;
 }> {
   try {
-    const info: any = {};
+    const info: {
+      quota?: number;
+      usage?: number;
+      usagePercentage?: number;
+      persistent?: boolean;
+      error?: string;
+      quotaFormatted?: string;
+      usageFormatted?: string;
+      usagePercent?: number;
+    } = {};
 
     if ("storage" in navigator && navigator.storage) {
       if ("estimate" in navigator.storage) {

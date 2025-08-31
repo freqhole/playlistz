@@ -217,9 +217,6 @@ describe("Database Efficiency Tests", () => {
         songIds: [],
       });
 
-      // Track initial calls
-      const initialCallCount = mockDB.getAll.mock.calls.length;
-
       // 2. Add song to playlist (this triggers multiple setupDB calls)
       await addSongToPlaylist(playlist.id, mockFile, {
         title: "Test Song",

@@ -147,7 +147,7 @@ async function updateMediaSession(): Promise<void> {
 
   if (song) {
     // Get artwork first
-    const artwork = await getMediaSessionArtwork(song, playlist);
+    const artwork = await getMediaSessionArtwork(song, playlist || undefined);
 
     // Clear metadata first, then set it - sometimes helps with iOS Safari
     navigator.mediaSession.metadata = null;
@@ -279,7 +279,7 @@ async function resizeImageForMediaSession(
 // get artwork for Media Session
 async function getMediaSessionArtwork(
   song: Song,
-  playlist: Playlist
+  playlist?: Playlist
 ): Promise<MediaImage[]> {
   const artwork: MediaImage[] = [];
 

@@ -1,5 +1,12 @@
 /* @jsxImportSource solid-js */
-import { createSignal, Show, onMount, onCleanup, createEffect } from "solid-js";
+import {
+  createSignal,
+  Show,
+  onMount,
+  onCleanup,
+  createEffect,
+  For,
+} from "solid-js";
 import {
   updatePlaylist,
   deletePlaylist,
@@ -304,7 +311,7 @@ export function PlaylistCoverModal(props: PlaylistCoverModalProps) {
                 <Show
                   when={!isDownloading()}
                   fallback={
-                    <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   }
                 >
                   <svg
@@ -344,51 +351,54 @@ export function PlaylistCoverModal(props: PlaylistCoverModalProps) {
           <Show when={songsWithArt.length > 0}>
             <div>
               <div class="grid grid-cols-4 gap-3">
-                {songsWithArt.map((song) => (
-                  <button
-                    onClick={() => {
-                      // #TODO: this needz to be updated to work with ArrayBuffer data
-                      // setError(
-                      //   "selecting from song imagez not yet implemented with new image storage"
-                      // );
-                    }}
-                    disabled={isLoading()}
-                    class="aspect-square overflow-hidden bg-gray-700" //hover:ring-2 hover:ring-magenta-500 transition-all
-                    title={`${song.title} - ${song.artist}`}
-                  >
-                    <Show
-                      when={
-                        song.imageType && (song.imageData || song.thumbnailData)
-                      }
-                      fallback={
-                        <div class="w-full h-full flex items-center justify-center">
-                          <svg
-                            class="w-6 h-6 text-gray-400"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-width="2"
-                              d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-                            />
-                          </svg>
-                        </div>
-                      }
+                <For each={songsWithArt}>
+                  {(song) => (
+                    <button
+                      onClick={() => {
+                        // #TODO: this needz to be updated to work with ArrayBuffer data
+                        // setError(
+                        //   "selecting from song imagez not yet implemented with new image storage"
+                        // );
+                      }}
+                      disabled={isLoading()}
+                      class="aspect-square overflow-hidden bg-gray-700" //hover:ring-2 hover:ring-magenta-500 transition-all
+                      title={`${song.title} - ${song.artist}`}
                     >
-                      <img
-                        src={createImageUrlFromData(
-                          song.thumbnailData || song.imageData!,
-                          song.imageType!
-                        )}
-                        alt={song.title}
-                        class="w-full h-full object-cover"
-                      />
-                    </Show>
-                  </button>
-                ))}
+                      <Show
+                        when={
+                          song.imageType &&
+                          (song.imageData || song.thumbnailData)
+                        }
+                        fallback={
+                          <div class="w-full h-full flex items-center justify-center">
+                            <svg
+                              class="w-6 h-6 text-gray-400"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                              />
+                            </svg>
+                          </div>
+                        }
+                      >
+                        <img
+                          src={createImageUrlFromData(
+                            song.thumbnailData || song.imageData!,
+                            song.imageType!
+                          )}
+                          alt={song.title}
+                          class="w-full h-full object-cover"
+                        />
+                      </Show>
+                    </button>
+                  )}
+                </For>
               </div>
             </div>
           </Show>
@@ -470,7 +480,7 @@ export function PlaylistCoverModal(props: PlaylistCoverModalProps) {
             <Show
               when={!isLoading()}
               fallback={
-                <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               }
             >
               <svg

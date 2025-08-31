@@ -79,27 +79,31 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
             >
               {(() => {
                 const imageUrl = getImageUrlForContext(playlist(), "modal");
-                return imageUrl ? (
-                  <img
-                    src={imageUrl}
-                    alt="playlist cover"
-                    class="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div class="text-center">
-                    <svg
-                      width="100"
-                      height="100"
-                      viewBox="0 0 100 100"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
-                        fill="#FF00FF"
+                return (
+                  <>
+                    {imageUrl ? (
+                      <img
+                        src={imageUrl}
+                        alt="playlist cover"
+                        class="w-full h-full object-cover"
                       />
-                    </svg>
-                  </div>
+                    ) : (
+                      <div class="text-center">
+                        <svg
+                          width="100"
+                          height="100"
+                          viewBox="0 0 100 100"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
+                            fill="#FF00FF"
+                          />
+                        </svg>
+                      </div>
+                    )}
+                  </>
                 );
               })()}
             </Show>
@@ -138,12 +142,15 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
             {/* 2x2 grid layout with AudioPlayer spanning left side */}
             <div
               class="grid gap-3"
-              style="grid-template-columns: auto 1fr; grid-template-areas: 'player info' 'player buttons';"
+              style={{
+                "grid-template-columns": "auto 1fr",
+                "grid-template-areas": "'player info' 'player buttons'",
+              }}
             >
               {/* AudioPlayer spans 2 rows on the left */}
               <div
                 class="flex items-center justify-center"
-                style="grid-area: player;"
+                style={{ "grid-area": "player" }}
               >
                 <AudioPlayer playlist={playlist()} size="w-12 h-12" />
               </div>
@@ -152,7 +159,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               <div
                 id="song-info"
                 class="flex items-center justify-end text-sm gap-0"
-                style="grid-area: info;"
+                style={{ "grid-area": "info" }}
               >
                 <span class="bg-black bg-opacity-80 p-2">
                   {playlist().songIds?.length || 0} song
@@ -177,7 +184,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               {/* bottom right: action buttonz */}
               <div
                 class="flex items-center justify-end gap-2"
-                style="grid-area: buttons;"
+                style={{ "grid-area": "buttons" }}
               >
                 {/* save offline button */}
                 <Show
@@ -313,7 +320,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               openImageModal(playlist(), playlistSongs(), 0);
             }}
             class="w-39 h-39 overflow-hidden hover:bg-gray-900 flex items-center justify-center transition-colors group"
-            style="filter: blur(3px) contrast(3) brightness(0.4);"
+            style={{ filter: "blur(3px) contrast(3) brightness(0.4)" }}
             onMouseEnter={(e) => (e.currentTarget.style.filter = "none")}
             onMouseLeave={(e) =>
               (e.currentTarget.style.filter =
@@ -342,27 +349,31 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
             >
               {(() => {
                 const imageUrl = getImageUrlForContext(playlist(), "modal");
-                return imageUrl ? (
-                  <img
-                    src={imageUrl}
-                    alt="playlist cover"
-                    class="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div class="text-center">
-                    <svg
-                      width="100"
-                      height="100"
-                      viewBox="0 0 100 100"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
-                        fill="#FF00FF"
+                return (
+                  <>
+                    {imageUrl ? (
+                      <img
+                        src={imageUrl}
+                        alt="playlist cover"
+                        class="w-full h-full object-cover"
                       />
-                    </svg>
-                  </div>
+                    ) : (
+                      <div class="text-center">
+                        <svg
+                          width="100"
+                          height="100"
+                          viewBox="0 0 100 100"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
+                            fill="#FF00FF"
+                          />
+                        </svg>
+                      </div>
+                    )}
+                  </>
                 );
               })()}
             </Show>

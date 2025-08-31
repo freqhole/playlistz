@@ -183,12 +183,12 @@ export function SongRow(props: SongRowProps) {
       when={!song.loading}
       fallback={
         <div class="flex items-center p-3 bg-gray-800 bg-opacity-30 animate-pulse">
-          <div class="w-12 h-12 bg-gray-700 mr-4"></div>
+          <div class="w-12 h-12 bg-gray-700 mr-4" />
           <div class="flex-1">
-            <div class="h-4 bg-gray-700 rounded mb-2 w-3/4"></div>
-            <div class="h-3 bg-gray-700 rounded w-1/2"></div>
+            <div class="h-4 bg-gray-700 rounded mb-2 w-3/4" />
+            <div class="h-3 bg-gray-700 rounded w-1/2" />
           </div>
-          <div class="w-16 h-4 bg-gray-700 rounded"></div>
+          <div class="w-16 h-4 bg-gray-700 rounded" />
         </div>
       }
     >
@@ -293,7 +293,7 @@ export function SongRow(props: SongRowProps) {
                   <Show
                     when={songData().imageType}
                     fallback={
-                      <div class="w-12 h-12 bg-transparent flex items-center justify-center"></div>
+                      <div class="w-12 h-12 bg-transparent flex items-center justify-center" />
                     }
                   >
                     {(() => {
@@ -301,14 +301,19 @@ export function SongRow(props: SongRowProps) {
                         songData(),
                         "thumbnail"
                       );
-                      return imageUrl ? (
-                        <img
-                          src={imageUrl}
-                          alt={`${songData().title} album art`}
-                          class="w-12 h-12 object-cover"
-                        />
-                      ) : (
-                        <div class="w-12 h-12 bg-transparent flex items-center justify-center"></div>
+                      return (
+                        <Show
+                          when={imageUrl}
+                          fallback={
+                            <div class="w-12 h-12 bg-transparent flex items-center justify-center" />
+                          }
+                        >
+                          <img
+                            src={imageUrl}
+                            alt={`${songData().title} album art`}
+                            class="w-12 h-12 object-cover"
+                          />
+                        </Show>
                       );
                     })()}
                   </Show>

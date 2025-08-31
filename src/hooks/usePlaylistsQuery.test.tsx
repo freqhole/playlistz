@@ -121,7 +121,7 @@ describe("Playlist Signal Integration Tests", () => {
       const playlistsQuery = createPlaylistsQuery();
       const updates: Playlist[][] = [];
 
-      const unsubscribe = playlistsQuery.subscribe((value) => {
+      const unsubscribe = playlistsQuery.subscribe((value: Playlist[]) => {
         updates.push(value);
       });
 

@@ -6,53 +6,60 @@ import prettierConfig from "eslint-config-prettier";
 import solidPlugin from "eslint-plugin-solid";
 import globals from "globals";
 
+const baseConfig = {
+  languageOptions: {
+    parser: tsparser,
+    ecmaVersion: 2020,
+    sourceType: "module",
+  },
+  plugins: {
+    "@typescript-eslint": tseslint,
+    prettier: prettier,
+  },
+  rules: {
+    ...tseslint.configs.recommended.rules,
+    ...prettierConfig.rules,
+    "prettier/prettier": "error",
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_",
+      },
+    ],
+    "@typescript-eslint/explicit-function-return-type": "off",
+    "@typescript-eslint/no-explicit-any": "error",
+    "no-undef": "off",
+    "no-empty": ["error", { allowEmptyCatch: true }],
+  },
+};
+
 export default [
   js.configs.recommended,
+
+  // TypeScript files
   {
     files: ["src/**/*.ts"],
+    ...baseConfig,
     languageOptions: {
-      parser: tsparser,
-      ecmaVersion: 2020,
-      sourceType: "module",
+      ...baseConfig.languageOptions,
       globals: {
-        ...globals.node,
         ...globals.browser,
+        ...globals.node,
         vi: "readonly",
       },
-    },
-    plugins: {
-      "@typescript-eslint": tseslint,
-      prettier: prettier,
-    },
-    rules: {
-      ...tseslint.configs.recommended.rules,
-      ...prettierConfig.rules,
-      "prettier/prettier": "error",
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        {
-          argsIgnorePattern: "^_",
-          varsIgnorePattern: "^_",
-          caughtErrorsIgnorePattern: "^_",
-        },
-      ],
-      "@typescript-eslint/explicit-function-return-type": "off",
-      "@typescript-eslint/no-explicit-any": "error",
-      "no-undef": "off",
-      "no-empty": ["error", { allowEmptyCatch: true }],
-      "no-case-declarations": "error",
     },
   },
+
+  // TypeScript + JSX files
   {
-    files: ["src/**/*.{tsx}"],
+    files: ["src/**/*.tsx"],
+    ...baseConfig,
     languageOptions: {
-      parser: tsparser,
-      ecmaVersion: 2020,
-      sourceType: "module",
+      ...baseConfig.languageOptions,
       parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
+        ecmaFeatures: { jsx: true },
       },
       globals: {
         ...globals.browser,
@@ -60,39 +67,24 @@ export default [
       },
     },
     plugins: {
-      "@typescript-eslint": tseslint,
-      prettier: prettier,
+      ...baseConfig.plugins,
       solid: solidPlugin,
     },
     rules: {
-      ...tseslint.configs.recommended.rules,
+      ...baseConfig.rules,
       ...solidPlugin.configs.recommended.rules,
-      ...prettierConfig.rules,
-      "prettier/prettier": "error",
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        {
-          argsIgnorePattern: "^_",
-          varsIgnorePattern: "^_",
-          caughtErrorsIgnorePattern: "^_",
-        },
-      ],
-      "@typescript-eslint/explicit-function-return-type": "off",
-      "@typescript-eslint/no-explicit-any": "error",
-      "no-undef": "off",
-      "no-empty": ["error", { allowEmptyCatch: true }],
-      "no-case-declarations": "error",
     },
   },
+
+  // Test files
   {
     files: ["src/**/*.test.{ts,tsx}", "src/test-setup.ts"],
+    ...baseConfig,
     languageOptions: {
-      parser: tsparser,
-      ecmaVersion: 2020,
-      sourceType: "module",
+      ...baseConfig.languageOptions,
       globals: {
-        ...globals.node,
         ...globals.browser,
+        ...globals.node,
         describe: "readonly",
         it: "readonly",
         expect: "readonly",
@@ -104,60 +96,19 @@ export default [
         global: "writable",
       },
     },
-    plugins: {
-      "@typescript-eslint": tseslint,
-      prettier: prettier,
-    },
     rules: {
-      ...tseslint.configs.recommended.rules,
-      ...prettierConfig.rules,
-      "prettier/prettier": "error",
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        {
-          argsIgnorePattern: "^_",
-          varsIgnorePattern: "^_",
-          caughtErrorsIgnorePattern: "^_",
-        },
-      ],
-      "@typescript-eslint/explicit-function-return-type": "off",
-      "@typescript-eslint/no-explicit-any": "off",
-      "no-undef": "off",
-      "no-empty": ["error", { allowEmptyCatch: true }],
-      "no-case-declarations": "error",
+      ...baseConfig.rules,
+      "@typescript-eslint/no-explicit-any": "off", // Allow any in tests
     },
   },
+
+  // Build/config files
   {
     files: ["config/**/*.ts", "build-component.js"],
+    ...baseConfig,
     languageOptions: {
-      parser: tsparser,
-      ecmaVersion: 2020,
-      sourceType: "module",
-      globals: {
-        ...globals.node,
-      },
-    },
-    plugins: {
-      "@typescript-eslint": tseslint,
-      prettier: prettier,
-    },
-    rules: {
-      ...tseslint.configs.recommended.rules,
-      ...prettierConfig.rules,
-      "prettier/prettier": "error",
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        {
-          argsIgnorePattern: "^_",
-          varsIgnorePattern: "^_",
-          caughtErrorsIgnorePattern: "^_",
-        },
-      ],
-      "@typescript-eslint/explicit-function-return-type": "off",
-      "@typescript-eslint/no-explicit-any": "error",
-      "no-undef": "off",
-      "no-empty": ["error", { allowEmptyCatch: true }],
-      "no-case-declarations": "error",
+      ...baseConfig.languageOptions,
+      globals: globals.node,
     },
   },
 ];
