@@ -218,7 +218,7 @@ describe("Database Efficiency Tests", () => {
       });
 
       // Track initial calls
-      mockDB.getAll.mock.calls.length;
+      const initialCallCount = mockDB.getAll.mock.calls.length;
 
       // 2. Add song to playlist (this triggers multiple setupDB calls)
       await addSongToPlaylist(playlist.id, mockFile, {
@@ -260,6 +260,7 @@ describe("Database Efficiency Tests", () => {
         if (!dbInstance) {
           dbInstance = await originalSetupDB();
         } else {
+          // database already exists, no additional setup needed
         }
         return dbInstance;
       });
@@ -1462,7 +1463,7 @@ describe("Database Efficiency Tests", () => {
 
           try {
             await removeSongFromPlaylist(playlistId, songId);
-          } catch (error) {
+          } catch {
             // Ignore errors for this test
           }
 

@@ -38,6 +38,6 @@
     "jsxImportSource": "solid-js",
     "types": ["vite/client", "vitest/globals", "node"]
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "src/types/global.d.ts"],
   "exclude": ["node_modules", "dist", "coverage", "config"]
 }

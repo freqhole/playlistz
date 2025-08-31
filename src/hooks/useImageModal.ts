@@ -147,7 +147,7 @@ export function useImageModal() {
         e.preventDefault();
         goToImage(getImageCount() - 1);
         break;
-      default:
+      default: {
         // number keyz (1-9) to jump to specific images, cuz why not?!
         const num = parseInt(e.key);
         if (!isNaN(num) && num >= 1 && num <= 9) {
@@ -158,6 +158,7 @@ export function useImageModal() {
           }
         }
         break;
+      }
     }
   };
 

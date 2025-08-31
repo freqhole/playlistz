@@ -1,6 +1,8 @@
 // Image Service for Album Art and Playlist Covers
 // Handles extraction, processing, and management of images
 
+import type { Song, Playlist } from "../types/playlist.js";
+
 export interface ImageProcessingResult {
   success: boolean;
   imageData?: ArrayBuffer;
@@ -331,7 +333,7 @@ export function createImageUrlsFromData(
 
 // Helper to determine which image size to use for different contexts
 export function getImageUrlForContext(
-  item: any, // Song or Playlist object
+  item: Song | Playlist,
   context: "thumbnail" | "background" | "modal" = "thumbnail"
 ): string | null {
   if (!item?.imageType) return null;
@@ -356,7 +358,7 @@ export function getImageUrlForContext(
 
   // Fallback for file:// protocol - use direct file paths
   if (
-    (window as any).STANDALONE_MODE &&
+    window.STANDALONE_MODE &&
     window.location.protocol === "file:" &&
     imageFilePath
   ) {

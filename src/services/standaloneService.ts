@@ -27,7 +27,7 @@ const loadingImages = new Set<string>();
  * Create a song object from playlist data
  */
 function createSongFromData(
-  songData: any,
+  songData: unknown,
   index: number,
   playlistId: string,
   standaloneFilePath: string,

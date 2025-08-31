@@ -1,7 +1,7 @@
 import { customElement } from "solid-element";
-import { PlaylistManager } from "./components/PlaylistManager";
+import { Playlistz } from "./components";
 import "./styles.css";
 
 customElement("freqhole-playlistz", {}, () => {
-  return <PlaylistManager />;
+  return <Playlistz />;
 });

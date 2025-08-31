@@ -54,7 +54,7 @@ export function useDragAndDrop() {
         if (data.type === "song-reorder") {
           return { type: "song-reorder", itemCount: 1 };
         }
-      } catch (err) {
+      } catch {
         // not json, continue with file analysis...
       }
     }

@@ -13,9 +13,7 @@ interface Signal<T> {
   subscribe: (fn: (value: T) => void) => () => void;
 }
 
-interface ExtendedSignal<T> extends Signal<T> {
-  // Extended signal with proper cleanup
-}
+// Using Signal directly instead of empty interface extension
 
 function createSignal<T>(initial: T): Signal<T> {
   let value = initial;
@@ -100,7 +98,7 @@ export function resetDBCache(): void {
 interface LiveQueryConfig {
   dbName: string;
   storeName: string;
-  queryFn?: (item: any) => boolean;
+  queryFn?: (item: unknown) => boolean;
   fields?: string[];
   limit?: number | null;
 }

@@ -1,6 +1,6 @@
 /* @jsxImportSource solid-js */
 import { createSignal, createEffect, onMount, onCleanup } from "solid-js";
-import type { Playlist } from "../types/playlist.js";
+import type { Playlist, Song } from "../types/playlist.js";
 import {
   setupDB,
   createPlaylist,
@@ -38,7 +38,7 @@ export function usePlaylistManager() {
   const [selectedPlaylist, setSelectedPlaylist] = createSignal<Playlist | null>(
     null
   );
-  const [playlistSongs, setPlaylistSongs] = createSignal<any[]>([]);
+  const [playlistSongs, setPlaylistSongs] = createSignal<Song[]>([]);
   const [isInitialized, setIsInitialized] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -84,12 +84,12 @@ export function usePlaylistManager() {
       });
 
       // check to init standalone mode (offline support)
-      if ((window as any).STANDALONE_MODE) {
+      if (window.STANDALONE_MODE) {
         await initializeOfflineSupport();
         await updatePWAManifest("Playlistz", undefined);
 
         // handle deferred playlist data from standalone initialization
-        const deferredData = (window as any).DEFERRED_PLAYLIST_DATA;
+        const deferredData = window.DEFERRED_PLAYLIST_DATA;
         if (deferredData) {
           try {
             await initializeStandalonePlaylist(deferredData, {
@@ -98,7 +98,7 @@ export function usePlaylistManager() {
               setSidebarCollapsed: () => {}, // not used in this context
               setError,
             });
-            delete (window as any).DEFERRED_PLAYLIST_DATA;
+            delete window.DEFERRED_PLAYLIST_DATA;
           } catch (err) {
             console.error("onoz! error initializing deferred playlist:", err);
             setError("failed to initialize playlist!");

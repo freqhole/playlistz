@@ -207,7 +207,7 @@ async function updateMediaSession(): Promise<void> {
           playbackRate: 1,
           position: 0,
         });
-      } catch (e) {
+      } catch {
         // some browsers don't support clearing position state, ignore error
       }
     }
@@ -278,8 +278,8 @@ async function resizeImageForMediaSession(
 
 // get artwork for Media Session
 async function getMediaSessionArtwork(
-  song: any,
-  playlist: any
+  song: Song,
+  playlist: Playlist
 ): Promise<MediaImage[]> {
   const artwork: MediaImage[] = [];
 
@@ -535,7 +535,7 @@ export async function playSong(song: Song): Promise<void> {
           playbackRate: 1,
           position: 0,
         });
-      } catch (e) {
+      } catch {
         // some browsers don't support clearing position state, ignore error
       }
     }
@@ -1113,7 +1113,8 @@ async function preloadNextSong(): Promise<void> {
           });
         });
     }
-  } catch (error) {
+  } catch {
+    // ignore errors when clearing cache
   } finally {
     // always clean up loading state for preloading
     setLoadingSongIds((prev) => {

@@ -11,7 +11,7 @@
     />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#000000" />
-    <title>Playlistz</title>
+    <title>playlistz</title>
     <style>
       * {
         box-sizing: border-box;
@@ -27,7 +27,14 @@
         background-color: black;
         color: white;
       }
-      /* Loading styles */
+      /* ensure proper text wrapping */
+      .break-words {
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+        hyphens: auto;
+      }
+      /* loading style */
       .loading {
         display: flex;
         justify-content: center;

@@ -10,40 +10,20 @@ import path from "path";
 const isStandalone = process.argv.includes("--standalone");
 const isWebComponent =
   process.argv.includes("--web-component") || !isStandalone;
+const skipClear = process.argv.includes("--no-clear");
 
 console.log(
   `🔨 Building Playlistz ${isStandalone ? "standalone HTML" : "web component"}...`
 );
 
-// Generate service worker code
-function generateServiceWorker() {
-  return `
-// Playlistz Service Worker
-const CACHE_NAME = 'playlistz-v1';
-const urlsToCache = [
-  '/',
-  '/freqhole-playlistz.html',
-];
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(urlsToCache))
-  );
-});
-
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        if (response) {
-          return response;
-        }
-        return fetch(event.request);
-      })
-  );
-});
-`.trim();
+// Copy static service worker file
+function copyServiceWorker() {
+  const swPath = path.resolve("public/sw.js");
+  if (fs.existsSync(swPath)) {
+    return fs.readFileSync(swPath, "utf-8");
+  }
+  console.warn("⚠️ No service worker found at public/sw.js");
+  return null;
 }
 
 // Generate HTML template for standalone build
@@ -53,7 +33,7 @@ function generateStandaloneHtml(jsCode, cssCode) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Playlistz</title>
+  <title>playlistz</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
@@ -68,7 +48,7 @@ function generateStandaloneHtml(jsCode, cssCode) {
       background-color: black;
       color: white;
     }
-    /* Ensure proper text wrapping */
+    /* ensure proper text wrapping */
     .break-words {
       word-wrap: break-word;
       word-break: break-word;
@@ -146,14 +126,16 @@ async function buildStandalone() {
 
               console.log("✅ Generated: freqhole-playlistz.html");
 
-              // Generate service worker
-              const swCode = generateServiceWorker();
-              this.emitFile({
-                type: "asset",
-                fileName: "sw.js",
-                source: swCode,
-              });
-              console.log("✅ Generated: sw.js");
+              // Copy service worker
+              const swCode = copyServiceWorker();
+              if (swCode) {
+                this.emitFile({
+                  type: "asset",
+                  fileName: "sw.js",
+                  source: swCode,
+                });
+                console.log("✅ Generated: sw.js");
+              }
 
               // Remove JS and CSS files from output (but keep sw.js)
               Object.keys(bundle).forEach((fileName) => {
@@ -234,6 +216,10 @@ async function buildWebComponent() {
 
 // Clear dist directory
 function clearDist() {
+  if (skipClear) {
+    console.log("⏭️  Skipping dist directory clear");
+    return;
+  }
   const distDir = path.resolve("dist");
   if (fs.existsSync(distDir)) {
     fs.rmSync(distDir, { recursive: true, force: true });

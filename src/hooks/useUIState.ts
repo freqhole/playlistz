@@ -5,7 +5,7 @@ export function useUIState() {
   const [isMobile, setIsMobile] = createSignal(false);
 
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(
-    (window as any).STANDALONE_MODE || false
+    window.STANDALONE_MODE || false
   );
 
   const [isDragOver, setIsDragOver] = createSignal(false);

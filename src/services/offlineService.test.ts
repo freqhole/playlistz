@@ -12,6 +12,15 @@ import {
 import type { Playlist } from "../types/playlist.js";
 import { mockManager } from "../test-setup.js";
 
+// Mock import.meta.env to ensure tests run in production mode
+vi.stubGlobal("import", {
+  meta: {
+    env: {
+      DEV: false,
+    },
+  },
+});
+
 Object.defineProperty(global, "URL", {
   value: {
     createObjectURL: vi.fn(() => `blob:mock-url-${Math.random()}`),

@@ -10,4 +10,9 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   );
 }
 
+// clear any existing loading content
+if (root) {
+  root.innerHTML = "";
+}
+
 render(() => <App />, root!);

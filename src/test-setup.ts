@@ -499,7 +499,7 @@ export async function cleanupTestDB(): Promise<void> {
           indexedDB.deleteDatabase(db.name);
         }
       }
-    } catch (error) {
+    } catch {
       // Some environments may not support indexedDB.databases()
       // In that case, fake-indexeddb will handle cleanup automatically
     }

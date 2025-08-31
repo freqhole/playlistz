@@ -200,6 +200,11 @@ async function registerServiceWorker(): Promise<boolean> {
         return;
       }
 
+      // Skip service worker registration in development mode
+      if (import.meta.env?.DEV) {
+        return;
+      }
+
       const swPath = "./sw.js";
       const registration = await navigator.serviceWorker.register(swPath);
       await navigator.serviceWorker.ready;
