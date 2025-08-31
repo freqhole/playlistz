@@ -560,10 +560,12 @@ describe("Standalone Service", () => {
       const startTime = performance.now();
 
       // Test multiple songs
-      const songs = Array.from({ length: 100 }, (_, i) => ({
-        id: `song${i}`,
-        title: `Song ${i}`,
-      }));
+      const songs = Array.from({ length: 100 }, (_, i) =>
+        createMockSong({
+          id: `song${i}`,
+          title: `song ${i}`,
+        })
+      );
 
       // Mock some songs with audio data, some without
       for (let i = 0; i < 100; i++) {
@@ -606,15 +608,20 @@ describe("Standalone Service", () => {
         const playlistData = {
           playlist: {
             id: "existing-playlist",
-            title: "Updated Playlist",
+            title: "updated playlist",
+            description: "test description",
             rev: 2, // Higher revision
           },
           songs: [
             {
               id: "existing-song",
-              title: "Updated Song",
+              title: "updated song",
+              artist: "test artist",
+              album: "test album",
+              duration: 180,
               sha: "new-sha", // Different SHA
               originalFilename: "updated.mp3",
+              fileSize: 1024,
             },
           ],
         };
@@ -654,13 +661,19 @@ describe("Standalone Service", () => {
         const playlistData = {
           playlist: {
             id: "same-rev-playlist",
-            title: "Same Rev Playlist",
+            title: "same rev playlist",
+            description: "test description",
             rev: 1, // Same revision
           },
           songs: [
             {
               id: "song1",
-              title: "Song One",
+              title: "song one",
+              artist: "test artist",
+              album: "test album",
+              duration: 180,
+              originalFilename: "song1.mp3",
+              fileSize: 1024,
               sha: "same-sha",
             },
           ],
@@ -693,8 +706,12 @@ describe("Standalone Service", () => {
           songs: [
             {
               id: "new-song",
-              title: "New Song",
+              title: "new song",
+              artist: "test artist",
+              album: "test album",
+              duration: 180,
               originalFilename: "new.mp3",
+              fileSize: 1024,
               sha: "new-sha",
             },
           ],
@@ -808,7 +825,7 @@ describe("Standalone Service", () => {
 
     describe("songNeedsAudioData advanced scenarios", () => {
       it("should handle songs with zero-length audio data", async () => {
-        const mockSong = { id: "zero-audio-song" };
+        const mockSong = createMockSong({ id: "zero-audio-song" });
 
         mockDB.get.mockResolvedValue({
           id: "zero-audio-song",
@@ -821,7 +838,7 @@ describe("Standalone Service", () => {
       });
 
       it("should handle songs with null audio data", async () => {
-        const mockSong = { id: "null-audio-song" };
+        const mockSong = createMockSong({ id: "empty-audio-song" });
 
         mockDB.get.mockResolvedValue({
           id: "null-audio-song",
@@ -834,7 +851,7 @@ describe("Standalone Service", () => {
       });
 
       it("should handle songs with valid audio data", async () => {
-        const mockSong = { id: "valid-audio-song" };
+        const mockSong = createMockSong({ id: "invalid-song" });
 
         mockDB.get.mockResolvedValue({
           id: "valid-audio-song",
@@ -862,17 +879,23 @@ describe("Standalone Service", () => {
       const playlistData = {
         playlist: {
           id: "image-playlist",
-          title: "Image Playlist",
+          title: "image playlist",
+          description: "test description",
           imageExtension: ".jpg",
           imageMimeType: "image/jpeg",
         },
         songs: [
           {
             id: "image-song",
-            title: "Image Song",
-            imageExtension: ".png",
-            imageMimeType: "image/png",
-            originalFilename: "image-song.mp3",
+            title: "image song",
+            artist: "test artist",
+            album: "test album",
+            duration: 180,
+            fileSize: 1024,
+            sha: "test-sha",
+            imageExtension: ".jpg",
+            imageMimeType: "image/jpeg",
+            originalFilename: "song.mp3",
           },
         ],
       };
@@ -950,12 +973,17 @@ describe("Standalone Service", () => {
       const playlistData = {
         playlist: {
           id: "large-playlist",
-          title: "Large Playlist",
+          title: "large playlist",
+          description: "test description",
         },
         songs: Array.from({ length: largeSongCount }, (_, i) => ({
           id: `song-${i}`,
-          title: `Song ${i}`,
+          title: `song ${i}`,
+          artist: "test artist",
+          album: "test album",
+          duration: 180,
           originalFilename: `song-${i}.mp3`,
+          fileSize: 1024,
           sha: `sha-${i}`,
         })),
       };

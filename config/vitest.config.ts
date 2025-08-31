@@ -2,15 +2,12 @@ import { defineConfig } from "vitest/config";
 import solid from "vite-plugin-solid";
 
 export default defineConfig({
+  // @ts-expect-error - vite-plugin-solid types don't perfectly match vitest config
   plugins: [solid()],
   test: {
     globals: true,
     environment: "jsdom",
-    include: [
-      "src/**/*.test.ts",
-      "src/**/*.test.tsx",
-      "src/**/*.spec.ts",
-    ],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts"],
     setupFiles: ["src/test-setup.ts"],
     coverage: {
       provider: "v8",
@@ -20,7 +17,7 @@ export default defineConfig({
         "src/**/*.test.ts",
         "src/**/*.test.tsx",
         "src/**/*.spec.ts",
-        "src/test-setup.ts"
+        "src/test-setup.ts",
       ],
       thresholds: {
         branches: 70,

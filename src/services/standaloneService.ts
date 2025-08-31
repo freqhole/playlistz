@@ -719,12 +719,16 @@ async function loadImageIntoIndexedDB(
     // For playlists, mutateAndNotify should automatically trigger reactivity
 
     // Remove from loading set
-    loadingImages.delete(item.imageFilePath);
+    if (item.imageFilePath) {
+      loadingImages.delete(item.imageFilePath);
+    }
 
     return updatedItem;
   } catch (error) {
     console.warn(`Error loading image for ${item.id}:`, error);
-    loadingImages.delete(item.imageFilePath);
+    if (item.imageFilePath) {
+      loadingImages.delete(item.imageFilePath);
+    }
     return null;
   }
 }

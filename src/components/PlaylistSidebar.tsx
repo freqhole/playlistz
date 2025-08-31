@@ -16,7 +16,16 @@ import {
 export function PlaylistSidebar() {
   const [isCreating, setIsCreating] = createSignal(false);
   const [searchQuery, setSearchQuery] = createSignal("");
-  const [storageInfo, setStorageInfo] = createSignal<any>({});
+  const [storageInfo, setStorageInfo] = createSignal<{
+    quota?: number;
+    usage?: number;
+    usagePercentage?: number;
+    persistent?: boolean;
+    error?: string;
+    quotaFormatted?: string;
+    usageFormatted?: string;
+    usagePercent?: number;
+  }>({});
 
   const playlistManager = usePlaylistzManager();
   const uiState = usePlaylistzUI();

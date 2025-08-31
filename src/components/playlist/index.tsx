@@ -189,7 +189,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 {/* save offline button */}
                 <Show
                   when={
-                    (window as any).STANDALONE_MODE &&
+                    window.STANDALONE_MODE &&
                     window.location.protocol !== "file:"
                   }
                 >

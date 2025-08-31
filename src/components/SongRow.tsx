@@ -309,7 +309,7 @@ export function SongRow(props: SongRowProps) {
                           }
                         >
                           <img
-                            src={imageUrl}
+                            src={imageUrl || undefined}
                             alt={`${songData().title} album art`}
                             class="w-12 h-12 object-cover"
                           />

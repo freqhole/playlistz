@@ -1,4 +1,5 @@
 // type guards to avoid casting and improve type safety
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import type { Playlist, Song } from "../types/playlist.js";
 

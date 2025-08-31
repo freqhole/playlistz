@@ -16,11 +16,12 @@ import { PlaylistCoverModal } from "./PlaylistCoverModal.js";
 import { PlaylistContainer } from "./playlist/index.js";
 
 // global fn registration for standalone mode
-if (typeof window !== "undefined" && (window as any).STANDALONE_MODE) {
+if (typeof window !== "undefined" && window.STANDALONE_MODE) {
   // define the fn early so it's available for HTML initialization
-  (window as any).initializeStandalonePlaylist = function (playlistData: any) {
+  window.initializeStandalonePlaylist = function (playlistData: unknown) {
     // store the data and defer to the real function when it's ready
-    (window as any).DEFERRED_PLAYLIST_DATA = playlistData;
+    window.DEFERRED_PLAYLIST_DATA =
+      playlistData as import("../services/standaloneService.js").StandaloneData;
   };
 }
 
