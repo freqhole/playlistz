@@ -194,49 +194,41 @@ export function updatePWAManifest(
  * Register service worker
  */
 async function registerServiceWorker(): Promise<boolean> {
-  setTimeout(async () => {
-    try {
-      if (!("serviceWorker" in navigator)) {
-        return;
-      }
-
-      // Skip service worker registration in development mode
-      if (import.meta.env?.DEV) {
-        return;
-      }
-
-      const swPath = "./sw.js";
-      const registration = await navigator.serviceWorker.register(swPath);
-      await navigator.serviceWorker.ready;
-
-      setServiceWorkerReady(true);
-
-      // Listen for service worker messages
-      navigator.serviceWorker.addEventListener("message", (event) => {
-        const { type } = event.data;
-        if (type === "SW_READY") {
-          cacheCurrentPage();
-        }
-      });
-
-      // Check if SW is already controlling and cache page if so
-      if (navigator.serviceWorker.controller) {
-        cacheCurrentPage();
-      } else {
-        const newWorker =
-          registration.active ||
-          registration.installing ||
-          registration.waiting;
-        if (newWorker) {
-          newWorker.postMessage({ type: "CLAIM_CLIENTS" });
-        }
-      }
-    } catch (error) {
-      console.warn("⚠️ Service worker registration failed:", error);
+  try {
+    if (!("serviceWorker" in navigator)) {
+      return false;
     }
-  }, 100);
 
-  return false;
+    const swPath = "./sw.js";
+    const registration = await navigator.serviceWorker.register(swPath);
+    await navigator.serviceWorker.ready;
+
+    setServiceWorkerReady(true);
+
+    // Listen for service worker messages
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      const { type } = event.data;
+      if (type === "SW_READY") {
+        cacheCurrentPage();
+      }
+    });
+
+    // Check if SW is already controlling and cache page if so
+    if (navigator.serviceWorker.controller) {
+      cacheCurrentPage();
+    } else {
+      const newWorker =
+        registration.active || registration.installing || registration.waiting;
+      if (newWorker) {
+        newWorker.postMessage({ type: "CLAIM_CLIENTS" });
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.warn("service worker registration failed:", error);
+    return false;
+  }
 }
 
 /**
@@ -305,7 +297,7 @@ export async function initializeOfflineSupport(
   const imagePath = playlist ? getPlaylistImagePath(playlist) : undefined;
   generatePWAManifest(playlistTitle, imagePath);
   await requestPersistentStorage();
-  registerServiceWorker();
+  await registerServiceWorker();
 }
 
 /**

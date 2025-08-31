@@ -1,4 +1,32 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Mock navigator using vi.hoisted to ensure it runs before module imports
+vi.hoisted(() => {
+  Object.defineProperty(global, "navigator", {
+    value: {
+      onLine: true,
+      serviceWorker: {
+        register: vi.fn().mockResolvedValue({}),
+        ready: Promise.resolve({
+          addEventListener: vi.fn(),
+        }),
+        addEventListener: vi.fn(),
+        controller: {
+          postMessage: vi.fn(),
+        },
+      },
+      storage: {
+        persist: vi.fn().mockResolvedValue(true),
+        estimate: vi.fn().mockResolvedValue({
+          usage: 100000000,
+          quota: 1000000000,
+        }),
+      },
+    },
+    writable: true,
+  });
+});
+
 import {
   isOnline,
   serviceWorkerReady,
@@ -11,15 +39,6 @@ import {
 } from "./offlineService.js";
 import type { Playlist } from "../types/playlist.js";
 import { mockManager } from "../test-setup.js";
-
-// Mock import.meta.env to ensure tests run in production mode
-vi.stubGlobal("import", {
-  meta: {
-    env: {
-      DEV: false,
-    },
-  },
-});
 
 Object.defineProperty(global, "URL", {
   value: {
@@ -46,6 +65,18 @@ describe("Offline Service Tests", () => {
   beforeEach(() => {
     mockManager.resetAllMocks();
     mockManager.resetGlobalAPIs();
+
+    // Reset navigator mocks to default values
+    global.navigator.onLine = true;
+    global.navigator.serviceWorker.register = vi.fn().mockResolvedValue({});
+    global.navigator.serviceWorker.controller = {
+      postMessage: vi.fn(),
+    };
+    global.navigator.storage.persist = vi.fn().mockResolvedValue(true);
+    global.navigator.storage.estimate = vi.fn().mockResolvedValue({
+      usage: 100000000,
+      quota: 1000000000,
+    });
 
     // Ensure document.querySelector returns proper mock elements
     vi.mocked(document.querySelector).mockImplementation((selector) => {
@@ -392,13 +423,11 @@ describe("Offline Service Tests", () => {
           register: mockRegister,
           ready: Promise.resolve(mockServiceWorkerRegistration),
           addEventListener: mockAddEventListener,
+          controller: null,
         },
       });
 
       await initializeOfflineSupport("Test Playlist");
-
-      // Wait for setTimeout to execute service worker registration
-      await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(mockRegister).toHaveBeenCalledWith("./sw.js");
     });
@@ -441,9 +470,6 @@ describe("Offline Service Tests", () => {
       serviceWorker.addEventListener = mockAddEventListener;
 
       await initializeOfflineSupport("Test Playlist");
-
-      // Wait for service worker registration and message listener setup
-      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Check if addEventListener was called on navigator.serviceWorker
       expect(mockAddEventListener).toHaveBeenCalledWith(

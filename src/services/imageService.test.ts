@@ -51,6 +51,13 @@ global.URL = {
   revokeObjectURL: vi.fn(),
 } as any;
 
+global.window = {
+  STANDALONE_MODE: false,
+  location: {
+    protocol: "http:",
+  },
+} as any;
+
 // Mock Blob with proper methods and properties
 global.Blob = class MockBlob {
   public type: string;

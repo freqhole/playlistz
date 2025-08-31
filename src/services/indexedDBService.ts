@@ -246,8 +246,11 @@ async function mutatePlaylist(config: {
 
   // broadcast for cross-tab updates
   const bc = new BroadcastChannel(`${DB_NAME}-changes`);
-  bc.postMessage({ type: "mutation", store: PLAYLISTS_STORE });
-  bc.close();
+  try {
+    bc.postMessage({ type: "mutation", store: PLAYLISTS_STORE });
+  } finally {
+    bc.close();
+  }
 }
 
 async function mutateSong(config: {
@@ -274,8 +277,11 @@ async function mutateSong(config: {
 
   // broadcast for cross-tab updates
   const bc = new BroadcastChannel(`${DB_NAME}-changes`);
-  bc.postMessage({ type: "mutation", store: SONGS_STORE });
-  bc.close();
+  try {
+    bc.postMessage({ type: "mutation", store: SONGS_STORE });
+  } finally {
+    bc.close();
+  }
 }
 
 export async function mutateAndNotify<T extends Playlist | Song>({

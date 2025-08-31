@@ -18,6 +18,25 @@ vi.mock("../utils/hashUtils.js", () => ({
   calculateSHA256: vi.fn(),
 }));
 
+// mock window and fetch for browser apis
+Object.defineProperty(global, "window", {
+  value: {
+    location: {
+      href: "http://localhost:3000",
+    },
+  },
+  writable: true,
+});
+
+global.fetch = vi.fn(() =>
+  Promise.resolve({
+    text: () =>
+      Promise.resolve(
+        "<html><head><title>playlistz</title></head><body></body></html>"
+      ),
+  })
+) as any;
+
 // Mock JSZip
 vi.mock("jszip", () => ({
   default: vi.fn(() => ({
@@ -640,6 +659,7 @@ describe("Playlist Download Service", () => {
     it("should handle ZIP files without playlist.json", async () => {
       const mockEmptyZipFile = {
         files: {}, // No playlist.json
+        file: vi.fn(() => []), // no files found
       };
 
       vi.mocked(JSZip).mockImplementation(
@@ -678,6 +698,16 @@ describe("Playlist Download Service", () => {
             async: vi.fn().mockResolvedValue("invalid json"),
           },
         },
+        file: vi.fn((pattern) => {
+          if (pattern instanceof RegExp && pattern.test("playlist.json")) {
+            return [
+              {
+                async: vi.fn().mockResolvedValue("invalid json"),
+              },
+            ];
+          }
+          return [];
+        }),
       };
 
       vi.mocked(JSZip).mockImplementation(

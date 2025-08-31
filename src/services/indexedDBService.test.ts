@@ -189,6 +189,24 @@ describe("Database Efficiency Tests", () => {
     mockStore.delete = mockTransactionStore.delete;
   });
 
+  // Helper function to create a complete mock song for tests
+  function createMockSong(overrides: Partial<any> = {}): any {
+    return {
+      id: "test-song",
+      mimeType: "audio/mpeg",
+      originalFilename: "test.mp3",
+      title: "Test Song",
+      artist: "Test Artist",
+      album: "Test Album",
+      duration: 180,
+      position: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      playlistId: "test-playlist",
+      ...overrides,
+    };
+  }
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -784,18 +802,32 @@ describe("Database Efficiency Tests", () => {
         it("should update playlist rev", async () => {
           const playlistId = "test-playlist";
 
-          // Mock the store to return a playlist with rev 2
-          mockStore.get.mockResolvedValue({
-            id: playlistId,
-            rev: 2,
-            songIds: [],
-            title: "Test Playlist",
+          // Mock the transaction store to return a playlist with rev 2
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue({
+              id: playlistId,
+              rev: 2,
+              songIds: [],
+              title: "Test Playlist",
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            }),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
           });
 
           await updatePlaylist(playlistId, { rev: 3 });
 
-          expect(mockStore.put).toHaveBeenCalled();
-          const putCall = mockStore.put.mock.calls[0];
+          expect(mockTransactionStore.put).toHaveBeenCalled();
+          const putCall = mockTransactionStore.put.mock.calls[0];
           expect(putCall[0].rev).toBe(3);
         });
       });
@@ -833,10 +865,25 @@ describe("Database Efficiency Tests", () => {
             sha: "abc123def456",
           };
 
+          // Mock the transaction store to return a complete song
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue(createMockSong({ id: songId })),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
+          });
+
           await updateSong(songId, updates);
 
-          expect(mockStore.put).toHaveBeenCalled();
-          const putCall = mockStore.put.mock.calls[0];
+          expect(mockTransactionStore.put).toHaveBeenCalled();
+          const putCall = mockTransactionStore.put.mock.calls[0];
           expect(putCall[0].sha).toBe("abc123def456");
         });
       });
@@ -899,11 +946,25 @@ describe("Database Efficiency Tests", () => {
         it("should handle updateSong with SHA for legacy songs", async () => {
           const songId = "legacy-song";
 
-          // Mock existing song without SHA
-          mockStore.get.mockResolvedValue({
-            id: songId,
-            title: "Legacy Song",
-            // sha is undefined
+          // Mock the transaction store to return a complete song without SHA
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue(
+              createMockSong({
+                id: songId,
+                title: "Legacy Song",
+                // sha is undefined
+              })
+            ),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
           });
 
           const updates = {
@@ -912,8 +973,8 @@ describe("Database Efficiency Tests", () => {
 
           await updateSong(songId, updates);
 
-          expect(mockStore.put).toHaveBeenCalled();
-          const putCall = mockStore.put.mock.calls[0];
+          expect(mockTransactionStore.put).toHaveBeenCalled();
+          const putCall = mockTransactionStore.put.mock.calls[0];
           expect(putCall[0].sha).toBe("newly-calculated-sha");
         });
       });
@@ -941,29 +1002,60 @@ describe("Database Efficiency Tests", () => {
 
         it("should handle empty SHA string", async () => {
           const songId = "test-song";
+
+          // Mock the transaction store to return a complete song
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue(createMockSong({ id: songId })),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
+          });
+
           const updates = {
-            sha: "", // Empty string
+            sha: "",
           };
 
           await updateSong(songId, updates);
 
-          expect(mockStore.put).toHaveBeenCalled();
-          const putCall = mockStore.put.mock.calls[0];
+          expect(mockTransactionStore.put).toHaveBeenCalled();
+          const putCall = mockTransactionStore.put.mock.calls[0];
           expect(putCall[0].sha).toBe("");
         });
 
         it("should handle malformed SHA", async () => {
           const songId = "test-song";
+
+          // Mock the transaction store to return a complete song
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue(createMockSong({ id: songId })),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
+          });
+
           const updates = {
-            sha: "not-a-valid-sha", // Invalid SHA format
+            sha: "not-a-valid-sha", // Invalid format
           };
 
           await updateSong(songId, updates);
 
-          expect(mockStore.put).toHaveBeenCalled();
-          const putCall = mockStore.put.mock.calls[0];
+          expect(mockTransactionStore.put).toHaveBeenCalled();
+          const putCall = mockTransactionStore.put.mock.calls[0];
           expect(putCall[0].sha).toBe("not-a-valid-sha");
-          // Note: We store whatever is provided - validation happens elsewhere
         });
       });
 
@@ -1120,9 +1212,22 @@ describe("Database Efficiency Tests", () => {
         });
 
         it("should handle put operation errors", async () => {
-          mockStore.put.mockRejectedValueOnce(
-            new Error("Put operation failed")
-          );
+          // Mock the transaction store to return a complete song, but make put fail
+          const mockTransactionStore = {
+            put: vi
+              .fn()
+              .mockRejectedValueOnce(new Error("Put operation failed")),
+            get: vi.fn().mockResolvedValue(createMockSong({ id: "song-123" })),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
+          });
 
           await expect(
             updateSong("song-123", { title: "New Title" })
@@ -1202,13 +1307,28 @@ describe("Database Efficiency Tests", () => {
           const updates1 = { title: "Title 1" };
           const updates2 = { artist: "Artist 2" };
 
+          // Mock the transaction store to return a complete song
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue(createMockSong({ id: songId })),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
+          });
+
           const promises = [
             updateSong(songId, updates1),
             updateSong(songId, updates2),
           ];
           await Promise.allSettled(promises);
 
-          expect(mockStore.put).toHaveBeenCalledTimes(2);
+          expect(mockTransactionStore.put).toHaveBeenCalledTimes(2);
         });
 
         it("should handle concurrent removeSongFromPlaylist operations", async () => {
@@ -1243,6 +1363,25 @@ describe("Database Efficiency Tests", () => {
           const songCount = 100;
           const updatePromises = [];
 
+          // Mock the transaction store to return a complete song for any id
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi
+              .fn()
+              .mockImplementation((id) =>
+                Promise.resolve(createMockSong({ id }))
+              ),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
+          });
+
           for (let i = 0; i < songCount; i++) {
             updatePromises.push(
               updateSong(`song-${i}`, { title: `Song ${i}` })
@@ -1250,7 +1389,7 @@ describe("Database Efficiency Tests", () => {
           }
 
           await Promise.all(updatePromises);
-          expect(mockStore.put).toHaveBeenCalledTimes(songCount);
+          expect(mockTransactionStore.put).toHaveBeenCalledTimes(songCount);
         });
 
         it("should handle memory pressure during large operations", async () => {
@@ -1340,11 +1479,26 @@ describe("Database Efficiency Tests", () => {
             duration: -1, // Negative duration
           };
 
+          // Mock the transaction store to return a complete song
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue(createMockSong({ id: songId })),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
+          });
+
           // The service should still apply the updates (validation happens at UI level)
           await updateSong(songId, invalidUpdates);
 
-          expect(mockStore.put).toHaveBeenCalled();
-          const putCall = mockStore.put.mock.calls[0];
+          expect(mockTransactionStore.put).toHaveBeenCalled();
+          const putCall = mockTransactionStore.put.mock.calls[0];
           expect(putCall[0].title).toBe("");
           expect(putCall[0].duration).toBe(-1);
         });
@@ -1447,24 +1601,36 @@ describe("Database Efficiency Tests", () => {
             done: Promise.resolve(),
           });
 
-          const mockBroadcastChannel = {
-            postMessage: vi.fn().mockImplementation(() => {
-              throw new Error("postMessage failed");
-            }),
-            close: vi.fn(),
-          };
+          // Track all broadcast channel instances since the function creates multiple
+          const mockBroadcastChannels: any[] = [];
+          let bcCloseCallCount = 0;
 
-          vi.mocked(BroadcastChannel).mockReturnValue(
-            mockBroadcastChannel as any
-          );
+          vi.mocked(BroadcastChannel).mockImplementation(() => {
+            const mockBC = {
+              postMessage: vi.fn().mockImplementation(() => {
+                throw new Error("postMessage failed");
+              }),
+              close: vi.fn().mockImplementation(() => {
+                bcCloseCallCount++;
+              }),
+            };
+            mockBroadcastChannels.push(mockBC);
+            return mockBC as any;
+          });
 
+          // The function will throw due to postMessage errors, but we want to verify
+          // that BroadcastChannels are still properly closed
           try {
             await removeSongFromPlaylist(playlistId, songId);
-          } catch {
-            // Ignore errors for this test
+          } catch (error) {
+            // Expected to throw due to postMessage mock errors
+            expect(error).toBeInstanceOf(Error);
           }
 
-          expect(mockBroadcastChannel.close).toHaveBeenCalled();
+          // Verify that at least one broadcast channel was closed
+          // The function creates 2 BroadcastChannels: one in mutateAndNotify, one directly
+          expect(bcCloseCallCount).toBeGreaterThan(0);
+          expect(mockBroadcastChannels.length).toBeGreaterThan(0);
         });
       });
 
@@ -1483,6 +1649,22 @@ describe("Database Efficiency Tests", () => {
 
         it("should handle song metadata with Unicode characters", async () => {
           const songId = "unicode-song";
+
+          // Mock the transaction store to return a complete song
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue(createMockSong({ id: songId })),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
+          });
+
           const updates = {
             title: "Café de Flore",
             artist: "François Beaumont",
@@ -1491,8 +1673,8 @@ describe("Database Efficiency Tests", () => {
 
           await updateSong(songId, updates);
 
-          expect(mockStore.put).toHaveBeenCalled();
-          const putCall = mockStore.put.mock.calls[0];
+          expect(mockTransactionStore.put).toHaveBeenCalled();
+          const putCall = mockTransactionStore.put.mock.calls[0];
           expect(putCall[0].title).toBe("Café de Flore");
           expect(putCall[0].artist).toBe("François Beaumont");
         });
@@ -1501,10 +1683,25 @@ describe("Database Efficiency Tests", () => {
           const longTitle = "A".repeat(1000);
           const songId = "long-metadata-song";
 
+          // Mock the transaction store to return a complete song
+          const mockTransactionStore = {
+            put: vi.fn().mockResolvedValue(undefined),
+            get: vi.fn().mockResolvedValue(createMockSong({ id: songId })),
+            delete: vi.fn().mockResolvedValue(undefined),
+            index: vi.fn(() => ({
+              openCursor: vi.fn(() => Promise.resolve(null)),
+            })),
+          };
+
+          mockDB.transaction.mockReturnValue({
+            objectStore: vi.fn(() => mockTransactionStore),
+            done: Promise.resolve(),
+          });
+
           await updateSong(songId, { title: longTitle });
 
-          expect(mockStore.put).toHaveBeenCalled();
-          const putCall = mockStore.put.mock.calls[0];
+          expect(mockTransactionStore.put).toHaveBeenCalled();
+          const putCall = mockTransactionStore.put.mock.calls[0];
           expect(putCall[0].title).toBe(longTitle);
         });
       });
