@@ -67,11 +67,17 @@ describe("Offline Service Tests", () => {
     mockManager.resetGlobalAPIs();
 
     // Reset navigator mocks to default values
-    global.navigator.onLine = true;
+    Object.defineProperty(global.navigator, "onLine", {
+      writable: true,
+      value: true,
+    });
     global.navigator.serviceWorker.register = vi.fn().mockResolvedValue({});
-    global.navigator.serviceWorker.controller = {
-      postMessage: vi.fn(),
-    };
+    Object.defineProperty(global.navigator.serviceWorker, "controller", {
+      writable: true,
+      value: {
+        postMessage: vi.fn(),
+      },
+    });
     global.navigator.storage.persist = vi.fn().mockResolvedValue(true);
     global.navigator.storage.estimate = vi.fn().mockResolvedValue({
       usage: 100000000,
