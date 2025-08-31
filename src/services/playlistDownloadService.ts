@@ -7,6 +7,50 @@ import {
 } from "./indexedDBService.js";
 import { calculateSHA256 } from "../utils/hashUtils.js";
 
+// types for imported playlist data that may not match our exact schema
+interface ImportedPlaylistData {
+  playlist?: {
+    id?: string;
+    title?: string;
+    description?: string;
+    imageData?: ArrayBuffer;
+    thumbnailData?: ArrayBuffer;
+    imageType?: string;
+    createdAt?: string;
+    updatedAt?: string;
+    rev?: number;
+    songCount?: number;
+    totalDuration?: number;
+    imageExtension?: string | null;
+    imageMimeType?: string | null;
+    imageBase64?: string;
+  };
+  songs?: ImportedSongMetadata[];
+}
+
+interface ImportedSongMetadata {
+  id?: string;
+  title?: string;
+  artist?: string;
+  album?: string;
+  duration?: number;
+  originalFilename?: string;
+  safeFilename?: string;
+  fileSize?: number;
+  mimeType?: string;
+  position?: number;
+  imageData?: ArrayBuffer;
+  thumbnailData?: ArrayBuffer;
+  imageType?: string;
+  imageMimeType?: string | null;
+  imageBase64?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  playlistId?: string;
+  standaloneFilePath?: string;
+  sha?: string;
+}
+
 export interface PlaylistDownloadOptions {
   includeMetadata?: boolean;
   includeImages?: boolean;
@@ -312,14 +356,14 @@ export async function parsePlaylistZip(file: File): Promise<{
     const zip = new JSZip();
     const zipContent = await zip.loadAsync(file);
 
-    let playlistInfo: any = null;
+    let playlistInfo: ImportedPlaylistData["playlist"] | null = null;
     let playlistImageData: ArrayBuffer | undefined;
     let playlistImageType: string | undefined;
     const songs: Omit<Song, "id" | "createdAt" | "updatedAt" | "playlistId">[] =
       [];
 
     // Parse playlist metadata - try new format first, then fall back to old format
-    let playlistData: any = null;
+    let playlistData: ImportedPlaylistData | null = null;
     // Try with root folder first
     let playlistJsonFiles = zipContent.file(/^[^/]+\/data\/playlist\.json$/i);
     if (playlistJsonFiles.length === 0) {
@@ -333,7 +377,7 @@ export async function parsePlaylistZip(file: File): Promise<{
     if (playlistJsonFiles.length > 0) {
       const playlistContent = await playlistJsonFiles[0]!.async("string");
       playlistData = JSON.parse(playlistContent);
-      playlistInfo = playlistData.playlist;
+      playlistInfo = playlistData?.playlist || null;
     } else {
       // Fall back to old format
       const playlistInfoFile = zipContent.file("playlist-info.json");
@@ -360,12 +404,12 @@ export async function parsePlaylistZip(file: File): Promise<{
     if (coverFiles.length > 0) {
       playlistImageData = await coverFiles[0]!.async("arraybuffer");
       playlistImageType = getMimeTypeFromExtension(coverFiles[0]!.name);
-    } else if (playlistData && playlistData.playlist.imageBase64) {
+    } else if (playlistData && playlistData.playlist?.imageBase64) {
       // Use embedded base64 image from playlist.json
       playlistImageData = base64ToArrayBuffer(
         playlistData.playlist.imageBase64
       );
-      playlistImageType = playlistData.playlist.imageMimeType;
+      playlistImageType = playlistData.playlist.imageMimeType || undefined;
     }
 
     // Parse M3U file if present to get song order and metadata
@@ -394,10 +438,10 @@ export async function parsePlaylistZip(file: File): Promise<{
       const baseName = fileName.replace(/\.[^.]+$/, "");
 
       // Get metadata from playlist.json if available, otherwise try individual metadata file
-      let songMetadata: any = {};
+      let songMetadata: Partial<ImportedSongMetadata> = {};
       if (playlistData && playlistData.songs) {
         const songData = playlistData.songs.find(
-          (s: any) =>
+          (s: ImportedSongMetadata) =>
             s.safeFilename === fileName || s.originalFilename === fileName
         );
         if (songData) {
@@ -427,7 +471,7 @@ export async function parsePlaylistZip(file: File): Promise<{
 
       if (songMetadata.imageBase64) {
         imageData = base64ToArrayBuffer(songMetadata.imageBase64);
-        imageType = songMetadata.imageMimeType;
+        imageType = songMetadata.imageMimeType || undefined;
       } else {
         // Check for image files in data folder first, then root
         let imageFiles = zipContent.file(
@@ -542,21 +586,23 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 /**
  * Generates a standalone HTML file with embedded playlist data
  */
-async function generateStandaloneHTML(playlistData: any): Promise<string> {
+async function generateStandaloneHTML(
+  playlistData: ImportedPlaylistData
+): Promise<string> {
   // Fetch the clean HTML source instead of serializing the mutated DOM
   const response = await fetch(window.location.href);
   const currentHTML = await response.text();
 
   // Generate Open Graph meta tags for rich link previews
   const playlist = playlistData.playlist;
-  const songCount = playlistData.songs.length;
+  const songCount = playlistData.songs?.length || 0;
   const description =
-    playlist.description ||
+    playlist?.description ||
     `a playlist with ${songCount} song${songCount === 1 ? "" : "z"}`;
 
   // Get relative path to playlist cover image if available
   let imageUrl = "";
-  if (playlist.imageMimeType) {
+  if (playlist?.imageMimeType) {
     const extension = getFileExtensionFromMimeType(playlist.imageMimeType);
     imageUrl = `/data/playlist-cover${extension}`;
   }
@@ -564,7 +610,7 @@ async function generateStandaloneHTML(playlistData: any): Promise<string> {
   const ogMetaTags = `
     <!-- Open Graph meta tags for rich link previews -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="${playlist.title.replace(/"/g, "&quot;")}" />
+    <meta property="og:title" content="${playlist?.title?.replace(/"/g, "&quot;") || "untitled playlist"}" />
     <meta property="og:description" content="${description.replace(/"/g, "&quot;")}" />
     <meta property="og:site_name" content="playlistz" />
     ${imageUrl ? `<meta property="og:image" content="${imageUrl}" />` : ""}
@@ -648,7 +694,7 @@ ${JSON.stringify(playlistData, null, 2)}
   // Also update the title
   let modifiedHTML = currentHTML.replace(
     /<title>.*?<\/title>/i,
-    `<title>${playlist.title.replace(/"/g, "&quot;")} - playlistz</title>`
+    `<title>${playlist?.title?.replace(/"/g, "&quot;") || "untitled playlist"} - playlistz</title>`
   );
 
   modifiedHTML = modifiedHTML.replace(

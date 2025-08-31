@@ -114,7 +114,7 @@ export function getUpdateStats() {
 export function triggerSongUpdateWithOptions(options: {
   songId?: string;
   type?: "edit" | "create" | "delete" | "reorder";
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   specificOnly?: boolean; // Only trigger specific song, not global
 }): void {
   const { songId, specificOnly = false } = options;
@@ -129,9 +129,12 @@ export function triggerSongUpdateWithOptions(options: {
 }
 
 // Development helpers
-if (typeof globalThis !== "undefined" && (globalThis as any).__DEV__) {
+if (
+  typeof globalThis !== "undefined" &&
+  (globalThis as Record<string, unknown>).__DEV__
+) {
   // Expose debugging functions to window in development
-  (globalThis as any).__songReactivity = {
+  (globalThis as Record<string, unknown>).__songReactivity = {
     getSongUpdateTrigger,
     getUpdateStats,
     clearUpdateHistory,

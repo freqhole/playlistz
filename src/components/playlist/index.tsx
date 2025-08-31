@@ -11,8 +11,6 @@ import { AudioPlayer } from "../AudioPlayer.js";
 import { SongRow } from "../SongRow.js";
 
 export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
-  const { playlist } = props;
-
   const playlistManager = usePlaylistzManager();
   const songState = usePlaylistzSongs();
   const uiState = usePlaylistzUI();
@@ -36,7 +34,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   // create a wrapper that passes the playlist context
   const handlePlaySongWithPlaylist = async (song: Song) => {
-    await handlePlaySong(song, playlist());
+    await handlePlaySong(song, props.playlist());
   };
 
   const { isMobile } = uiState;
@@ -53,13 +51,13 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
         <div class={`${isMobile() ? "" : "hidden"}`}>
           <button
             onClick={() => {
-              openImageModal(playlist(), playlistSongs(), 0);
+              openImageModal(props.playlist(), playlistSongs(), 0);
             }}
             class="w-full h-full overflow-hidden hover:bg-gray-900 flex items-center justify-center transition-colors group"
             title="view playlist images"
           >
             <Show
-              when={playlist().imageType}
+              when={props.playlist().imageType}
               fallback={
                 <div class="text-center">
                   <svg
@@ -78,7 +76,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               }
             >
               {(() => {
-                const imageUrl = getImageUrlForContext(playlist(), "modal");
+                const imageUrl = getImageUrlForContext(
+                  props.playlist(),
+                  "modal"
+                );
                 return (
                   <>
                     {imageUrl ? (
@@ -115,7 +116,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
             <div class={`bg-black bg-opacity-80`}>
               <input
                 type="text"
-                value={playlist().title}
+                value={props.playlist().title}
                 onInput={(e) => {
                   handlePlaylistUpdate({
                     title: e.currentTarget.value,
@@ -128,7 +129,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
             <div class={`bg-black bg-opacity-80`}>
               <input
                 type="text"
-                value={playlist().description || ""}
+                value={props.playlist().description || ""}
                 placeholder="add description..."
                 onInput={(e) => {
                   handlePlaylistUpdate({
@@ -152,7 +153,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 class="flex items-center justify-center"
                 style={{ "grid-area": "player" }}
               >
-                <AudioPlayer playlist={playlist()} size="w-12 h-12" />
+                <AudioPlayer playlist={props.playlist()} size="w-12 h-12" />
               </div>
 
               {/* top right song info stuff */}
@@ -162,8 +163,8 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 style={{ "grid-area": "info" }}
               >
                 <span class="bg-black bg-opacity-80 p-2">
-                  {playlist().songIds?.length || 0} song
-                  {(playlist().songIds?.length || 0) !== 1 ? "z" : ""}
+                  {props.playlist().songIds?.length || 0} song
+                  {(props.playlist().songIds?.length || 0) !== 1 ? "z" : ""}
                 </span>
                 <span class="bg-black bg-opacity-80 p-2">
                   {(() => {
@@ -317,7 +318,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
         <div class={`${isMobile() ? "hidden" : "ml-4"}`}>
           <button
             onClick={() => {
-              openImageModal(playlist(), playlistSongs(), 0);
+              openImageModal(props.playlist(), playlistSongs(), 0);
             }}
             class="w-39 h-39 overflow-hidden hover:bg-gray-900 flex items-center justify-center transition-colors group"
             style={{ filter: "blur(3px) contrast(3) brightness(0.4)" }}
@@ -329,7 +330,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
             title="view playlist imagez"
           >
             <Show
-              when={playlist().imageType}
+              when={props.playlist().imageType}
               fallback={
                 <div class="text-center">
                   <svg
@@ -348,7 +349,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               }
             >
               {(() => {
-                const imageUrl = getImageUrlForContext(playlist(), "modal");
+                const imageUrl = getImageUrlForContext(
+                  props.playlist(),
+                  "modal"
+                );
                 return (
                   <>
                     {imageUrl ? (
@@ -385,7 +389,9 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
       <div class={`${isMobile() ? "flex-1" : "flex-1 overflow-y-auto"}`}>
         <div class={`${isMobile() ? "space-y-1" : "p-6 space-y-2"}`}>
           <Show
-            when={playlist().songIds && playlist().songIds.length > 0}
+            when={
+              props.playlist().songIds && props.playlist().songIds.length > 0
+            }
             fallback={
               <div class="text-center py-16">
                 <div class="text-gray-400 text-xl mb-4">no songz yet</div>
@@ -394,13 +400,13 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   to this playlist
                 </p>
                 <div class="text-xs text-gray-500 space-y-1">
-                  <div>playlist id: {playlist().id}</div>
+                  <div>playlist id: {props.playlist().id}</div>
                   <div>supported formatz: mp3, wav, flac, aiff, ogg, mp4</div>
                 </div>
               </div>
             }
           >
-            <For each={playlist().songIds}>
+            <For each={props.playlist().songIds}>
               {(songId, index) => (
                 <SongRow
                   songId={songId}
