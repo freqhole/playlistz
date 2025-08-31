@@ -236,6 +236,18 @@ async function mutatePlaylist(config: {
 
   await store.put(updated);
   await tx.done;
+
+  // direct updates to same-tab queries (immediate)
+  const registryKey = `${DB_NAME}-${PLAYLISTS_STORE}`;
+  const querySet = globalQueryRegistry.get(registryKey);
+  if (querySet) {
+    querySet.forEach((fn) => fn());
+  }
+
+  // broadcast for cross-tab updates
+  const bc = new BroadcastChannel(`${DB_NAME}-changes`);
+  bc.postMessage({ type: "mutation", store: PLAYLISTS_STORE });
+  bc.close();
 }
 
 async function mutateSong(config: {
@@ -252,6 +264,18 @@ async function mutateSong(config: {
 
   await store.put(updated);
   await tx.done;
+
+  // direct updates to same-tab queries (immediate)
+  const registryKey = `${DB_NAME}-${SONGS_STORE}`;
+  const querySet = globalQueryRegistry.get(registryKey);
+  if (querySet) {
+    querySet.forEach((fn) => fn());
+  }
+
+  // broadcast for cross-tab updates
+  const bc = new BroadcastChannel(`${DB_NAME}-changes`);
+  bc.postMessage({ type: "mutation", store: SONGS_STORE });
+  bc.close();
 }
 
 export async function mutateAndNotify<T extends Playlist | Song>({
