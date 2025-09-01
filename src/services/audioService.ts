@@ -1,4 +1,4 @@
-// audio service with functional approach
+// audio service with a functional approach
 // uses solidjs-style signals for reactive state management
 
 import { createSignal } from "solid-js";
@@ -54,14 +54,13 @@ function initializeAudio(): HTMLAudioElement {
   audioElement.volume = volume();
   audioElement.preload = "metadata";
 
-  // Event listeners
+  // audio event listenerz
   audioElement.addEventListener("loadstart", () => {
     setIsLoading(true);
-    // Keep the loadingSongId from playSong function
   });
   audioElement.addEventListener("canplay", () => {
     setIsLoading(false);
-    // Note: we don't clear loadingSongIds here as it's handled in playSong
+    // note: don't clear loadingSongIds here as it's handled in playSong
   });
   audioElement.addEventListener("loadedmetadata", () => {
     const newDuration = audioElement?.duration || 0;
@@ -75,7 +74,7 @@ function initializeAudio(): HTMLAudioElement {
     const newCurrentTime = audioElement?.currentTime || 0;
     setCurrentTime(newCurrentTime);
 
-    // Check for preloading next song at halfway point
+    // try to preload next song at halfway point
     const duration = audioElement?.duration || 0;
     if (
       duration > 0 &&
@@ -89,8 +88,8 @@ function initializeAudio(): HTMLAudioElement {
 
   audioElement.addEventListener("play", () => {
     setIsPlaying(true);
-    hasTriggeredPreload = false; // Reset preload flag for new song
-    // Only update media session if we're not in a loading state
+    hasTriggeredPreload = false; // reset preload flag for new song
+    // only update media session if not in a loading state
     if (!isLoading()) {
       updateMediaSession();
     }
@@ -105,10 +104,10 @@ function initializeAudio(): HTMLAudioElement {
   });
 
   audioElement.addEventListener("error", (e) => {
-    console.error("Audio error:", e);
+    console.error("onoz! audio error:", e);
     setIsPlaying(false);
     setIsLoading(false);
-    // Clear all loading songs on audio error
+    // clear all loading songz on audio error
     setLoadingSongIds(new Set<string>());
     updatePageTitle();
   });
@@ -116,28 +115,27 @@ function initializeAudio(): HTMLAudioElement {
   return audioElement;
 }
 
-// Create blob URL from File
 function createAudioURL(file: File): string {
   return URL.createObjectURL(file);
 }
 
-// Clean up blob URL
+// trash old blob URL
 function releaseAudioURL(url: string): void {
   URL.revokeObjectURL(url);
 }
 
-// Update page title with currently playing song
+// update page title with currently playing song
 function updatePageTitle(): void {
   const song = currentSong();
 
   if (song) {
-    document.title = `${song.title} - ${song.artist || "Unknown Artist"} | PLAYLISTZ`;
+    document.title = `${song.title} - ${song.artist || "unknown artist"} | P L A Y L I S T Z`;
   } else {
     document.title = "P L A Y L I S T Z";
   }
 }
 
-// Update Media Session API for OS integration
+// Media Session API stuff
 async function updateMediaSession(): Promise<void> {
   if (!("mediaSession" in navigator)) return;
 
@@ -146,13 +144,11 @@ async function updateMediaSession(): Promise<void> {
   const loading = isLoading();
 
   if (song) {
-    // Get artwork first
     const artwork = await getMediaSessionArtwork(song, playlist || undefined);
 
-    // Clear metadata first, then set it - sometimes helps with iOS Safari
+    // clear metadata first, then set it; cuz iOS Safari
     navigator.mediaSession.metadata = null;
 
-    // Set metadata directly
     navigator.mediaSession.metadata = new MediaMetadata({
       title: loading ? `loading... ${song.title}` : song.title,
       artist: song.artist || "unknown artist",
@@ -160,14 +156,15 @@ async function updateMediaSession(): Promise<void> {
       artwork,
     });
 
-    // set playback state - show paused during loading to prevent timing issues
+    // set playback state - show paused during loading to prevent timing issuez
+    // #TODO: is there a loading state to set here?!
     navigator.mediaSession.playbackState = loading
       ? "paused"
       : isPlaying()
         ? "playing"
         : "paused";
 
-    // set action handlers
+    // setup player control action handlerz
     navigator.mediaSession.setActionHandler("play", () => {
       togglePlayback();
     });
@@ -283,7 +280,7 @@ async function getMediaSessionArtwork(
 ): Promise<MediaImage[]> {
   const artwork: MediaImage[] = [];
 
-  // Try song image first (prefer thumbnail for MediaSession)
+  // try song image first (prefer thumbnail for MediaSession)
   const songImageData = song.thumbnailData || song.imageData;
   if (songImageData && song.imageType) {
     const resizedImageData = await resizeImageForMediaSession(
@@ -336,14 +333,14 @@ async function getMediaSessionArtwork(
         type: playlist.imageType,
       });
     } else {
-      // No artwork available
+      // oops, no artwork available!
     }
   }
 
   return artwork;
 }
 
-// Load playlist songs into queue
+// load playlist songz into queue
 async function loadPlaylistQueue(playlist: Playlist): Promise<void> {
   try {
     const allSongs = await getAllSongs();
@@ -362,13 +359,13 @@ async function loadPlaylistQueue(playlist: Playlist): Promise<void> {
   }
 }
 
-// Refresh playlist queue while maintaining current song position
+// refresh playlist queue while maintaining current song position
 export async function refreshPlaylistQueue(playlist: Playlist): Promise<void> {
   try {
     const currentSong = audioState.currentSong();
     await loadPlaylistQueue(playlist);
 
-    // Update current index to match new position of currently playing song
+    // update current index to match new position of currently playing song
     if (currentSong) {
       const queue = playlistQueue();
       const newIndex = queue.findIndex((song) => song.id === currentSong.id);
@@ -380,17 +377,18 @@ export async function refreshPlaylistQueue(playlist: Playlist): Promise<void> {
   }
 }
 
-// Get the next song in queue
+// get the next song in queue
 function getNextSong(): Song | null {
   const queue = playlistQueue();
   const currentIdx = currentIndex();
 
   if (queue.length === 0) return null;
 
+  // note: repeat mode is mostly unused
   const repeat = repeatMode();
 
   if (repeat === "one") {
-    // Repeat current song
+    // repeat current song
     return currentIdx >= 0 ? queue[currentIdx] || null : null;
   }
 
@@ -401,15 +399,15 @@ function getNextSong(): Song | null {
   }
 
   if (repeat === "all") {
-    // Loop back to first song
+    // loop back to first song
     return queue[0] || null;
   }
 
-  // No repeat, end of queue
+  // no repeat, end of queue
   return null;
 }
 
-// Get the previous song in queue
+// bet the previous song in queue
 function getPreviousSong(): Song | null {
   const queue = playlistQueue();
   const currentIdx = currentIndex();
@@ -463,14 +461,14 @@ async function skipToNextPlayableSong(): Promise<void> {
       await playSong(testSong);
       return; // success!
     } catch (error) {
-      console.error(`failed to play song "${testSong.title}":`, error);
+      console.error(`onoz! failed to play song "${testSong.title}":`, error);
       testIndex++;
       attempts++;
     }
   }
 
   // if we get here, all songs failed to load
-  console.error("all remaining songs failed to load, stopping playback");
+  console.error("oopz! all remaining songs failed to load, stopping playback");
   setIsPlaying(false);
   updateMediaSession();
 }
@@ -493,7 +491,7 @@ async function handleSongEnded(): Promise<void> {
   }
 }
 
-// Play a specific song
+// play a specific song
 export async function playSong(song: Song): Promise<void> {
   const audio = initializeAudio();
 
@@ -522,7 +520,7 @@ export async function playSong(song: Song): Promise<void> {
     setIsLoading(true);
     setCurrentSong(song);
 
-    // Update media session immediately with new song info (fixes iOS lock screen image issue)
+    // update media session immediately with new song info (fixes iOS lock screen image issue)
     await updateMediaSession();
 
     // clear media session position state during loading to prevent timing issues
@@ -751,7 +749,7 @@ export async function playSongFromPlaylist(
   await playSong(song);
 }
 
-// Play entire playlist starting from specific index
+// play entire playlist starting from specific index
 export async function playPlaylist(
   playlist: Playlist,
   startIndex = 0
@@ -781,7 +779,7 @@ async function tryPlaySongFromIndex(startIndex: number): Promise<void> {
   }
 }
 
-// Play next song in playlist
+// play next song in playlist
 export async function playNext(): Promise<void> {
   const queue = playlistQueue();
   const currentIdx = currentIndex();
@@ -820,7 +818,7 @@ export async function playNext(): Promise<void> {
   }
 }
 
-// Play previous song in playlist
+// play previous song in playlist
 export async function playPrevious(): Promise<void> {
   const queue = playlistQueue();
   const currentIdx = currentIndex();
@@ -839,7 +837,7 @@ export async function playPrevious(): Promise<void> {
   }
 }
 
-// Toggle play/pause
+// toggle play/pause
 export async function togglePlayback(): Promise<void> {
   const audio = audioElement;
   if (!audio) {
@@ -855,11 +853,11 @@ export async function togglePlayback(): Promise<void> {
       await audio.play();
     }
   } catch (error) {
-    console.error("Error toggling playback:", error);
+    console.error("onoz! error toggling playback:", error);
   }
 }
 
-// Pause playback
+// pause playback
 export function pause(): void {
   const audio = audioElement;
   if (audio && !audio.paused) {
@@ -867,7 +865,7 @@ export function pause(): void {
   }
 }
 
-// Stop playback and reset
+// stop playback and reset
 export function stop(): void {
   const audio = audioElement;
   if (audio) {
@@ -888,7 +886,7 @@ export function stop(): void {
   updatePageTitle();
 }
 
-// Seek to specific time
+// seek and destroy!
 export function seek(time: number): void {
   const audio = audioElement;
   if (audio && !isNaN(audio.duration)) {
@@ -896,7 +894,7 @@ export function seek(time: number): void {
   }
 }
 
-// Set volume (0 to 1)
+// set volume (0 to 1)
 export function setAudioVolume(newVolume: number): void {
   const clampedVolume = Math.max(0, Math.min(1, newVolume));
   setVolume(clampedVolume);
@@ -907,12 +905,12 @@ export function setAudioVolume(newVolume: number): void {
   }
 }
 
-// Set repeat mode
+// set repeat mode
 export function setRepeatModeValue(mode: "none" | "one" | "all"): void {
   setRepeatMode(mode);
 }
 
-// Toggle repeat mode
+// toggle repeat mode
 export function toggleRepeatMode(): "none" | "one" | "all" {
   const current = repeatMode();
   const modes: ("none" | "one" | "all")[] = ["none", "one", "all"];
@@ -922,7 +920,7 @@ export function toggleRepeatMode(): "none" | "one" | "all" {
   return nextMode;
 }
 
-// Get queue info
+// get queue info
 export function getQueueInfo() {
   const queue = playlistQueue();
   const currentIdx = currentIndex();
@@ -938,7 +936,8 @@ export function getQueueInfo() {
   };
 }
 
-// Jump to specific song in queue
+// jump to specific song in queue
+// #TODO: deal with duplicate fns :/
 export async function playQueueIndex(index: number): Promise<void> {
   const queue = playlistQueue();
 
@@ -953,7 +952,7 @@ export async function playQueueIndex(index: number): Promise<void> {
   }
 }
 
-// Get current audio state
+// get current audio state
 export function getAudioState(): AudioState {
   return {
     currentSong: currentSong(),
@@ -970,7 +969,7 @@ export function getAudioState(): AudioState {
   };
 }
 
-// Format time for display
+// format time for display
 export function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0 || !isFinite(seconds)) return "0:00";
 
@@ -1139,23 +1138,16 @@ export function selectSong(songId: string): void {
   setSelectedSongId(songId);
 }
 
-// Clear the selected song
+// clear the selected song
 export function clearSelectedSong(): void {
   setSelectedSongId(null);
 }
 
-// helper functions for streaming downloads
-
-/**
- * gets the download progress percentage for a song
- */
+// helper functions for streaming downloadz
 export function getSongDownloadProgress(songId: string): number {
   return downloadProgress().get(songId) || 0;
 }
 
-/**
- * checks if a song is currently being cached
- */
 export function isSongCaching(songId: string): boolean {
   return cachingSongIds().has(songId);
 }

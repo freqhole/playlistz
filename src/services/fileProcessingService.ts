@@ -1,5 +1,5 @@
-// File Processing Service for Audio Files
-// Handles file validation, metadata extraction, and processing
+// file processing service for audio filez
+// can handle file validation, metadata extraction, and processing!
 
 import { extractAlbumArt, processPlaylistCover } from "./imageService.js";
 import type {
@@ -8,18 +8,18 @@ import type {
   Song,
 } from "../types/playlist.js";
 
-// Check if file is a supported audio format
+// check if file is a supported audio format
 export function isAudioFile(file: File): boolean {
   return file.type.startsWith("audio/");
 }
 
-// Validate file size (default 100MB limit)
+// validate file size (default 100MB limit)
 export function validateFileSize(file: File, maxSizeMB = 100): boolean {
   const maxBytes = maxSizeMB * 1024 * 1024;
   return file.size <= maxBytes;
 }
 
-// Extract basic metadata from file name
+// extract basic metadata from file name
 function extractMetadataFromFilename(filename: string): Partial<AudioMetadata> {
   // Remove file extension
   const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
@@ -59,13 +59,13 @@ async function extractDuration(file: File): Promise<number> {
 
       audio.addEventListener("error", (e) => {
         URL.revokeObjectURL(url);
-        console.warn("Could not extract duration from audio file:", e);
+        console.warn("could not extract duration from audio file:", e);
         resolve(0); // Don't reject, just return 0
       });
 
       audio.src = url;
     } catch (error) {
-      console.warn("Failed to create blob URL for duration extraction:", error);
+      console.warn("failed to create blob URL for duration extraction:", error);
       resolve(0); // Return 0 duration if blob URL creation fails
     }
   });
@@ -116,7 +116,10 @@ async function extractCoverArt(
     }
     return undefined;
   } catch (error) {
-    console.warn(`⚠️ Could not extract album art from ${file.name}:`, error);
+    console.warn(
+      `o noz! could not extract album art from ${file.name}:`,
+      error
+    );
     return undefined;
   }
 }
@@ -130,9 +133,9 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
     const coverArt = await extractCoverArt(file);
 
     return {
-      title: filenameMetadata.title || "Unknown Title",
-      artist: filenameMetadata.artist || "Unknown Artist",
-      album: filenameMetadata.album || "Unknown Album",
+      title: filenameMetadata.title || "unknown title",
+      artist: filenameMetadata.artist || "unknown artist",
+      album: filenameMetadata.album || "unknown album",
       duration,
       coverArtData: coverArt?.fullSizeData,
       coverArtThumbnailData: coverArt?.thumbnailData,
@@ -141,9 +144,9 @@ export async function extractMetadata(file: File): Promise<AudioMetadata> {
   } catch (error) {
     console.error("Error extracting metadata:", error);
     return {
-      title: filenameMetadata.title || "Unknown Title",
-      artist: filenameMetadata.artist || "Unknown Artist",
-      album: filenameMetadata.album || "Unknown Album",
+      title: filenameMetadata.title || "unknown title",
+      artist: filenameMetadata.artist || "unknown artist",
+      album: filenameMetadata.album || "unknown album",
       duration: 0,
     };
   }
@@ -156,7 +159,7 @@ export async function processAudioFile(file: File): Promise<FileUploadResult> {
     if (!isAudioFile(file)) {
       return {
         success: false,
-        error: `Unsupported file type: ${file.type}. Please upload an audio file.`,
+        error: `unsupported file type: ${file.type}. Please upload an audio file.`,
       };
     }
 
@@ -164,7 +167,7 @@ export async function processAudioFile(file: File): Promise<FileUploadResult> {
     if (!validateFileSize(file)) {
       return {
         success: false,
-        error: `File too large: ${Math.round(file.size / 1024 / 1024)}MB. Maximum size is 100MB.`,
+        error: `file too large: ${Math.round(file.size / 1024 / 1024)}MB. maximum size is 100MB.`,
       };
     }
 
@@ -186,9 +189,9 @@ export async function processAudioFile(file: File): Promise<FileUploadResult> {
         id: "", // Will be set by the database service
         file,
         blobUrl,
-        title: metadata.title || "Unknown Title",
-        artist: metadata.artist || "Unknown Artist",
-        album: metadata.album || "Unknown Album",
+        title: metadata.title || "unknown title",
+        artist: metadata.artist || "unknown artist",
+        album: metadata.album || "unknown album",
         duration: metadata.duration || 0,
         position: 0, // Will be set when adding to playlist
         imageData: metadata.coverArtData,
@@ -201,10 +204,10 @@ export async function processAudioFile(file: File): Promise<FileUploadResult> {
       } as Song,
     };
   } catch (error) {
-    console.error("Error processing audio file:", error);
+    console.error("onoz! error processing audio file:", error);
     return {
       success: false,
-      error: `Error processing file: ${error instanceof Error ? error.message : "Unknown error"}`,
+      error: `error processing file: ${error instanceof Error ? error.message : "unknown error"}`,
     };
   }
 }

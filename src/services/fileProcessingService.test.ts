@@ -216,7 +216,7 @@ describe("File Processing Service Tests", () => {
 
       expect(metadata.title).toBe("Song Title");
       expect(metadata.artist).toBe("Artist");
-      expect(metadata.album).toBe("Unknown Album");
+      expect(metadata.album).toBe("unknown album");
       expect(metadata.duration).toBe(180); // Mock audio returns 180 seconds
       expect(metadata.coverArtData).toBeUndefined();
     });
@@ -229,8 +229,8 @@ describe("File Processing Service Tests", () => {
       const metadata = await extractMetadata(file);
 
       expect(metadata.title).toBe("Just A Song Title");
-      expect(metadata.artist).toBe("Unknown Artist");
-      expect(metadata.album).toBe("Unknown Album");
+      expect(metadata.artist).toBe("unknown artist");
+      expect(metadata.album).toBe("unknown album");
     });
 
     it("should handle file name with multiple separators", async () => {
