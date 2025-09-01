@@ -27,7 +27,7 @@
     "indexeddb",
     "pwa"
   ],
-  "author": "Edward",
+  "author": "3dwardsharp",
   "license": "MIT",
   "dependencies": {
     "idb": "^8.0.3",
