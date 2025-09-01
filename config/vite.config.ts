@@ -14,9 +14,4 @@ export default defineConfig({
     minify: true,
     sourcemap: true,
   },
-  resolve: {
-    alias: {
-      "@": "/src",
-    },
-  },
 });

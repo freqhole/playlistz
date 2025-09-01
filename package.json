@@ -1,15 +1,13 @@
 {
   "name": "playlistz",
   "version": "1.0.0",
-  "description": "Standalone playlistz music player built with Solid.js",
+  "description": "make some music playlistz in yr browser!",
   "type": "module",
   "scripts": {
     "dev": "vite --config config/vite.config.ts",
     "start": "vite --config config/vite.config.ts",
     "build": "vite build --config config/vite.config.ts",
-    "build:web-component": "node build-component.js",
-    "build:standalone": "node build-component.js --standalone",
-    "build:all": "npm run build:web-component && node build-component.js --standalone --no-clear",
+    "build:standalone": "node build-component.js",
     "preview": "vite preview --config config/vite.config.ts",
     "test": "vitest --run --config config/vitest.config.ts",
     "test:watch": "vitest --config config/vitest.config.ts",

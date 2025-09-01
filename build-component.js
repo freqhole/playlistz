@@ -6,27 +6,19 @@ import tailwindcss from "@tailwindcss/vite";
 import fs from "fs";
 import path from "path";
 
-// Check for command line arguments
-const isStandalone = process.argv.includes("--standalone");
-const isWebComponent =
-  process.argv.includes("--web-component") || !isStandalone;
-const skipClear = process.argv.includes("--no-clear");
+console.log("building standalone playlistz html...");
 
-console.log(
-  `🔨 Building Playlistz ${isStandalone ? "standalone HTML" : "web component"}...`
-);
-
-// Copy static service worker file
+// copy static service worker file
 function copyServiceWorker() {
   const swPath = path.resolve("public/sw.js");
   if (fs.existsSync(swPath)) {
     return fs.readFileSync(swPath, "utf-8");
   }
-  console.warn("⚠️ No service worker found at public/sw.js");
+  console.warn("no service worker found at public/sw.js");
   return null;
 }
 
-// Generate HTML template for standalone build
+// generate html template for standalone build
 function generateStandaloneHtml(jsCode, cssCode) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -38,6 +30,7 @@ function generateStandaloneHtml(jsCode, cssCode) {
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#000000">
+  <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==">
   <style>
     * { box-sizing: border-box; }
     body {
@@ -67,38 +60,48 @@ ${jsCode}
 </html>`;
 }
 
-// Create web component entry point if it doesn't exist
+// create web component entry point if it doesn't exist
 function createWebComponentEntry() {
   const webComponentPath = path.resolve("src/web-component.tsx");
 
   if (!fs.existsSync(webComponentPath)) {
     const webComponentCode = `
 import { customElement } from "solid-element";
-import { PlaylistManager } from "./components/PlaylistManager";
+import { Playlistz } from "./components";
 import "./styles.css";
 
 customElement("freqhole-playlistz", {}, () => {
-  return <PlaylistManager />;
+  return <Playlistz />;
 });
 `.trim();
 
     fs.writeFileSync(webComponentPath, webComponentCode);
-    console.log("✅ Created web component entry point");
+    console.log("created web component entry point");
   }
 }
 
-// Build standalone HTML file
+// build standalone html file
 async function buildStandalone() {
-  console.log("📦 Building standalone HTML...");
+  console.log("building standalone html...");
 
-  // Ensure web component entry exists
+  // ensure web component entry exists
   createWebComponentEntry();
+
+  // clear and create dist directory
+  const distDir = path.resolve("dist");
+  if (fs.existsSync(distDir)) {
+    fs.rmSync(distDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(distDir, { recursive: true });
 
   try {
     await build({
       configFile: false,
       plugins: [
-        solid(),
+        solid({
+          typescript: true,
+          jsx: "preserve",
+        }),
         tailwindcss(),
         {
           name: "generate-standalone-html",
@@ -124,9 +127,9 @@ async function buildStandalone() {
                 source: html,
               });
 
-              console.log("✅ Generated: freqhole-playlistz.html");
+              console.log("generated: freqhole-playlistz.html");
 
-              // Copy service worker
+              // copy service worker if it exists
               const swCode = copyServiceWorker();
               if (swCode) {
                 this.emitFile({
@@ -134,10 +137,10 @@ async function buildStandalone() {
                   fileName: "sw.js",
                   source: swCode,
                 });
-                console.log("✅ Generated: sw.js");
+                console.log("generated: sw.js");
               }
 
-              // Remove JS and CSS files from output (but keep sw.js)
+              // remove js and css files from output (but keep sw.js)
               Object.keys(bundle).forEach((fileName) => {
                 if (
                   (fileName.endsWith(".js") || fileName.endsWith(".css")) &&
@@ -146,6 +149,8 @@ async function buildStandalone() {
                   delete bundle[fileName];
                 }
               });
+            } else {
+              console.error("no js chunk found in bundle");
             }
           },
         },
@@ -168,74 +173,13 @@ async function buildStandalone() {
       },
     });
 
-    console.log("🎉 Standalone build completed!");
+    console.log("standalone build completed!");
+    console.log(`output: ${path.resolve("dist/freqhole-playlistz.html")}`);
   } catch (error) {
-    console.error("❌ Error building standalone:", error);
+    console.error("error building standalone:", error);
     process.exit(1);
   }
 }
 
-// Build web component JS file
-async function buildWebComponent() {
-  console.log("📦 Building web component...");
-
-  // Ensure web component entry exists
-  createWebComponentEntry();
-
-  try {
-    await build({
-      configFile: false,
-      plugins: [solid(), tailwindcss()],
-      build: {
-        outDir: "dist",
-        target: "esnext",
-        minify: true,
-        sourcemap: true,
-        emptyOutDir: false,
-        lib: {
-          entry: "./src/web-component.tsx",
-          name: "PlaylistzWebComponent",
-          fileName: "web-component",
-          formats: ["es"],
-        },
-        rollupOptions: {
-          output: {
-            inlineDynamicImports: true,
-          },
-        },
-      },
-    });
-
-    console.log("✅ Generated: web-component.js");
-    console.log("🎉 Web component build completed!");
-  } catch (error) {
-    console.error("❌ Error building web component:", error);
-    process.exit(1);
-  }
-}
-
-// Clear dist directory
-function clearDist() {
-  if (skipClear) {
-    console.log("⏭️  Skipping dist directory clear");
-    return;
-  }
-  const distDir = path.resolve("dist");
-  if (fs.existsSync(distDir)) {
-    fs.rmSync(distDir, { recursive: true, force: true });
-  }
-  fs.mkdirSync(distDir, { recursive: true });
-}
-
-// Main execution
-async function main() {
-  clearDist();
-
-  if (isStandalone) {
-    await buildStandalone();
-  } else {
-    await buildWebComponent();
-  }
-}
-
-main();
+// main execution
+buildStandalone();
