@@ -1,6 +1,6 @@
 {
   "name": "playlistz",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "make some music playlistz in yr browser!",
   "type": "module",
   "scripts": {
