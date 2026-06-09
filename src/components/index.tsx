@@ -14,14 +14,14 @@ import { PlaylistSidebar } from "./PlaylistSidebar.js";
 import { SongEditModal } from "./SongEditModal.js";
 import { PlaylistCoverModal } from "./PlaylistCoverModal.js";
 import { PlaylistContainer } from "./playlist/index.js";
+import { type StandaloneData } from "../services/standaloneService.js";
 
 // global fn registration for standalone mode
 if (typeof window !== "undefined" && window.STANDALONE_MODE) {
   // define the fn early so it's available for HTML initialization
   window.initializeStandalonePlaylist = function (playlistData: unknown) {
     // store the data and defer to the real function when it's ready
-    window.DEFERRED_PLAYLIST_DATA =
-      playlistData as import("../services/standaloneService.js").StandaloneData;
+    window.DEFERRED_PLAYLIST_DATA = playlistData as StandaloneData;
   };
 }
 

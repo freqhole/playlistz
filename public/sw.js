@@ -1,6 +1,6 @@
 // playlistz Service Worker
 const CACHE_NAME = "playlistz-v1";
-const urlsToCache = ["/", "/freqhole-playlistz.html", "/index.html"];
+const urlsToCache = ["/", "/freqhole-playlistz.html", "/index.html", "/playlistz.html"];
 
 self.addEventListener("install", (event) => {
   console.log("playlistz service worker: installing...");
