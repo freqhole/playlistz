@@ -18,7 +18,13 @@ vi.mock("../utils/hashUtils.js", () => ({
   calculateSHA256: vi.fn(),
 }));
 
-// mock window and fetch for browser apis
+vi.mock("../utils/standaloneTemplates.js", () => ({
+  generatePlaylistzJs: vi.fn(() => "window.__PLAYLISTZ__ = [];"),
+  generateIndexHtml: vi.fn(() => "<html></html>"),
+  generateSwJs: vi.fn(() => "// sw"),
+}));
+
+// mock window for browser apis
 Object.defineProperty(global, "window", {
   value: {
     location: {
@@ -27,15 +33,6 @@ Object.defineProperty(global, "window", {
   },
   writable: true,
 });
-
-global.fetch = vi.fn(() =>
-  Promise.resolve({
-    text: () =>
-      Promise.resolve(
-        "<html><head><title>playlistz</title></head><body></body></html>"
-      ),
-  })
-) as any;
 
 // Mock JSZip
 vi.mock("jszip", () => ({
@@ -105,14 +102,6 @@ global.document = {
     removeChild: vi.fn(),
   },
 } as any;
-
-// Mock fetch to prevent localhost errors
-global.fetch = vi.fn(() =>
-  Promise.resolve({
-    ok: true,
-    text: () => Promise.resolve("mock HTML content"),
-  })
-) as any;
 
 describe("Playlist Download Service", () => {
   let mockPlaylist: Playlist;
@@ -742,17 +731,6 @@ describe("Playlist Download Service", () => {
       expect(vi.mocked(JSZip)).toHaveBeenCalled();
     });
 
-    it("should handle HTML generation errors gracefully", async () => {
-      // Mock fetch to fail (used in HTML generation)
-      global.fetch = vi.fn().mockRejectedValue(new Error("Fetch failed"));
-
-      const options: PlaylistDownloadOptions = { includeHTML: true };
-
-      // Should not throw, should skip HTML generation
-      await expect(
-        downloadPlaylistAsZip(mockPlaylist, options)
-      ).resolves.not.toThrow();
-    });
   });
 
   describe("Integration Tests", () => {

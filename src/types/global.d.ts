@@ -1,14 +1,11 @@
-// Global type declarations for playlistz
+// global type declarations for playlistz
 
-import type { StandaloneData } from "../services/standaloneService.js";
+import type { FreqholePlaylistz } from "../utils/standaloneTemplates.js";
 
 declare global {
   interface Window {
-    STANDALONE_MODE?: boolean;
-    DEFERRED_PLAYLIST_DATA?: StandaloneData;
-    initializeStandalonePlaylist?: (playlistData: StandaloneData) => void;
+    __PLAYLISTZ__?: FreqholePlaylistz;
   }
 }
 
-// This export is needed to make this file a module
 export {};

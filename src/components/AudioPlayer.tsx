@@ -20,15 +20,14 @@ export function AudioPlayer(props: AudioPlayerProps) {
       }
 
       const currentPlaylist = audioState.currentPlaylist();
-      const isPlaying = audioState.isPlaying();
       const isCurrentPlaylist =
         currentPlaylist && currentPlaylist.id === props.playlist.id;
 
-      // if this playlist is currently playing, toggle playback
-      if (isCurrentPlaylist && isPlaying) {
+      // if this playlist is current (playing or paused), toggle play/pause
+      if (isCurrentPlaylist) {
         await togglePlayback();
       }
-      // otherwise, play this playlist
+      // otherwise, play this playlist from the beginning
       else {
         await playPlaylist(props.playlist);
       }

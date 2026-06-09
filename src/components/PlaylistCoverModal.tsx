@@ -60,6 +60,10 @@ export function PlaylistCoverModal(props: PlaylistCoverModalProps) {
           props.playlist.imageType
         );
         setSelectedImageUrl(url);
+      } else if (props.playlist.imageFilePath) {
+        // standalone mode: images are file paths, not in-memory buffers
+        setSelectedImageType(props.playlist.imageType);
+        setSelectedImageUrl(props.playlist.imageFilePath);
       }
     }
   });

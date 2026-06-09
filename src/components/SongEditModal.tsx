@@ -51,6 +51,10 @@ export function SongEditModal(props: SongEditModalProps) {
         if (!displayData) return;
         const url = createImageUrlFromData(displayData, props.song.imageType);
         setImageUrl(url);
+      } else if (props.song.imageFilePath) {
+        // standalone mode: images are file paths, not in-memory buffers
+        setImageType(props.song.imageType);
+        setImageUrl(props.song.imageFilePath);
       }
     }
   });

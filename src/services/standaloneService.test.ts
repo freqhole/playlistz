@@ -19,6 +19,7 @@ import {
   standaloneLoadingProgress,
   setStandaloneLoadingProgress,
   initializeStandalonePlaylist,
+  initializeAllStandalonePlaylists,
   loadStandaloneSongAudioData,
   songNeedsAudioData,
   clearStandaloneLoadingProgress,
@@ -209,6 +210,47 @@ describe("Standalone Service", () => {
       await expect(
         initializeStandalonePlaylist(mockPlaylistData, partialCallbacks as any)
       ).rejects.toThrow("callbacks.setError is not a function");
+    });
+  });
+
+  describe("initializeAllStandalonePlaylists", () => {
+    it("should call initializeStandalonePlaylist for each entry", async () => {
+      const mockCallbacks = {
+        setSelectedPlaylist: vi.fn(),
+        setPlaylistSongs: vi.fn(),
+        setSidebarCollapsed: vi.fn(),
+        setError: vi.fn(),
+      };
+
+      const entry = (id: string) => ({
+        playlist: {
+          id,
+          title: `playlist ${id}`,
+          description: "test",
+          rev: 1,
+        },
+        songs: [
+          {
+            id: `${id}-song1`,
+            title: "song one",
+            artist: "artist",
+            album: "album",
+            duration: 180,
+            originalFilename: "song1.mp3",
+            fileSize: 1000000,
+            sha: "abc123",
+          },
+        ],
+      });
+
+      await initializeAllStandalonePlaylists(
+        [entry("pl-a"), entry("pl-b")],
+        mockCallbacks
+      );
+
+      // each playlist entry triggers setSelectedPlaylist and setPlaylistSongs
+      expect(mockCallbacks.setSelectedPlaylist).toHaveBeenCalledTimes(2);
+      expect(mockCallbacks.setPlaylistSongs).toHaveBeenCalledTimes(2);
     });
   });
 

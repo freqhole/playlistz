@@ -8,39 +8,10 @@ import {
 import { mutateAndNotify } from "./indexedDBService.js";
 import { triggerSongUpdateWithOptions } from "./songReactivity.js";
 import type { Playlist, Song } from "../types/playlist.js";
+import type { FreqholePlaylist, FreqholePlaylistSong } from "../utils/standaloneTemplates.js";
 
-// interface for standalone song data structure
-export interface StandaloneSongData {
-  id: string;
-  title: string;
-  artist: string;
-  album: string;
-  duration: number;
-  originalFilename: string;
-  fileSize: number;
-  sha: string;
-  imageExtension?: string;
-  imageMimeType?: string;
-  safeFilename?: string;
-  mimeType?: string;
-}
-
-// interface for standalone playlist data structure
-export interface StandalonePlaylistData {
-  id: string;
-  title: string;
-  description?: string;
-  rev?: number;
-  imageExtension?: string;
-  imageMimeType?: string;
-  safeFilename?: string;
-}
-
-// Interface for complete standalone data
-export interface StandaloneData {
-  playlist: StandalonePlaylistData;
-  songs: StandaloneSongData[];
-}
+// backwards-compatible alias for FreqholePlaylist
+export type StandaloneData = FreqholePlaylist;
 
 // Interface for callback functions
 interface StandaloneCallbacks {
@@ -68,7 +39,7 @@ const loadingImages = new Set<string>();
  * Create a song object from playlist data
  */
 function createSongFromStandaloneData(
-  songData: StandaloneSongData,
+  songData: FreqholePlaylistSong,
   index: number,
   playlistId: string,
   standaloneFilePath: string,
@@ -732,4 +703,14 @@ async function loadImageIntoIndexedDB(
  */
 export function clearStandaloneLoadingProgress() {
   setStandaloneLoadingProgress(null);
+}
+
+// initializes multiple standalone playlists in sequence
+export async function initializeAllStandalonePlaylists(
+  playlists: FreqholePlaylist[],
+  callbacks: StandaloneCallbacks
+): Promise<void> {
+  for (const playlistData of playlists) {
+    await initializeStandalonePlaylist(playlistData, callbacks);
+  }
 }

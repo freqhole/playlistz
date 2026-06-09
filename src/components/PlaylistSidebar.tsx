@@ -185,9 +185,7 @@ export function PlaylistSidebar() {
                   fallback={
                     <div class="text-gray-400">
                       <div class="text-lg mb-2">no playlistz yet</div>
-                      <p class="text-sm">
-                        create your first playlist (if u want)
-                      </p>
+                      <p class="text-sm">create a playlist (if u want)</p>
                     </div>
                   }
                 >

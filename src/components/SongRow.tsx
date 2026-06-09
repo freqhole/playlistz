@@ -224,15 +224,17 @@ export function SongRow(props: SongRowProps) {
           // calc progress percentage for background fill
           const getProgressPercentage = () => {
             const currentSong = audioState.currentSong();
-            if (!currentSong || currentSong.id !== songData().id) return 0;
-
-            const duration = audioState.duration();
-            const currentTime = audioState.currentTime();
-
-            if (duration > 0) {
-              return (currentTime / duration) * 100;
+            if (currentSong?.id === songData().id) {
+              // this song is loaded - use live currentTime
+              const duration = audioState.duration();
+              const currentTime = audioState.currentTime();
+              return duration > 0 ? (currentTime / duration) * 100 : 0;
             }
-            return 0;
+            // not the current song - use saved position if any
+            const savedPos =
+              audioState.songPlaybackPositions().get(songData().id) ?? 0;
+            const dur = songData().duration ?? 0;
+            return savedPos > 0 && dur > 0 ? (savedPos / dur) * 100 : 0;
           };
 
           return (

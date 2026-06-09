@@ -3,7 +3,7 @@
 
 import { createSignal } from "solid-js";
 import type { Song, Playlist, AudioState } from "../types/playlist.js";
-import { loadSongAudioData, getAllSongs } from "./indexedDBService.js";
+import { loadSongAudioData, getAllSongs, loadAllPlaybackPositions, savePlaybackPosition, deletePlaybackPosition } from "./indexedDBService.js";
 import {
   streamAudioWithCaching,
   downloadSongIfNeeded,
@@ -43,6 +43,32 @@ const [cachingSongIds, setCachingSongIds] = createSignal<Set<string>>(
   new Set()
 );
 
+// per-song saved playback positions (songId -> seconds), persists across pause/track switch
+const [songPlaybackPositions, setSongPlaybackPositions] = createSignal<Map<string, number>>(new Map());
+
+// pending seek time to apply after loadedmetadata fires for the new song
+let pendingSeekTime = 0;
+
+// load all persisted positions from indexeddb into the in-memory signal (called once on first play)
+let positionsLoaded = false;
+async function ensurePositionsLoaded(): Promise<void> {
+  if (positionsLoaded) return;
+  positionsLoaded = true;
+  const saved = await loadAllPlaybackPositions();
+  if (saved.size > 0) {
+    setSongPlaybackPositions(saved);
+  }
+}
+
+// persist current song position to indexeddb (fire-and-forget)
+function flushCurrentPosition(): void {
+  const song = currentSong();
+  const pos = audioElement?.currentTime ?? 0;
+  if (song && pos > 1) {
+    savePlaybackPosition(song.id, pos).catch(() => {});
+  }
+}
+
 // single audio element for the entire app
 let audioElement: HTMLAudioElement | null = null;
 
@@ -53,6 +79,12 @@ function initializeAudio(): HTMLAudioElement {
   audioElement = new Audio();
   audioElement.volume = volume();
   audioElement.preload = "metadata";
+
+  // load persisted positions from indexeddb on first use
+  ensurePositionsLoaded().catch(() => {});
+
+  // save current position when page is closed / refreshed
+  window.addEventListener("beforeunload", flushCurrentPosition);
 
   // audio event listenerz
   audioElement.addEventListener("loadstart", () => {
@@ -66,6 +98,12 @@ function initializeAudio(): HTMLAudioElement {
     const newDuration = audioElement?.duration || 0;
     setDuration(newDuration);
     setIsLoading(false);
+    // apply resume position if set
+    if (pendingSeekTime > 0 && audioElement) {
+      audioElement.currentTime = pendingSeekTime;
+      setCurrentTime(pendingSeekTime);
+      pendingSeekTime = 0;
+    }
     // update media session now that we have proper metadata
     updateMediaSession();
   });
@@ -73,6 +111,16 @@ function initializeAudio(): HTMLAudioElement {
   audioElement.addEventListener("timeupdate", () => {
     const newCurrentTime = audioElement?.currentTime || 0;
     setCurrentTime(newCurrentTime);
+
+    // save position for current song so it can be resumed later
+    const song = currentSong();
+    if (song && newCurrentTime > 0) {
+      setSongPlaybackPositions((prev) => {
+        const next = new Map(prev);
+        next.set(song.id, newCurrentTime);
+        return next;
+      });
+    }
 
     // try to preload next song at halfway point
     const duration = audioElement?.duration || 0;
@@ -96,10 +144,22 @@ function initializeAudio(): HTMLAudioElement {
   });
   audioElement.addEventListener("pause", () => {
     setIsPlaying(false);
+    // persist position when pausing so it survives page reload
+    flushCurrentPosition();
     updateMediaSession();
   });
   audioElement.addEventListener("ended", () => {
     setIsPlaying(false);
+    // clear saved position when song completes naturally
+    const song = currentSong();
+    if (song) {
+      setSongPlaybackPositions((prev) => {
+        const next = new Map(prev);
+        next.delete(song.id);
+        return next;
+      });
+      deletePlaybackPosition(song.id).catch(() => {});
+    }
     handleSongEnded();
   });
 
@@ -496,6 +556,9 @@ export async function playSong(song: Song): Promise<void> {
   const audio = initializeAudio();
 
   try {
+    // save the outgoing song's position before switching tracks
+    flushCurrentPosition();
+
     // set this as the selected song immediately
     setSelectedSongId(song.id);
 
@@ -516,6 +579,25 @@ export async function playSong(song: Song): Promise<void> {
     setCurrentTime(0);
     setDuration(0);
     audio.currentTime = 0;
+
+    // check for a saved position to resume from.
+    // if the saved position is <95% of the song's known duration, resume from there.
+    // otherwise (near end or unknown duration) start from the beginning.
+    const savedPos = songPlaybackPositions().get(song.id) ?? 0;
+    const knownDuration = song.duration ?? 0;
+    if (savedPos > 0 && (knownDuration === 0 || savedPos < knownDuration * 0.95)) {
+      pendingSeekTime = savedPos;
+    } else {
+      pendingSeekTime = 0;
+      // if near the end, clear the stale saved position so it restarts cleanly
+      if (savedPos > 0) {
+        setSongPlaybackPositions((prev) => {
+          const next = new Map(prev);
+          next.delete(song.id);
+          return next;
+        });
+      }
+    }
 
     setIsLoading(true);
     setCurrentSong(song);
@@ -890,7 +972,23 @@ export function stop(): void {
 export function seek(time: number): void {
   const audio = audioElement;
   if (audio && !isNaN(audio.duration)) {
-    audio.currentTime = Math.max(0, Math.min(time, audio.duration));
+    const clamped = Math.max(0, Math.min(time, audio.duration));
+    audio.currentTime = clamped;
+    // keep saved position in sync with manual seek
+    const song = currentSong();
+    if (song) {
+      setSongPlaybackPositions((prev) => {
+        const next = new Map(prev);
+        if (clamped < 1) {
+          next.delete(song.id); // seeking to start clears saved position
+          deletePlaybackPosition(song.id).catch(() => {});
+        } else {
+          next.set(song.id, clamped);
+          savePlaybackPosition(song.id, clamped).catch(() => {});
+        }
+        return next;
+      });
+    }
   }
 }
 
@@ -996,6 +1094,7 @@ export const audioState = {
   isShuffled,
   downloadProgress,
   cachingSongIds,
+  songPlaybackPositions,
 };
 
 // cleanup function

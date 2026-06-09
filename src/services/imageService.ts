@@ -356,12 +356,8 @@ export function getImageUrlForContext(
     return createImageUrlFromData(imageData, imageType);
   }
 
-  // Fallback for file:// protocol - use direct file paths
-  if (
-    window.STANDALONE_MODE &&
-    window.location.protocol === "file:" &&
-    imageFilePath
-  ) {
+  // fallback for standalone mode - use file path directly (works for both file:// and http://)
+  if (imageFilePath) {
     return imageFilePath;
   }
 

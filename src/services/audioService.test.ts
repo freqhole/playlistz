@@ -996,4 +996,106 @@ describe("Audio Service Tests", () => {
       // since mockPlaylist2 songs don't actually exist in the mock database
     });
   });
+
+  describe("Playback Position Tracking", () => {
+    // helper to fire a timeupdate on the mock audio element
+    const fireTimeUpdate = (time: number) => {
+      const audio = getMockAudio();
+      audio.currentTime = time;
+      const handlers = audio.addEventListener.mock.calls
+        .filter((c: any) => c[0] === "timeupdate")
+        .map((c: any) => c[1]);
+      handlers.forEach((h: any) => h());
+    };
+
+    const fireLoadedMetadata = (dur: number) => {
+      const audio = getMockAudio();
+      audio.duration = dur;
+      const handlers = getMockAudio().addEventListener.mock.calls
+        .filter((c: any) => c[0] === "loadedmetadata")
+        .map((c: any) => c[1]);
+      handlers.forEach((h: any) => h());
+    };
+
+    beforeEach(async () => {
+      await audioService.playSongFromPlaylist(mockSong1, mockPlaylist);
+    });
+
+    it("saves position to in-memory map on timeupdate", () => {
+      fireTimeUpdate(45);
+      const pos = audioService.audioState.songPlaybackPositions().get(mockSong1.id);
+      expect(pos).toBe(45);
+    });
+
+    it("does not save position for time = 0", () => {
+      // seek to clear any position left by beforeEach, then fire timeupdate at 0
+      audioService.seek(0);
+      fireTimeUpdate(0);
+      const pos = audioService.audioState.songPlaybackPositions().get(mockSong1.id);
+      expect(pos).toBeUndefined();
+    });
+
+    it("clears position from map when song ends naturally", async () => {
+      fireTimeUpdate(60);
+      expect(audioService.audioState.songPlaybackPositions().get(mockSong1.id)).toBe(60);
+
+      const audio = getMockAudio();
+      const endedHandlers = audio.addEventListener.mock.calls
+        .filter((c: any) => c[0] === "ended")
+        .map((c: any) => c[1]);
+      for (const h of endedHandlers) await h();
+
+      expect(audioService.audioState.songPlaybackPositions().get(mockSong1.id)).toBeUndefined();
+    });
+
+    it("sets pendingSeekTime and resumes from saved position on re-play", async () => {
+      // save a position mid-song
+      fireTimeUpdate(90);
+
+      // switch to song2, then back to song1 - should set pendingSeekTime
+      await audioService.playSongFromPlaylist(mockSong2, mockPlaylist);
+      await audioService.playSongFromPlaylist(mockSong1, mockPlaylist);
+
+      // fire loadedmetadata - should apply pendingSeekTime
+      fireLoadedMetadata(180);
+
+      expect(getMockAudio().currentTime).toBe(90);
+    });
+
+    it("skips resume when saved position is >=95% of known duration", async () => {
+      // duration is 180, 95% = 171; save position at 175 (>95%)
+      const nearEndSong = { ...mockSong1, duration: 180 };
+      fireTimeUpdate(175);
+      // manually inject the near-end position
+      // re-play the song - should NOT set pendingSeekTime
+      await audioService.playSongFromPlaylist(mockSong2, mockPlaylist);
+
+      // override the saved position to simulate near-end
+      const positions = audioService.audioState.songPlaybackPositions();
+      positions.set(nearEndSong.id, 175);
+
+      await audioService.playSongFromPlaylist(nearEndSong, mockPlaylist);
+      fireLoadedMetadata(180);
+
+      // currentTime should be 0 (reset), not 175
+      expect(getMockAudio().currentTime).toBe(0);
+      // position should be cleared from map
+      expect(audioService.audioState.songPlaybackPositions().get(nearEndSong.id)).toBeUndefined();
+    });
+
+    it("seek() updates saved position map", async () => {
+      const audio = getMockAudio();
+      audio.duration = 180;
+      audioService.seek(60);
+      expect(audioService.audioState.songPlaybackPositions().get(mockSong1.id)).toBe(60);
+    });
+
+    it("seek() to near-zero clears saved position", async () => {
+      fireTimeUpdate(60);
+      const audio = getMockAudio();
+      audio.duration = 180;
+      audioService.seek(0);
+      expect(audioService.audioState.songPlaybackPositions().get(mockSong1.id)).toBeUndefined();
+    });
+  });
 });

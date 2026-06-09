@@ -48,9 +48,17 @@ function createSignal<T>(initial: T): Signal<T> {
 
 // database configuration
 export const DB_NAME = "musicPlaylistDB";
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 export const PLAYLISTS_STORE = "playlists";
 export const SONGS_STORE = "songs";
+export const PLAYBACK_POSITIONS_STORE = "playbackPositions";
+
+// record shape stored per-song in the playbackPositions store
+export interface PlaybackPositionRecord {
+  songId: string;
+  position: number;
+  updatedAt: number;
+}
 
 // database schema definition
 interface PlaylistDB extends DBSchema {
@@ -62,6 +70,10 @@ interface PlaylistDB extends DBSchema {
     key: string;
     value: Song;
     indexes: { playlistId: string };
+  };
+  playbackPositions: {
+    key: string;
+    value: PlaybackPositionRecord;
   };
 }
 
@@ -87,10 +99,17 @@ export async function setupDB(): Promise<IDBPDatabase<PlaylistDB>> {
         songStore.createIndex("playlistId", "playlistId", { unique: false });
       }
 
-      // Migration for version 3: Add thumbnail data support
+      // migration for version 3: add thumbnail data support
       if (oldVersion < 3) {
-        // Note: New thumbnailData fields will be undefined for existing records
-        // They will be populated when users upload new covers or when songs are re-processed
+        // note: new thumbnailData fields will be undefined for existing records
+        // they will be populated when users upload new covers or when songs are re-processed
+      }
+
+      // migration for version 4: add playback positions store
+      if (oldVersion < 4) {
+        if (!db.objectStoreNames.contains(PLAYBACK_POSITIONS_STORE)) {
+          db.createObjectStore(PLAYBACK_POSITIONS_STORE, { keyPath: "songId" });
+        }
       }
     },
   });
@@ -817,4 +836,40 @@ export async function removeSongFromPlaylist(
     type: "delete",
     metadata: { playlistId },
   });
+}
+
+// load all saved playback positions from indexeddb as a songId -> seconds map
+export async function loadAllPlaybackPositions(): Promise<Map<string, number>> {
+  try {
+    const db = await setupDB();
+    const records = await db.getAll(PLAYBACK_POSITIONS_STORE);
+    const map = new Map<string, number>();
+    for (const r of records) {
+      map.set(r.songId, r.position);
+    }
+    return map;
+  } catch (error) {
+    console.warn("error loading playback positions:", error);
+    return new Map();
+  }
+}
+
+// save a single playback position to indexeddb (fire-and-forget friendly)
+export async function savePlaybackPosition(songId: string, position: number): Promise<void> {
+  try {
+    const db = await setupDB();
+    await db.put(PLAYBACK_POSITIONS_STORE, { songId, position, updatedAt: Date.now() });
+  } catch (error) {
+    console.warn(`error saving playback position for ${songId}:`, error);
+  }
+}
+
+// delete a saved playback position (e.g. song completed naturally)
+export async function deletePlaybackPosition(songId: string): Promise<void> {
+  try {
+    const db = await setupDB();
+    await db.delete(PLAYBACK_POSITIONS_STORE, songId);
+  } catch (error) {
+    console.warn(`error deleting playback position for ${songId}:`, error);
+  }
 }

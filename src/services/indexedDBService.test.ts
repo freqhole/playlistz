@@ -33,6 +33,9 @@ import {
   updateSong,
   createPlaylistSongsQuery,
   resetDBCache,
+  loadAllPlaybackPositions,
+  savePlaybackPosition,
+  deletePlaybackPosition,
 } from "./indexedDBService.js";
 import { triggerSongUpdateWithOptions } from "./songReactivity.js";
 import { calculateSHA256, calculateFileSHA256 } from "../utils/hashUtils.js";
@@ -1705,6 +1708,62 @@ describe("Database Efficiency Tests", () => {
           expect(putCall[0].title).toBe(longTitle);
         });
       });
+    });
+  });
+
+  describe("Playback Position Store", () => {
+    beforeEach(() => {
+      mockDB.getAll.mockReset();
+      mockDB.put.mockReset();
+      mockDB.delete.mockReset();
+    });
+
+    it("loadAllPlaybackPositions returns empty map when store is empty", async () => {
+      mockDB.getAll.mockResolvedValue([]);
+      const map = await loadAllPlaybackPositions();
+      expect(map).toBeInstanceOf(Map);
+      expect(map.size).toBe(0);
+    });
+
+    it("loadAllPlaybackPositions returns populated map", async () => {
+      mockDB.getAll.mockResolvedValue([
+        { songId: "s1", position: 42, updatedAt: 1000 },
+        { songId: "s2", position: 99, updatedAt: 2000 },
+      ]);
+      const map = await loadAllPlaybackPositions();
+      expect(map.get("s1")).toBe(42);
+      expect(map.get("s2")).toBe(99);
+    });
+
+    it("loadAllPlaybackPositions handles errors gracefully", async () => {
+      mockDB.getAll.mockRejectedValue(new Error("idb error"));
+      const map = await loadAllPlaybackPositions();
+      expect(map.size).toBe(0);
+    });
+
+    it("savePlaybackPosition writes record to store", async () => {
+      mockDB.put.mockResolvedValue(undefined);
+      await savePlaybackPosition("song-abc", 73);
+      expect(mockDB.put).toHaveBeenCalledWith(
+        "playbackPositions",
+        expect.objectContaining({ songId: "song-abc", position: 73 })
+      );
+    });
+
+    it("savePlaybackPosition handles errors without throwing", async () => {
+      mockDB.put.mockRejectedValue(new Error("put failed"));
+      await expect(savePlaybackPosition("s1", 10)).resolves.toBeUndefined();
+    });
+
+    it("deletePlaybackPosition removes record from store", async () => {
+      mockDB.delete.mockResolvedValue(undefined);
+      await deletePlaybackPosition("song-abc");
+      expect(mockDB.delete).toHaveBeenCalledWith("playbackPositions", "song-abc");
+    });
+
+    it("deletePlaybackPosition handles errors without throwing", async () => {
+      mockDB.delete.mockRejectedValue(new Error("delete failed"));
+      await expect(deletePlaybackPosition("s1")).resolves.toBeUndefined();
     });
   });
 });

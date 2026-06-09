@@ -6,6 +6,12 @@ import {
   updateSong,
 } from "./indexedDBService.js";
 import { calculateSHA256 } from "../utils/hashUtils.js";
+import {
+  generatePlaylistzJs,
+  generateIndexHtml,
+} from "../utils/standaloneTemplates.js";
+import { generateSwJs } from "../utils/swTemplate.js";
+import { generateM3UContent } from "../utils/m3u.js";
 
 // types for imported playlist data that may not match our exact schema
 interface ImportedPlaylistData {
@@ -115,26 +121,20 @@ export async function downloadPlaylistAsZip(
     // create data folder inside root folder
     const dataFolder = rootFolder!.folder("data");
 
-    // create comprehensive playlist data file in data folder
-    const playlistData = {
+    // build playlist entry for the playlistz.js data file
+    const playlistEntry = {
       playlist: {
         id: updatedPlaylist.id,
         title: updatedPlaylist.title,
-        description: updatedPlaylist.description || "",
-        createdAt: new Date(updatedPlaylist.createdAt).toISOString(),
-        updatedAt: new Date(updatedPlaylist.updatedAt).toISOString(),
+        description: updatedPlaylist.description,
         rev: updatedPlaylist.rev,
-        songCount: songsWithSHA.length,
-        totalDuration: songsWithSHA.reduce(
-          (total, song) => total + (song.duration || 0),
-          0
-        ),
         imageExtension: updatedPlaylist.imageData
           ? getFileExtensionFromMimeType(
               updatedPlaylist.imageType || "image/jpeg"
             )
-          : null,
-        imageMimeType: updatedPlaylist.imageType || null,
+          : undefined,
+        imageMimeType: updatedPlaylist.imageType || undefined,
+        safeFilename: createSafeFileName("", updatedPlaylist.title),
       },
       songs: songsWithSHA.map((song) => ({
         id: song.id,
@@ -146,18 +146,18 @@ export async function downloadPlaylistAsZip(
         safeFilename: song.originalFilename
           ? sanitizeFilename(song.originalFilename)
           : "",
-        fileSize: song.fileSize || song.audioData?.byteLength,
+        fileSize: song.fileSize || song.audioData?.byteLength || 0,
         mimeType: song.mimeType || "audio/mpeg",
         sha: song.sha,
         imageExtension: song.imageData
           ? getFileExtensionFromMimeType(song.imageType || "image/jpeg")
-          : null,
-        imageMimeType: song.imageType || null,
+          : undefined,
+        imageMimeType: song.imageType || undefined,
       })),
     };
 
-    // add single playlist json file to data folder
-    dataFolder!.file("playlist.json", JSON.stringify(playlistData, null, 2));
+    // add playlistz.js data file to root folder
+    rootFolder!.file("playlistz.js", generatePlaylistzJs([playlistEntry]));
 
     // add playlist cover image to data folder if it exists
     if (
@@ -198,7 +198,8 @@ export async function downloadPlaylistAsZip(
       const m3uContent = generateM3UContent(
         updatedPlaylist,
         songsWithSHA,
-        songFileNames
+        songFileNames,
+        getFileExtensionFromMimeType
       );
       dataFolder!.file(
         `${createSafeFileName("", updatedPlaylist.title)}.m3u8`,
@@ -206,35 +207,10 @@ export async function downloadPlaylistAsZip(
       );
     }
 
-    // generate standalone html page in root folder
+    // generate static shell files in root folder
     if (options.includeHTML) {
-      try {
-        const htmlContent = await generateStandaloneHTML(playlistData);
-        rootFolder!.file("playlistz.html", htmlContent);
-
-        // add service worker file for offline functionality in root directory
-        // (sw must be at same level or higher than html to control it)
-        try {
-          const swResponse = await fetch("./sw.js");
-          if (swResponse.ok) {
-            const swContent = await swResponse.text();
-            rootFolder!.file("sw.js", swContent);
-          }
-        } catch (swError) {
-          console.warn(
-            "⚠️ Could not include service worker in bundle:",
-            swError
-          );
-          // continue without service worker - not critical
-        }
-      } catch (error) {
-        console.error("Error generating HTML:", error);
-        console.error(
-          "Error stack:",
-          error instanceof Error ? error.stack : "Unknown error"
-        );
-        // continue without html file rather than failing
-      }
+      rootFolder!.file("index.html", generateIndexHtml());
+      rootFolder!.file("sw.js", generateSwJs());
     }
 
     // generate and download the zip file
@@ -266,52 +242,6 @@ export async function downloadPlaylistAsZip(
 }
 
 /**
- * Generates M3U8 playlist content
- */
-function generateM3UContent(
-  playlist: Playlist,
-  songs: Song[],
-  fileNames: string[]
-): string {
-  let m3uContent = "#EXTM3U\n";
-
-  // Add playlist metadata
-  m3uContent += `# Playlist: ${playlist.title}\n`;
-  if (playlist.description) {
-    m3uContent += `# Description: ${playlist.description}\n`;
-  }
-  if (playlist.imageData) {
-    const extension = getFileExtensionFromMimeType(
-      playlist.imageType || "image/jpeg"
-    );
-    m3uContent += `# PlaylistImage: data/playlist-cover${extension}\n`;
-  }
-  m3uContent += "\n";
-
-  // Add songs
-  songs.forEach((song, index) => {
-    const duration = Math.round(song.duration || 0);
-    const fileName = fileNames[index];
-
-    if (fileName) {
-      m3uContent += `#EXTINF:${duration}, ${song.artist} - ${song.title}\n`;
-      m3uContent += `# Title: ${song.title}\n`;
-      m3uContent += `# Artist: ${song.artist}\n`;
-      m3uContent += `# Album: ${song.album}\n`;
-
-      if (song.imageData && song.originalFilename) {
-        const baseName = song.originalFilename.replace(/\.[^.]+$/, "");
-        const imageExtension = getFileExtensionFromMimeType(song.imageType!);
-        m3uContent += `# Image: data/${baseName}-cover${imageExtension}\n`;
-      }
-
-      m3uContent += `data/${fileName}\n\n`;
-    }
-  });
-
-  return m3uContent;
-}
-
 /**
  * Creates a safe filename from artist and title
  */
@@ -584,142 +514,19 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 }
 
 /**
- * Generates a standalone HTML file with embedded playlist data
- */
-async function generateStandaloneHTML(
-  playlistData: ImportedPlaylistData
-): Promise<string> {
-  // Fetch the clean HTML source instead of serializing the mutated DOM
-  const response = await fetch(window.location.href);
-  const currentHTML = await response.text();
-
-  // Generate Open Graph meta tags for rich link previews
-  const playlist = playlistData.playlist;
-  const songCount = playlistData.songs?.length || 0;
-  const description =
-    playlist?.description ||
-    `a playlist with ${songCount} song${songCount === 1 ? "" : "z"}`;
-
-  // Get relative path to playlist cover image if available
-  let imageUrl = "";
-  if (playlist?.imageMimeType) {
-    const extension = getFileExtensionFromMimeType(playlist.imageMimeType);
-    imageUrl = `/data/playlist-cover${extension}`;
-  }
-
-  const ogMetaTags = `
-    <!-- Open Graph meta tags for rich link previews -->
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="${playlist?.title?.replace(/"/g, "&quot;") || "untitled playlist"}" />
-    <meta property="og:description" content="${description.replace(/"/g, "&quot;")}" />
-    <meta property="og:site_name" content="playlistz" />
-    ${imageUrl ? `<meta property="og:image" content="${imageUrl}" />` : ""}
-    ${imageUrl ? `<meta property="og:image:width" content="512" />` : ""}
-    ${imageUrl ? `<meta property="og:image:height" content="512" />` : ""}
-
-    <!-- standard meta tags -->
-    <meta name="description" content="${description.replace(/"/g, "&quot;")}" />`;
-
-  // create the standalone initialization script with embedded data
-  const standaloneScript = `
-    <script>
-      // Flag to indicate this is a standalone version
-      window.STANDALONE_MODE = true;
-
-      // Load playlist data from embedded JSON
-      function loadPlaylistData() {
-        try {
-          const playlistElement = document.getElementById('playlist-data');
-          if (!playlistElement) {
-            throw new Error('Playlist data not found in document');
-          }
-          return JSON.parse(playlistElement.textContent);
-        } catch (error) {
-          console.error('Error loading embedded playlist data:', error);
-          throw error;
-        }
-      }
-
-      // Wait for the function to be available and then initialize
-      async function waitForInitialization() {
-        let attempts = 0;
-        const maxAttempts = 50; // Wait up to 5 seconds
-
-        while (attempts < maxAttempts) {
-          if (window.initializeStandalonePlaylist) {
-            try {
-              // Load playlist data from embedded JSON
-              const playlistData = loadPlaylistData();
-
-              // Initialize playlist (this will show its own loading progress)
-              window.initializeStandalonePlaylist(playlistData);
-              return; // Success, exit
-            } catch (error) {
-              console.error('Failed to initialize playlist:', error);
-              showError('Failed to initialize playlist: ' + error.message);
-              return;
-            }
-          }
-
-          // Wait 100ms before trying again
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-
-        // Function never became available
-        console.error('initializeStandalonePlaylist function not found after waiting');
-        showError('Playlist initialization function not found. The app may not have loaded properly.');
-      }
-
-      // Start waiting after DOM is loaded
-      window.addEventListener('DOMContentLoaded', waitForInitialization);
-
-      // Show dismissable error message
-      function showError(message) {
-        const errorDiv = document.createElement('div');
-        errorDiv.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(220, 20, 60, 0.95); color: white; padding: 15px 25px; border-radius: 8px; z-index: 10000; text-align: center; max-width: 500px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
-        errorDiv.innerHTML = '<div style="margin-bottom: 10px;">' + message + '</div><button onclick="this.parentElement.remove()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 5px 15px; border-radius: 4px; cursor: pointer;">Dismiss</button>';
-        document.body.appendChild(errorDiv);
-      }
-    </script>
-  `;
-
-  // Create embedded playlist data as JSON script tag
-  const playlistDataScript = `
-    <script type="application/json" id="playlist-data">
-${JSON.stringify(playlistData, null, 2)}
-    </script>`;
-
-  // Insert the meta tags, playlist data, and script before the closing </head> tag
-  // Also update the title
-  let modifiedHTML = currentHTML.replace(
-    /<title>.*?<\/title>/i,
-    `<title>${playlist?.title?.replace(/"/g, "&quot;") || "untitled playlist"} - playlistz</title>`
-  );
-
-  modifiedHTML = modifiedHTML.replace(
-    "</head>",
-    `${ogMetaTags}\n${playlistDataScript}\n${standaloneScript}\n</head>`
-  );
-
-  return modifiedHTML;
-}
-
-/**
  * Sanitizes filenames for better cross-platform compatibility
  */
 function sanitizeFilename(filename: string): string {
   return (
     filename
-      // Replace problematic characters with safe alternatives
       .replace(/\$/g, "_DOLLAR_")
       .replace(/\[/g, "_LBRACKET_")
       .replace(/\]/g, "_RBRACKET_")
       .replace(/\(/g, "_LPAREN_")
       .replace(/\)/g, "_RPAREN_")
       .replace(/[<>:"/\\|?*]/g, "_")
-      // Keep other characters as they are for readability
       .replace(/\s+/g, " ")
       .trim()
   );
 }
+
