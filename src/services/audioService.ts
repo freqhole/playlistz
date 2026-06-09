@@ -3,7 +3,7 @@
 
 import { createSignal } from "solid-js";
 import type { Song, Playlist, AudioState } from "../types/playlist.js";
-import { loadSongAudioData, getAllSongs, loadAllPlaybackPositions, savePlaybackPosition, deletePlaybackPosition } from "./indexedDBService.js";
+import { loadSongAudioData, getAllSongs, loadAllPlaybackPositions, savePlaybackPosition, deletePlaybackPosition, saveLastPlayed, loadLastPlayed } from "./indexedDBService.js";
 import {
   streamAudioWithCaching,
   downloadSongIfNeeded,
@@ -552,10 +552,13 @@ async function handleSongEnded(): Promise<void> {
 }
 
 // play a specific song
-export async function playSong(song: Song): Promise<void> {
+export async function playSong(song: Song, skipResume = false): Promise<void> {
   const audio = initializeAudio();
 
   try {
+    // ensure persisted positions are loaded before checking resume state
+    await ensurePositionsLoaded();
+
     // save the outgoing song's position before switching tracks
     flushCurrentPosition();
 
@@ -583,7 +586,8 @@ export async function playSong(song: Song): Promise<void> {
     // check for a saved position to resume from.
     // if the saved position is <95% of the song's known duration, resume from there.
     // otherwise (near end or unknown duration) start from the beginning.
-    const savedPos = songPlaybackPositions().get(song.id) ?? 0;
+    // skipResume=true when auto-advancing (song ended naturally) - always start fresh.
+    const savedPos = skipResume ? 0 : (songPlaybackPositions().get(song.id) ?? 0);
     const knownDuration = song.duration ?? 0;
     if (savedPos > 0 && (knownDuration === 0 || savedPos < knownDuration * 0.95)) {
       pendingSeekTime = savedPos;
@@ -628,6 +632,11 @@ export async function playSong(song: Song): Promise<void> {
     if (queueIndex >= 0) {
       // song is in current queue, use it
       setCurrentIndex(queueIndex);
+      // save last played for this playlist so we can resume on reload
+      const pl = currentPlaylist();
+      if (pl) {
+        saveLastPlayed(pl.id, song.id);
+      }
     } else {
       // song not in current queue, clear playlist context for single song play
       setCurrentPlaylist(null);
@@ -839,8 +848,36 @@ export async function playPlaylist(
   await loadPlaylistQueue(playlist);
 
   const queue = playlistQueue();
-  if (!queue.length || startIndex >= queue.length || startIndex < 0) return;
+  if (!queue.length) return;
 
+  // ensure persisted positions are loaded before checking resume state
+  await ensurePositionsLoaded();
+
+  // check if there's a last-played song to resume from
+  const lastSongId = await loadLastPlayed(playlist.id);
+  if (lastSongId) {
+    const lastIdx = queue.findIndex((s) => s.id === lastSongId);
+    if (lastIdx >= 0) {
+      const lastSong = queue[lastIdx]!;
+      const savedPos = songPlaybackPositions().get(lastSongId) ?? 0;
+      const knownDuration = lastSong.duration ?? 0;
+      const nearEnd = knownDuration > 0 && savedPos >= knownDuration * 0.95;
+
+      if (!nearEnd) {
+        // resume this song at its saved position (pendingSeekTime handles the seek)
+        await tryPlaySongFromIndex(lastIdx);
+        return;
+      } else {
+        // song was near end - advance to next, or wrap to start if last song
+        const nextIdx = lastIdx + 1 < queue.length ? lastIdx + 1 : 0;
+        await tryPlaySongFromIndex(nextIdx);
+        return;
+      }
+    }
+  }
+
+  // no last-played data - start from requested index
+  if (startIndex >= queue.length || startIndex < 0) return;
   await tryPlaySongFromIndex(startIndex);
 }
 
@@ -892,7 +929,8 @@ export async function playNext(): Promise<void> {
     setCurrentIndex(nextIndex);
     setSelectedSongId(nextSong.id);
     try {
-      await playSong(nextSong);
+      // auto-advance always starts from beginning, never resumes saved position
+      await playSong(nextSong, true);
     } catch (error) {
       console.error("error playing next song:", error);
       throw error; // re-throw for handleSongEnded to catch

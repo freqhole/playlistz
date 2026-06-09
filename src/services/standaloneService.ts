@@ -426,6 +426,23 @@ export async function initializeStandalonePlaylist(
           (song: Song) => song.playlistId === existingPlaylist.id
         );
 
+        // always re-apply imageFilePath from incoming data in case it was missing from idb
+        const incomingImageFilePath = playlistData.playlist.imageFilePath
+          ?? (playlistData.playlist.imageExtension
+            ? `data/playlist-cover${playlistData.playlist.imageExtension}`
+            : undefined);
+        if (incomingImageFilePath && !existingPlaylist.imageFilePath) {
+          existingPlaylist.imageFilePath = incomingImageFilePath;
+          existingPlaylist.imageType = existingPlaylist.imageType ?? playlistData.playlist.imageMimeType;
+          existingPlaylist.needsImageLoad = true;
+          await mutateAndNotify({
+            dbName: DB_NAME,
+            storeName: PLAYLISTS_STORE,
+            key: existingPlaylist.id,
+            updateFn: () => existingPlaylist,
+          });
+        }
+
         finalPlaylist = existingPlaylist;
         finalSongs = playlistSongs;
       }

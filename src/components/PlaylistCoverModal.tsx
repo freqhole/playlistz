@@ -15,6 +15,7 @@ import {
   processPlaylistCover,
   validateImageFile,
   createImageUrlFromData,
+  getImageUrlForContext,
 } from "../services/imageService.js";
 import { downloadPlaylistAsZip } from "../services/playlistDownloadService.js";
 import type { Playlist, Song } from "../types/playlist.js";
@@ -215,7 +216,7 @@ export function PlaylistCoverModal(props: PlaylistCoverModalProps) {
     <Show when={props.isOpen}>
       {(() => {
         const songsWithArt = props.playlistSongs.filter(
-          (song) => song.imageType && (song.imageData || song.thumbnailData)
+          (song) => song.imageType || song.imageFilePath
         );
 
         return (
@@ -371,10 +372,7 @@ export function PlaylistCoverModal(props: PlaylistCoverModalProps) {
                             title={`${song.title} - ${song.artist}`}
                           >
                             <Show
-                              when={
-                                song.imageType &&
-                                (song.imageData || song.thumbnailData)
-                              }
+                              when={song.imageType || song.imageFilePath}
                               fallback={
                                 <div class="w-full h-full flex items-center justify-center">
                                   <svg
@@ -394,10 +392,9 @@ export function PlaylistCoverModal(props: PlaylistCoverModalProps) {
                               }
                             >
                               <img
-                                src={createImageUrlFromData(
-                                  song.thumbnailData || song.imageData!,
-                                  song.imageType!
-                                )}
+                                src={
+                                  getImageUrlForContext(song, "thumbnail") ?? ""
+                                }
                                 alt={song.title}
                                 class="w-full h-full object-cover"
                               />

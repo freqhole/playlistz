@@ -24,7 +24,7 @@ export function useImageModal() {
     const images: ImageWithMetadata[] = [];
 
     // try to add playlist cover image if available
-    if (playlist?.imageType) {
+    if (playlist?.imageType || playlist?.imageFilePath) {
       const playlistImageUrl = getImageUrlForContext(playlist, "modal");
       if (playlistImageUrl) {
         images.push({
@@ -38,7 +38,7 @@ export function useImageModal() {
 
     // collect song images
     playlistSongs.forEach((song) => {
-      if (song.imageType && (song.imageData || song.thumbnailData)) {
+      if (song.imageType || song.imageFilePath) {
         const songImageUrl = getImageUrlForContext(song, "modal");
         if (songImageUrl) {
           images.push({

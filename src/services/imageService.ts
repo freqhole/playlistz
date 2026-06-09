@@ -336,24 +336,24 @@ export function getImageUrlForContext(
   item: Song | Playlist,
   context: "thumbnail" | "background" | "modal" = "thumbnail"
 ): string | null {
-  if (!item?.imageType) return null;
+  if (!item?.imageType && !item?.imageFilePath) return null;
 
   const { thumbnailData, imageData, imageType, imageFilePath } = item;
 
   // For backgrounds and modals, prefer full-size, fallback to thumbnail
   if (context === "background" || context === "modal") {
     if (imageData) {
-      return createImageUrlFromData(imageData, imageType);
+      return createImageUrlFromData(imageData, imageType ?? "image/jpeg");
     } else if (thumbnailData) {
-      return createImageUrlFromData(thumbnailData, imageType);
+      return createImageUrlFromData(thumbnailData, imageType ?? "image/jpeg");
     }
   }
 
   // For thumbnails, prefer thumbnail size, fallback to full-size
   if (thumbnailData) {
-    return createImageUrlFromData(thumbnailData, imageType);
+    return createImageUrlFromData(thumbnailData, imageType ?? "image/jpeg");
   } else if (imageData) {
-    return createImageUrlFromData(imageData, imageType);
+    return createImageUrlFromData(imageData, imageType ?? "image/jpeg");
   }
 
   // fallback for standalone mode - use file path directly (works for both file:// and http://)

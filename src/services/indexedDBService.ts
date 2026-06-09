@@ -48,15 +48,22 @@ function createSignal<T>(initial: T): Signal<T> {
 
 // database configuration
 export const DB_NAME = "musicPlaylistDB";
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 export const PLAYLISTS_STORE = "playlists";
 export const SONGS_STORE = "songs";
 export const PLAYBACK_POSITIONS_STORE = "playbackPositions";
+export const LAST_PLAYED_STORE = "lastPlayed";
 
 // record shape stored per-song in the playbackPositions store
 export interface PlaybackPositionRecord {
   songId: string;
   position: number;
+  updatedAt: number;
+}
+
+export interface LastPlayedRecord {
+  playlistId: string;
+  songId: string;
   updatedAt: number;
 }
 
@@ -74,6 +81,10 @@ interface PlaylistDB extends DBSchema {
   playbackPositions: {
     key: string;
     value: PlaybackPositionRecord;
+  };
+  lastPlayed: {
+    key: string;
+    value: LastPlayedRecord;
   };
 }
 
@@ -109,6 +120,13 @@ export async function setupDB(): Promise<IDBPDatabase<PlaylistDB>> {
       if (oldVersion < 4) {
         if (!db.objectStoreNames.contains(PLAYBACK_POSITIONS_STORE)) {
           db.createObjectStore(PLAYBACK_POSITIONS_STORE, { keyPath: "songId" });
+        }
+      }
+
+      // migration for version 5: add last played store
+      if (oldVersion < 5) {
+        if (!db.objectStoreNames.contains(LAST_PLAYED_STORE)) {
+          db.createObjectStore(LAST_PLAYED_STORE, { keyPath: "playlistId" });
         }
       }
     },
@@ -609,6 +627,8 @@ export function createPlaylistsQuery() {
       "imageData",
       "thumbnailData",
       "imageType",
+      "imageFilePath",
+      "needsImageLoad",
       "createdAt",
       "updatedAt",
       "songIds",
@@ -634,6 +654,8 @@ export function createPlaylistSongsQuery(playlistId: string) {
       "imageData",
       "thumbnailData",
       "imageType",
+      "imageFilePath",
+      "needsImageLoad",
       "createdAt",
       "updatedAt",
       "playlistId",
@@ -873,3 +895,26 @@ export async function deletePlaybackPosition(songId: string): Promise<void> {
     console.warn(`error deleting playback position for ${songId}:`, error);
   }
 }
+
+// save the last-played song for a playlist (called when a song starts playing)
+export async function saveLastPlayed(playlistId: string, songId: string): Promise<void> {
+  try {
+    const db = await setupDB();
+    await db.put(LAST_PLAYED_STORE, { playlistId, songId, updatedAt: Date.now() });
+  } catch (error) {
+    console.warn(`error saving last played for playlist ${playlistId}:`, error);
+  }
+}
+
+// load the last-played song id for a playlist
+export async function loadLastPlayed(playlistId: string): Promise<string | null> {
+  try {
+    const db = await setupDB();
+    const record = await db.get(LAST_PLAYED_STORE, playlistId);
+    return record?.songId ?? null;
+  } catch (error) {
+    console.warn(`error loading last played for playlist ${playlistId}:`, error);
+    return null;
+  }
+}
+

@@ -7,7 +7,7 @@ const HELP = `
 freqhole-playlistz cli
 
 usage:
-  freqhole-playlistz --http [dir]            serve dir over http with range requests (default: ./data)
+  freqhole-playlistz --http [dir]            serve dir over http with range requests (default: .)
   freqhole-playlistz --check [file]          validate playlistz.js structure + check files on disk (default: ./playlistz.js)
   freqhole-playlistz --init <dir>            write index.html + sw.js to dir
   freqhole-playlistz --generate-data <dir>   parse .m3u8 file(s) in dir, generate/update playlistz.js
@@ -27,7 +27,7 @@ export function runCli(argv: string[]): void {
   }
 
   if (cmd === "--http") {
-    serveHttp(args[1] ?? "./data");
+    serveHttp(args[1] ?? ".");
     return;
   }
 

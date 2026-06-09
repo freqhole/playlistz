@@ -220,6 +220,34 @@ export async function downloadPlaylistAsZip(
     if (options.includeHTML) {
       rootFolder!.file("index.html", generateIndexHtml());
       rootFolder!.file("sw.js", generateSwJs());
+
+      // include the app bundle - try the script tag src first, then fall back to known path
+      try {
+        const scriptEl = Array.from(document.querySelectorAll("script[src]")).find(
+          (el) => (el as HTMLScriptElement).src.includes("freqhole-playlistz.js")
+        ) as HTMLScriptElement | undefined;
+        const bundleUrl = scriptEl?.src ?? `${window.location.origin}/freqhole-playlistz.js`;
+        const appBundleResponse = await fetch(bundleUrl);
+        if (appBundleResponse.ok) {
+          rootFolder!.file("freqhole-playlistz.js", await appBundleResponse.arrayBuffer());
+        } else {
+          console.warn("could not fetch freqhole-playlistz.js for zip bundle:", appBundleResponse.status);
+        }
+      } catch (err) {
+        console.warn("could not include freqhole-playlistz.js in zip:", err);
+      }
+
+      // include the cli bundle
+      try {
+        const cliResponse = await fetch(`${window.location.origin}/freqhole-playlistz-cli.mjs`);
+        if (cliResponse.ok) {
+          rootFolder!.file("freqhole-playlistz-cli.mjs", await cliResponse.arrayBuffer());
+        } else {
+          console.warn("could not fetch freqhole-playlistz-cli.mjs for zip bundle:", cliResponse.status);
+        }
+      } catch (err) {
+        console.warn("could not include freqhole-playlistz-cli.mjs in zip:", err);
+      }
     }
 
     // generate and download the zip file

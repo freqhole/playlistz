@@ -94,6 +94,12 @@ describe("Audio Service Tests", () => {
       mockSong3,
     ]);
     vi.spyOn(indexedDBService, "loadSongAudioData").mockResolvedValue(null);
+    // default: no last-played song (avoids resume behavior in unrelated tests)
+    vi.spyOn(indexedDBService, "loadLastPlayed").mockResolvedValue(null);
+    vi.spyOn(indexedDBService, "saveLastPlayed").mockResolvedValue(undefined);
+    vi.spyOn(indexedDBService, "loadAllPlaybackPositions").mockResolvedValue(new Map());
+    vi.spyOn(indexedDBService, "savePlaybackPosition").mockResolvedValue(undefined);
+    vi.spyOn(indexedDBService, "deletePlaybackPosition").mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1096,6 +1102,95 @@ describe("Audio Service Tests", () => {
       audio.duration = 180;
       audioService.seek(0);
       expect(audioService.audioState.songPlaybackPositions().get(mockSong1.id)).toBeUndefined();
+    });
+  });
+
+  describe("Playlist Resume on Reload", () => {
+    // helper: fire loadedmetadata on the current mock audio element
+    const fireLoadedMetadata = (duration: number) => {
+      const audio = getMockAudio();
+      const handlers = audio.addEventListener.mock.calls
+        .filter((c: any) => c[0] === "loadedmetadata")
+        .map((c: any) => c[1]);
+      audio.duration = duration;
+      for (const h of handlers) h();
+    };
+
+    // helper: inject a position directly into the in-memory signal map
+    const injectPosition = (songId: string, pos: number) => {
+      audioService.audioState.songPlaybackPositions().set(songId, pos);
+    };
+
+    it("playPlaylist starts at song-1 when no last-played record exists", async () => {
+      vi.mocked(indexedDBService.loadLastPlayed).mockResolvedValue(null);
+      await audioService.playPlaylist(mockPlaylist);
+      expect(audioService.audioState.currentSong()?.id).toBe("song-1");
+    });
+
+    it("playPlaylist resumes last-played song at saved position", async () => {
+      vi.mocked(indexedDBService.loadLastPlayed).mockResolvedValue("song-2");
+      injectPosition("song-2", 60);
+      await audioService.playPlaylist(mockPlaylist);
+      expect(audioService.audioState.currentSong()?.id).toBe("song-2");
+      fireLoadedMetadata(180);
+      expect(getMockAudio().currentTime).toBe(60);
+    });
+
+    it("playPlaylist advances to next song when last-played is >=95% through", async () => {
+      vi.mocked(indexedDBService.loadLastPlayed).mockResolvedValue("song-1");
+      injectPosition("song-1", 175); // 175/180 > 95%
+      await audioService.playPlaylist(mockPlaylist);
+      expect(audioService.audioState.currentSong()?.id).toBe("song-2");
+    });
+
+    it("playPlaylist wraps to song-1 when last-played was final song and near end", async () => {
+      vi.mocked(indexedDBService.loadLastPlayed).mockResolvedValue("song-3");
+      injectPosition("song-3", 175);
+      await audioService.playPlaylist(mockPlaylist);
+      expect(audioService.audioState.currentSong()?.id).toBe("song-1");
+    });
+
+    it("playPlaylist falls back to song-1 when last-played song is no longer in queue", async () => {
+      vi.mocked(indexedDBService.loadLastPlayed).mockResolvedValue("song-deleted");
+      await audioService.playPlaylist(mockPlaylist);
+      expect(audioService.audioState.currentSong()?.id).toBe("song-1");
+    });
+
+    it("saves last-played to IDB when a song starts in playlist context", async () => {
+      vi.mocked(indexedDBService.loadLastPlayed).mockResolvedValue(null);
+      await audioService.playPlaylist(mockPlaylist);
+      expect(indexedDBService.saveLastPlayed).toHaveBeenCalledWith(
+        mockPlaylist.id,
+        "song-1"
+      );
+    });
+
+    it("auto-advance ignores saved position and starts next song from beginning", async () => {
+      vi.mocked(indexedDBService.loadLastPlayed).mockResolvedValue(null);
+      await audioService.playPlaylist(mockPlaylist);
+      expect(audioService.audioState.currentSong()?.id).toBe("song-1");
+
+      // inject a saved position for song-2 (simulates user having listened partway before)
+      injectPosition("song-2", 90);
+
+      // trigger natural song end (ended event)
+      const audio = getMockAudio();
+      const endedHandlers = audio.addEventListener.mock.calls
+        .filter((c: any) => c[0] === "ended")
+        .map((c: any) => c[1]);
+      for (const h of endedHandlers) await h();
+
+      expect(audioService.audioState.currentSong()?.id).toBe("song-2");
+      // loadedmetadata fires - currentTime should stay 0, not resume to 90
+      fireLoadedMetadata(180);
+      expect(getMockAudio().currentTime).toBe(0);
+    });
+
+    it("manual play (playSongFromPlaylist) still resumes saved position", async () => {
+      injectPosition("song-2", 45);
+      await audioService.playSongFromPlaylist(mockSong2, mockPlaylist);
+      fireLoadedMetadata(180);
+      expect(getMockAudio().currentTime).toBe(45);
     });
   });
 });
