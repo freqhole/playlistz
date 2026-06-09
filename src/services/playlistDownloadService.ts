@@ -122,38 +122,47 @@ export async function downloadPlaylistAsZip(
     const dataFolder = rootFolder!.folder("data");
 
     // build playlist entry for the playlistz.js data file
+    const playlistCoverExtension = updatedPlaylist.imageData
+      ? getFileExtensionFromMimeType(updatedPlaylist.imageType || "image/jpeg")
+      : undefined;
+
     const playlistEntry = {
       playlist: {
         id: updatedPlaylist.id,
         title: updatedPlaylist.title,
         description: updatedPlaylist.description,
         rev: updatedPlaylist.rev,
-        imageExtension: updatedPlaylist.imageData
-          ? getFileExtensionFromMimeType(
-              updatedPlaylist.imageType || "image/jpeg"
-            )
-          : undefined,
         imageMimeType: updatedPlaylist.imageType || undefined,
+        imageFilePath: playlistCoverExtension
+          ? `data/playlist-cover${playlistCoverExtension}`
+          : undefined,
         safeFilename: createSafeFileName("", updatedPlaylist.title),
       },
-      songs: songsWithSHA.map((song) => ({
-        id: song.id,
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        duration: song.duration || 0,
-        originalFilename: song.originalFilename || "",
-        safeFilename: song.originalFilename
-          ? sanitizeFilename(song.originalFilename)
-          : "",
-        fileSize: song.fileSize || song.audioData?.byteLength || 0,
-        mimeType: song.mimeType || "audio/mpeg",
-        sha: song.sha,
-        imageExtension: song.imageData
+      songs: songsWithSHA.map((song) => {
+        const songImageExt = song.imageData
           ? getFileExtensionFromMimeType(song.imageType || "image/jpeg")
-          : undefined,
-        imageMimeType: song.imageType || undefined,
-      })),
+          : undefined;
+        const safeName = song.originalFilename
+          ? sanitizeFilename(song.originalFilename)
+          : "";
+        const safeBase = safeName.replace(/\.[^.]+$/, "");
+        return {
+          id: song.id,
+          title: song.title,
+          artist: song.artist,
+          album: song.album,
+          duration: song.duration || 0,
+          originalFilename: song.originalFilename || "",
+          safeFilename: safeName,
+          fileSize: song.fileSize || song.audioData?.byteLength || 0,
+          mimeType: song.mimeType || "audio/mpeg",
+          sha: song.sha,
+          imageMimeType: song.imageType || undefined,
+          imageFilePath: songImageExt
+            ? `data/${safeBase}-cover${songImageExt}`
+            : undefined,
+        };
+      }),
     };
 
     // add playlistz.js data file to root folder

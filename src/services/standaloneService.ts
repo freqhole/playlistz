@@ -73,7 +73,12 @@ function createSongFromStandaloneData(
   };
 
   // Set song image metadata for file-based loading
-  if (songData.imageExtension && songData.imageMimeType) {
+  if (songData.imageFilePath && songData.imageMimeType) {
+    song.imageType = songData.imageMimeType;
+    song.needsImageLoad = true;
+    song.imageFilePath = songData.imageFilePath;
+  } else if (songData.imageExtension && songData.imageMimeType) {
+    // backwards compat with old exports that used imageExtension
     song.imageType = songData.imageMimeType;
     song.needsImageLoad = true;
     song.imageFilePath = `data/${songData.safeFilename?.replace(/\.[^.]+$/, "") || songData.originalFilename?.replace(/\.[^.]+$/, "")}-cover${songData.imageExtension}`;
@@ -108,10 +113,15 @@ async function smartUpdatePlaylistWithSongs(
   };
 
   // set playlist image metadata for loading from file
-  if (
+  if (playlistData.playlist.imageFilePath && playlistData.playlist.imageMimeType) {
+    playlistToUpdate.imageType = playlistData.playlist.imageMimeType;
+    playlistToUpdate.needsImageLoad = true;
+    playlistToUpdate.imageFilePath = playlistData.playlist.imageFilePath;
+  } else if (
     playlistData.playlist.imageExtension &&
     playlistData.playlist.imageMimeType
   ) {
+    // backwards compat with old exports that used imageExtension
     playlistToUpdate.imageType = playlistData.playlist.imageMimeType;
     playlistToUpdate.needsImageLoad = true;
     playlistToUpdate.imageFilePath = `data/playlist-cover${playlistData.playlist.imageExtension}`;
@@ -176,7 +186,12 @@ async function smartUpdatePlaylistWithSongs(
       };
 
       // update image metadata if changed
-      if (songData.imageExtension && songData.imageMimeType) {
+      if (songData.imageFilePath && songData.imageMimeType) {
+        finalSong.imageType = songData.imageMimeType;
+        finalSong.needsImageLoad = true;
+        finalSong.imageFilePath = songData.imageFilePath;
+      } else if (songData.imageExtension && songData.imageMimeType) {
+        // backwards compat with old exports that used imageExtension
         finalSong.imageType = songData.imageMimeType;
         finalSong.needsImageLoad = true;
         finalSong.imageFilePath = `data/${songData.safeFilename?.replace(/\.[^.]+$/, "") || songData.originalFilename?.replace(/\.[^.]+$/, "")}-cover${songData.imageExtension}`;
@@ -238,13 +253,20 @@ async function createNewPlaylist(playlistData: StandaloneData): Promise<{
   };
 
   // set playlist image metadata for loading from file
-  if (
-    playlistData.playlist.imageExtension &&
-    playlistData.playlist.imageMimeType
-  ) {
-    playlistToCreate.imageType = playlistData.playlist.imageMimeType;
-    playlistToCreate.needsImageLoad = true;
-    playlistToCreate.imageFilePath = `data/playlist-cover${playlistData.playlist.imageExtension}`;
+  if (playlistToCreate.imageFilePath === undefined) {
+    if (playlistData.playlist.imageFilePath && playlistData.playlist.imageMimeType) {
+      playlistToCreate.imageType = playlistData.playlist.imageMimeType;
+      playlistToCreate.needsImageLoad = true;
+      playlistToCreate.imageFilePath = playlistData.playlist.imageFilePath;
+    } else if (
+      playlistData.playlist.imageExtension &&
+      playlistData.playlist.imageMimeType
+    ) {
+      // backwards compat with old exports that used imageExtension
+      playlistToCreate.imageType = playlistData.playlist.imageMimeType;
+      playlistToCreate.needsImageLoad = true;
+      playlistToCreate.imageFilePath = `data/playlist-cover${playlistData.playlist.imageExtension}`;
+    }
   }
 
   // manually store playlist using mutateandnotify to trigger reactive updates

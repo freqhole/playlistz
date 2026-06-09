@@ -12,6 +12,7 @@ const FreqholePlaylistSongSchema = z.object({
   sha: z.string().optional(),
   imageExtension: z.string().optional(),
   imageMimeType: z.string().optional(),
+  imageFilePath: z.string().optional(),
   safeFilename: z.string().optional(),
   mimeType: z.string().optional(),
 });
@@ -24,6 +25,7 @@ const FreqholePlaylistHeaderSchema = z.object({
   rev: z.number().optional(),
   imageExtension: z.string().optional(),
   imageMimeType: z.string().optional(),
+  imageFilePath: z.string().optional(),
   safeFilename: z.string().optional(),
 });
 
