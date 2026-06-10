@@ -34,7 +34,13 @@ function PlaylistzInner() {
 
   const { isEditMode, error: songError } = songState;
 
-  const { isMobile, sidebarCollapsed, setSidebarCollapsed } = uiState;
+  const {
+    isMobile,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    sidebarPreferredCollapsed,
+    toggleSidebar,
+  } = uiState;
 
   const {
     isDragOver,
@@ -64,12 +70,26 @@ function PlaylistzInner() {
   // show sidebar toggle when in edit mode or there are no playlists
   const showSidebarToggle = () => isEditMode() || playlists().length === 0;
 
-  // collapse sidebar whenever edit mode ends (sidebar only accessible in edit mode)
+  // the sidebar is only ever visible while an edit panel is open (or there are
+  // no playlists). when allowed, it opens according to the user's last toggle.
   createEffect(() => {
-    if (!isEditMode()) {
+    if (showSidebarToggle()) {
+      setSidebarCollapsed(sidebarPreferredCollapsed());
+    } else {
       setSidebarCollapsed(true);
     }
   });
+
+  // derived bg filter string from selected playlist settings
+  const bgFilter = () => {
+    const p = selectedPlaylist();
+    if (!p) return "blur(3px) contrast(3) brightness(0.4)";
+    if (p.bgFilterEnabled === false) return "none";
+    const blur = p.bgFilterBlur ?? 3;
+    const contrast = p.bgFilterContrast ?? 3;
+    const brightness = p.bgFilterBrightness ?? 0.4;
+    return `blur(${blur}px) contrast(${contrast}) brightness(${brightness})`;
+  };
 
   // create a wrapper that provides the necessary options to handleFileDrop
   const handleFileDropWrapper = async (e: DragEvent) => {
@@ -99,7 +119,7 @@ function PlaylistzInner() {
           class="absolute inset-0 bg-cover bg-top bg-no-repeat transition-opacity duration-1000 ease-out"
           style={{
             "background-image": `url(${backgroundImageUrl()})`,
-            filter: "blur(3px) contrast(3) brightness(0.4)",
+            filter: bgFilter(),
             "z-index": "0",
           }}
         />
@@ -172,7 +192,7 @@ function PlaylistzInner() {
           class={`fixed top-0 inset-0 bg-black bg-opacity-80 flex items-center justify-center z-10 transition-all duration-300 ease-in-out w-10 h-10 ${sidebarCollapsed() ? "left-0" : isMobile() ? "left-[calc(100vw-40px)]" : "left-72"}`}
         >
           <button
-            onClick={() => setSidebarCollapsed((prev: boolean) => !prev)}
+            onClick={() => toggleSidebar()}
             class="p-2 text-magenta-200 hover:text-magenta-500 hover:bg-gray-800 transition-colors bg-black bg-opacity-80"
             title={`${sidebarCollapsed() ? "show" : "hide"} playlist sidebar`}
           >

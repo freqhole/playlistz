@@ -11,6 +11,14 @@ export interface Playlist {
   needsImageLoad?: boolean;
   imageFilePath?: string;
   rev?: number; // Revision number for standalone mode (starts at 0, incremented on download)
+  // background image filter settings
+  bgFilterEnabled?: boolean; // default: true
+  bgFilterBlur?: number; // default: 3 (px)
+  bgFilterContrast?: number; // default: 3
+  bgFilterBrightness?: number; // default: 0.4
+  // cover image filter (the blurred thumbnail in the playlist header)
+  coverFilterEnabled?: boolean; // default: true
+  coverFilterBlur?: number; // default: 3 (px)
 }
 
 export interface Song {

@@ -27,6 +27,12 @@ const FreqholePlaylistHeaderSchema = z.object({
   imageMimeType: z.string().optional(),
   imageFilePath: z.string().optional(),
   safeFilename: z.string().optional(),
+  bgFilterEnabled: z.boolean().optional(),
+  bgFilterBlur: z.number().optional(),
+  bgFilterContrast: z.number().optional(),
+  bgFilterBrightness: z.number().optional(),
+  coverFilterEnabled: z.boolean().optional(),
+  coverFilterBlur: z.number().optional(),
 });
 
 // schema for a single { playlist, songs } entry - matches StandaloneData shape

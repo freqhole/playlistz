@@ -48,11 +48,12 @@ function createSignal<T>(initial: T): Signal<T> {
 
 // database configuration
 export const DB_NAME = "musicPlaylistDB";
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 export const PLAYLISTS_STORE = "playlists";
 export const SONGS_STORE = "songs";
 export const PLAYBACK_POSITIONS_STORE = "playbackPositions";
 export const LAST_PLAYED_STORE = "lastPlayed";
+export const SETTINGS_STORE = "settings";
 
 // record shape stored per-song in the playbackPositions store
 export interface PlaybackPositionRecord {
@@ -64,6 +65,13 @@ export interface PlaybackPositionRecord {
 export interface LastPlayedRecord {
   playlistId: string;
   songId: string;
+  updatedAt: number;
+}
+
+// generic key-value record for ui/app settings
+export interface SettingRecord {
+  key: string;
+  value: unknown;
   updatedAt: number;
 }
 
@@ -85,6 +93,10 @@ interface PlaylistDB extends DBSchema {
   lastPlayed: {
     key: string;
     value: LastPlayedRecord;
+  };
+  settings: {
+    key: string;
+    value: SettingRecord;
   };
 }
 
@@ -127,6 +139,13 @@ export async function setupDB(): Promise<IDBPDatabase<PlaylistDB>> {
       if (oldVersion < 5) {
         if (!db.objectStoreNames.contains(LAST_PLAYED_STORE)) {
           db.createObjectStore(LAST_PLAYED_STORE, { keyPath: "playlistId" });
+        }
+      }
+
+      // migration for version 6: add settings store
+      if (oldVersion < 6) {
+        if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
+          db.createObjectStore(SETTINGS_STORE, { keyPath: "key" });
         }
       }
     },
@@ -633,6 +652,12 @@ export function createPlaylistsQuery() {
       "updatedAt",
       "songIds",
       "rev",
+      "bgFilterEnabled",
+      "bgFilterBlur",
+      "bgFilterContrast",
+      "bgFilterBrightness",
+      "coverFilterEnabled",
+      "coverFilterBlur",
     ],
   });
 }
@@ -914,6 +939,28 @@ export async function loadLastPlayed(playlistId: string): Promise<string | null>
     return record?.songId ?? null;
   } catch (error) {
     console.warn(`error loading last played for playlist ${playlistId}:`, error);
+    return null;
+  }
+}
+
+// save a ui/app setting to indexeddb (fire-and-forget friendly)
+export async function saveSetting(key: string, value: unknown): Promise<void> {
+  try {
+    const db = await setupDB();
+    await db.put(SETTINGS_STORE, { key, value, updatedAt: Date.now() });
+  } catch (error) {
+    console.warn(`error saving setting ${key}:`, error);
+  }
+}
+
+// load a ui/app setting from indexeddb (null when unset or unavailable)
+export async function loadSetting<T>(key: string): Promise<T | null> {
+  try {
+    const db = await setupDB();
+    const record = await db.get(SETTINGS_STORE, key);
+    return record === undefined ? null : (record.value as T);
+  } catch (error) {
+    console.warn(`error loading setting ${key}:`, error);
     return null;
   }
 }

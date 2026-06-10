@@ -110,6 +110,12 @@ async function smartUpdatePlaylistWithSongs(
     imageType: undefined as string | undefined,
     needsImageLoad: true,
     imageFilePath: undefined as string | undefined,
+    bgFilterEnabled: playlistData.playlist.bgFilterEnabled,
+    bgFilterBlur: playlistData.playlist.bgFilterBlur,
+    bgFilterContrast: playlistData.playlist.bgFilterContrast,
+    bgFilterBrightness: playlistData.playlist.bgFilterBrightness,
+    coverFilterEnabled: playlistData.playlist.coverFilterEnabled,
+    coverFilterBlur: playlistData.playlist.coverFilterBlur,
   };
 
   // set playlist image metadata for loading from file
@@ -250,6 +256,12 @@ async function createNewPlaylist(playlistData: StandaloneData): Promise<{
     imageType: undefined as string | undefined,
     needsImageLoad: true,
     imageFilePath: undefined as string | undefined,
+    bgFilterEnabled: playlistData.playlist.bgFilterEnabled,
+    bgFilterBlur: playlistData.playlist.bgFilterBlur,
+    bgFilterContrast: playlistData.playlist.bgFilterContrast,
+    bgFilterBrightness: playlistData.playlist.bgFilterBrightness,
+    coverFilterEnabled: playlistData.playlist.coverFilterEnabled,
+    coverFilterBlur: playlistData.playlist.coverFilterBlur,
   };
 
   // set playlist image metadata for loading from file

@@ -1,10 +1,29 @@
 /* @jsxImportSource solid-js */
 import { createSignal, onMount, onCleanup } from "solid-js";
+import { saveSetting, loadSetting } from "../services/indexedDBService.js";
+
+const SIDEBAR_SETTING_KEY = "sidebarCollapsed";
 
 export function useUIState() {
   const [isMobile, setIsMobile] = createSignal(false);
 
+  // visual state: whether the sidebar is currently hidden.
+  // starts collapsed - visibility is derived from edit mode + preference
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(true);
+
+  // persisted preference: how the user last toggled the sidebar.
+  // applied whenever the sidebar is allowed to show (edit mode / no playlists).
+  // default open (false).
+  const [sidebarPreferredCollapsed, setSidebarPreferredCollapsed] =
+    createSignal(false);
+
+  // user toggle: flips visual state and persists it as the preference
+  const toggleSidebar = () => {
+    const next = !sidebarCollapsed();
+    setSidebarCollapsed(next);
+    setSidebarPreferredCollapsed(next);
+    saveSetting(SIDEBAR_SETTING_KEY, next);
+  };
 
   const [isDragOver, setIsDragOver] = createSignal(false);
 
@@ -17,9 +36,6 @@ export function useUIState() {
   const checkMobile = () => {
     const mobile = window.innerWidth < 900;
     setIsMobile(mobile);
-    if (mobile && sidebarCollapsed()) {
-      setSidebarCollapsed(true);
-    }
   };
 
   // window resize for mobile detection
@@ -38,6 +54,13 @@ export function useUIState() {
 
   // init + cleanup for mobile detection
   onMount(() => {
+    // restore persisted sidebar preference (default: open = false)
+    loadSetting<boolean>(SIDEBAR_SETTING_KEY).then((stored) => {
+      if (stored !== null) {
+        setSidebarPreferredCollapsed(stored);
+      }
+    });
+
     checkMobile();
     window.addEventListener("resize", handleResize);
     document.addEventListener("keydown", handleKeyDown);
@@ -62,6 +85,7 @@ export function useUIState() {
   return {
     isMobile,
     sidebarCollapsed,
+    sidebarPreferredCollapsed,
     isDragOver,
     backgroundImageUrl,
     imageUrlCache,
@@ -69,6 +93,7 @@ export function useUIState() {
     // setterz
     setIsMobile,
     setSidebarCollapsed,
+    toggleSidebar,
     setIsDragOver,
     setBackgroundImageUrl,
 

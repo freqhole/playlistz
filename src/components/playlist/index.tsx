@@ -5,6 +5,7 @@ import {
   createSignal,
   createEffect,
   onCleanup,
+  onMount,
 } from "solid-js";
 import type { Playlist, Song } from "../../types/playlist.js";
 import {
@@ -87,6 +88,27 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   // phase signal: tracks whether rows have completed their exit animation.
   // "gone" = rows are done animating and should be collapsed out of layout.
   const [rowsGone, setRowsGone] = createSignal(false);
+
+  // scroll container ref - reset scroll when an edit panel opens so the
+  // panel top is never cut off (e.g. when editing songs at the end of a long playlist)
+  let scrollContainerRef: HTMLDivElement | undefined;
+
+  createEffect(() => {
+    if (isEditing()) {
+      scrollContainerRef?.scrollTo({ top: 0 });
+    }
+  });
+
+  // escape key closes the edit panels
+  onMount(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isEditing()) {
+        handleCloseEdit();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    onCleanup(() => document.removeEventListener("keydown", onKeyDown));
+  });
 
   createEffect(() => {
     if (isEditing()) {
@@ -433,12 +455,24 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               openImageModal(props.playlist(), playlistSongs(), 0);
             }}
             class="w-39 h-39 overflow-hidden hover:bg-gray-900 flex items-center justify-center transition-colors group"
-            style={{ filter: "blur(3px) contrast(3) brightness(0.4)" }}
+            style={{
+              filter: (() => {
+                const p = props.playlist();
+                if (p.coverFilterEnabled === false) return "none";
+                const blur = p.coverFilterBlur ?? 3;
+                return `blur(${blur}px) contrast(3) brightness(0.4)`;
+              })(),
+            }}
             onMouseEnter={(e) => (e.currentTarget.style.filter = "none")}
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.filter =
-                "blur(3px) contrast(3) brightness(0.4)")
-            }
+            onMouseLeave={(e) => {
+              const p = props.playlist();
+              if (p.coverFilterEnabled === false) {
+                e.currentTarget.style.filter = "none";
+              } else {
+                const blur = p.coverFilterBlur ?? 3;
+                e.currentTarget.style.filter = `blur(${blur}px) contrast(3) brightness(0.4)`;
+              }
+            }}
             title="view playlist imagez"
           >
             <Show
@@ -498,7 +532,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
       </div>
 
       {/* songz list and edit panels */}
-      <div class={`${isMobile() ? "flex-1" : "flex-1 overflow-y-auto"}`}>
+      <div
+        ref={scrollContainerRef}
+        class={`${isMobile() ? "flex-1" : "flex-1 overflow-y-auto"}`}
+      >
         {/* inline playlist edit panel - only renders once rows have animated out */}
         <Show when={editingPlaylist() && rowsGone()}>
           <div
@@ -529,8 +566,13 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
           </div>
         </Show>
 
-        {/* rows container - no overflow:hidden here; scroll container clips instead */}
-        <div class={`${isMobile() ? "space-y-1" : "p-6 space-y-2"}`}>
+        {/* rows container - no overflow:hidden here; scroll container clips instead.
+            fully removed from layout once rows are gone so leftover padding +
+            space-y margins don't add phantom height below the edit panel */}
+        <div
+          class={`${isMobile() ? "space-y-1" : "p-6 space-y-2"}`}
+          style={rowsGone() ? { display: "none" } : {}}
+        >
           {/* empty playlist message - hidden during edit mode */}
           <Show
             when={

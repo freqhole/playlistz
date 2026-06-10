@@ -137,6 +137,12 @@ export async function downloadPlaylistAsZip(
           ? `data/playlist-cover${playlistCoverExtension}`
           : undefined,
         safeFilename: createSafeFileName("", updatedPlaylist.title),
+        bgFilterEnabled: updatedPlaylist.bgFilterEnabled,
+        bgFilterBlur: updatedPlaylist.bgFilterBlur,
+        bgFilterContrast: updatedPlaylist.bgFilterContrast,
+        bgFilterBrightness: updatedPlaylist.bgFilterBrightness,
+        coverFilterEnabled: updatedPlaylist.coverFilterEnabled,
+        coverFilterBlur: updatedPlaylist.coverFilterBlur,
       },
       songs: songsWithSHA.map((song) => {
         const songImageExt = song.imageData

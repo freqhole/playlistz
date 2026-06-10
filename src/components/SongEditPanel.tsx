@@ -200,11 +200,11 @@ export function SongEditPanel(props: SongEditPanelProps) {
         </span>
       </div>
 
-      {/* edit form */}
-      <div class="p-4 space-y-4">
-        {/* album art */}
-        <div class="flex items-start gap-3">
-          <div class="w-32 h-32 overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0">
+      {/* edit form: 2-col grid on wider viewports */}
+      <div class="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* col 1: album art + image buttons */}
+        <div class="flex flex-col gap-2">
+          <div class="w-full aspect-square overflow-hidden bg-gray-700 flex items-center justify-center">
             <Show
               when={imageUrl()}
               fallback={
@@ -230,106 +230,91 @@ export function SongEditPanel(props: SongEditPanelProps) {
               />
             </Show>
           </div>
-
-          <div class="space-y-2">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            disabled={isLoading()}
+            class="hidden"
+            id="song-image-upload-panel"
+          />
+          <label
+            for="song-image-upload-panel"
+            class="block w-full px-3 py-1.5 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-sm font-medium transition-colors text-center"
+          >
+            choose image
+          </label>
+          <Show when={imageData()}>
+            <button
+              onClick={handleRemoveImage}
               disabled={isLoading()}
-              class="hidden"
-              id="song-image-upload-panel"
-            />
-            <label
-              for="song-image-upload-panel"
-              class="inline-block px-3 py-1.5 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-sm font-medium transition-colors"
+              class="block w-full px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white text-sm font-medium transition-colors text-center"
             >
-              choose image
-            </label>
+              remove image
+            </button>
+          </Show>
+        </div>
 
-            <Show when={imageData()}>
-              <button
-                onClick={handleRemoveImage}
-                disabled={isLoading()}
-                class="block px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white text-sm font-medium transition-colors"
-              >
-                remove image
-              </button>
+        {/* col 2: text fields + file info */}
+        <div class="flex flex-col gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">
+              title
+            </label>
+            <input
+              type="text"
+              value={title()}
+              onInput={(e) => setTitle(e.currentTarget.value)}
+              disabled={isLoading()}
+              class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
+              placeholder="song title"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">
+              artist
+            </label>
+            <input
+              type="text"
+              value={artist()}
+              onInput={(e) => setArtist(e.currentTarget.value)}
+              disabled={isLoading()}
+              class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
+              placeholder="artist name"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">
+              album
+            </label>
+            <input
+              type="text"
+              value={album()}
+              onInput={(e) => setAlbum(e.currentTarget.value)}
+              disabled={isLoading()}
+              class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
+              placeholder="album name"
+            />
+          </div>
+          <div class="bg-black p-3 text-xs text-gray-400 space-y-1 mt-auto">
+            <div>filename: {props.song.originalFilename || "unknown"}</div>
+            <Show when={props.song.fileSize}>
+              <div>
+                size:{" "}
+                {Math.round((props.song.fileSize! / 1024 / 1024) * 100) / 100}{" "}
+                mb
+              </div>
+            </Show>
+            <div>duration: {formatDuration(props.song.duration)}</div>
+            <Show when={props.song.sha}>
+              <div class="break-all">sha: {props.song.sha}</div>
             </Show>
           </div>
         </div>
 
-        {/* title */}
-        <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">
-            title
-          </label>
-          <input
-            type="text"
-            value={title()}
-            onInput={(e) => setTitle(e.currentTarget.value)}
-            disabled={isLoading()}
-            class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors"
-            placeholder="song title"
-          />
-        </div>
-
-        {/* artist */}
-        <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">
-            artist
-          </label>
-          <input
-            type="text"
-            value={artist()}
-            onInput={(e) => setArtist(e.currentTarget.value)}
-            disabled={isLoading()}
-            class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors"
-            placeholder="artist name"
-          />
-        </div>
-
-        {/* album */}
-        <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">
-            album
-          </label>
-          <input
-            type="text"
-            value={album()}
-            onInput={(e) => setAlbum(e.currentTarget.value)}
-            disabled={isLoading()}
-            class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors"
-            placeholder="album name"
-          />
-        </div>
-
-        {/* file info */}
-        <div>
-          <label class="block text-sm font-medium text-gray-300 mb-3">
-            file information
-          </label>
-          <div class="bg-black p-4">
-            <div class="text-sm text-gray-400 space-y-1">
-              <div>filename: {props.song.originalFilename || "unknown"}</div>
-              <Show when={props.song.fileSize}>
-                <div>
-                  size:{" "}
-                  {Math.round((props.song.fileSize! / 1024 / 1024) * 100) / 100}{" "}
-                  mb
-                </div>
-              </Show>
-              <div>duration: {formatDuration(props.song.duration)}</div>
-              <Show when={props.song.sha}>
-                <div class="break-all">sha: {props.song.sha}</div>
-              </Show>
-            </div>
-          </div>
-        </div>
-
-        {/* error message */}
+        {/* error - full width */}
         <Show when={error()}>
-          <div class="bg-red-900/30 border border-red-500 p-3">
+          <div class="sm:col-span-2 bg-red-900/30 border border-red-500 p-3">
             <div class="text-red-400 text-sm">{error()}</div>
           </div>
         </Show>
