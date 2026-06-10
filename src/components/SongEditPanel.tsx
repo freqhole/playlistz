@@ -1,5 +1,5 @@
 /* @jsxImportSource solid-js */
-import { createSignal, Show, onMount } from "solid-js";
+import { createSignal, Show, onMount, onCleanup } from "solid-js";
 import {
   processPlaylistCover,
   validateImageFile,
@@ -15,6 +15,9 @@ interface SongEditPanelProps {
   index: number;
   onClose: () => void;
   onSave: (updatedSong: Song) => void;
+  prevSong?: Song;
+  nextSong?: Song;
+  onNavigate?: (song: Song) => void;
 }
 
 export function SongEditPanel(props: SongEditPanelProps) {
@@ -34,10 +37,16 @@ export function SongEditPanel(props: SongEditPanelProps) {
   const playlistManager = usePlaylistzManager();
   const { handleRemoveSong } = playlistManager;
 
-  onMount(() => {
+  // initialise (or reset) form state from the song's stored values
+  const initFromSong = () => {
     setTitle(props.song.title);
     setArtist(props.song.artist || "");
     setAlbum(props.song.album || "");
+
+    setImageData(undefined);
+    setThumbnailData(undefined);
+    setImageType(undefined);
+    setImageUrl(undefined);
 
     if (
       (props.song.imageData || props.song.thumbnailData) &&
@@ -54,6 +63,41 @@ export function SongEditPanel(props: SongEditPanelProps) {
       setImageType(props.song.imageType);
       setImageUrl(props.song.imageFilePath);
     }
+  };
+
+  onMount(initFromSong);
+
+  // true when the form has unsaved edits. image fields compare by reference -
+  // after a save props.song gets the same buffer instances, so this goes clean
+  const isDirty = () =>
+    title().trim() !== props.song.title ||
+    artist().trim() !== (props.song.artist || "") ||
+    album().trim() !== (props.song.album || "") ||
+    imageData() !== props.song.imageData ||
+    imageType() !== props.song.imageType;
+
+  const navDisabledTitle = "save or reset changes first";
+
+  // left/right arrow keys navigate between songs (when not typing in a field
+  // and there are no pending edits)
+  onMount(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) {
+        return;
+      }
+      if (isDirty()) return;
+      if (e.key === "ArrowLeft" && props.prevSong) {
+        e.preventDefault();
+        props.onNavigate?.(props.prevSong);
+      } else if (e.key === "ArrowRight" && props.nextSong) {
+        e.preventDefault();
+        props.onNavigate?.(props.nextSong);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    onCleanup(() => document.removeEventListener("keydown", onKeyDown));
   });
 
   const handleImageUpload = async (event: Event) => {
@@ -112,9 +156,9 @@ export function SongEditPanel(props: SongEditPanelProps) {
         updatedAt: Date.now(),
       };
 
-      // onSave handler (handleSongSaved in useSongState) persists to IDB
+      // onSave handler (handleSongSaved in useSongState) persists to IDB.
+      // the panel stays open after saving
       await props.onSave(updatedSong);
-      props.onClose();
     } catch (err) {
       setError("failed to save");
       console.error("save error:", err);
@@ -123,11 +167,26 @@ export function SongEditPanel(props: SongEditPanelProps) {
     }
   };
 
-  const handleCancel = () => {
+  const handleSaveAndNext = async () => {
+    await handleSave();
+    if (!error() && props.nextSong) {
+      props.onNavigate?.(props.nextSong);
+    }
+  };
+
+  const handleClose = () => {
     const url = imageUrl();
-    if (url) URL.revokeObjectURL(url);
+    if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
     setError(null);
     props.onClose();
+  };
+
+  // reset form edits back to the song's stored values (does not close)
+  const handleReset = () => {
+    const url = imageUrl();
+    if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+    setError(null);
+    initFromSong();
   };
 
   const handleRemoveImage = () => {
@@ -147,13 +206,29 @@ export function SongEditPanel(props: SongEditPanelProps) {
     <div class="bg-black/40 border border-gray-700 overflow-hidden min-w-0 w-full">
       {/* read-only song row preview - updates live as user edits */}
       <div class="flex items-center gap-2 px-3 py-3 bg-black border-b border-gray-700 select-none min-w-0">
-        {/* track number - matches SongRow format */}
-        <span class="text-gray-500 text-sm w-8 text-right flex-shrink-0 font-mono">
-          {props.index.toString().padStart(3, "0")}
-        </span>
+        {/* close button */}
+        <button
+          onClick={handleClose}
+          class="p-1 text-gray-400 hover:text-white transition-colors flex-shrink-0"
+          title="close"
+        >
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
 
-        {/* thumbnail */}
-        <div class="w-10 h-10 flex-shrink-0 bg-gray-700 overflow-hidden">
+        {/* thumbnail with index overlay (matches SongRow) */}
+        <div class="relative w-10 h-10 flex-shrink-0 bg-black overflow-hidden">
           <Show
             when={previewImageUrl()}
             fallback={
@@ -180,10 +255,16 @@ export function SongEditPanel(props: SongEditPanelProps) {
               class="w-full h-full object-cover"
             />
           </Show>
+          {/* index number on a tight black background, centered on the thumbnail */}
+          <div class="absolute inset-0 flex justify-center items-center font-mono text-sm text-gray-300">
+            <span class="bg-black">
+              {props.index.toString().padStart(3, "0")}
+            </span>
+          </div>
         </div>
 
         {/* song metadata - live from form state */}
-        <div class="flex-1 min-w-0">
+        <div class="min-w-0">
           <div class="text-white text-sm font-medium truncate">
             {title() || "(no title)"}
           </div>
@@ -194,10 +275,59 @@ export function SongEditPanel(props: SongEditPanelProps) {
           </div>
         </div>
 
-        {/* duration */}
+        {/* duration sits left, spacer pushes nav buttons to the right edge */}
         <span class="text-gray-400 text-sm flex-shrink-0">
           {formatDuration(props.song.duration)}
         </span>
+
+        <div class="flex-1" />
+
+        {/* prev / next song navigation - disabled while there are unsaved
+            edits so they don't get silently lost */}
+        <Show when={props.prevSong}>
+          <button
+            onClick={() => props.onNavigate?.(props.prevSong!)}
+            disabled={isDirty()}
+            class="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 disabled:text-gray-600 disabled:hover:bg-transparent transition-colors flex-shrink-0"
+            title={isDirty() ? navDisabledTitle : "edit previous song"}
+          >
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+        </Show>
+        <Show when={props.nextSong}>
+          <button
+            onClick={() => props.onNavigate?.(props.nextSong!)}
+            disabled={isDirty()}
+            class="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 disabled:text-gray-600 disabled:hover:bg-transparent transition-colors flex-shrink-0"
+            title={isDirty() ? navDisabledTitle : "edit next song"}
+          >
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </button>
+        </Show>
       </div>
 
       {/* edit form: on sm+ the text fields sit left (clamped to 500px), image
@@ -350,11 +480,12 @@ export function SongEditPanel(props: SongEditPanelProps) {
             </button>
             <div class="flex-1" />
             <button
-              onClick={handleCancel}
+              onClick={handleReset}
               disabled={isLoading()}
               class="px-4 py-2 text-gray-400 hover:text-white disabled:text-gray-600 font-medium transition-colors"
+              title="reset form edits"
             >
-              cancel
+              reset
             </button>
             <button
               onClick={handleSave}
@@ -383,6 +514,29 @@ export function SongEditPanel(props: SongEditPanelProps) {
               </Show>
               save
             </button>
+            <Show when={props.nextSong}>
+              <button
+                onClick={handleSaveAndNext}
+                disabled={isLoading()}
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-500 text-white font-medium transition-colors flex items-center gap-2"
+                title="save and go to next song"
+              >
+                save
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M14 5l7 7m0 0l-7 7m7-7H3"
+                  />
+                </svg>
+              </button>
+            </Show>
           </div>
         }
       >

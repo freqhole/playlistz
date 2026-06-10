@@ -32,7 +32,7 @@ function PlaylistzInner() {
   const { showDeleteConfirm, setShowDeleteConfirm, handleDeletePlaylist } =
     playlistManager;
 
-  const { isEditMode, error: songError } = songState;
+  const { editingPlaylist, error: songError } = songState;
 
   const {
     isMobile,
@@ -67,8 +67,9 @@ function PlaylistzInner() {
   // 1 error 2 rule 'em all!
   const error = () => managerError() || songError() || dragError();
 
-  // show sidebar toggle when in edit mode or there are no playlists
-  const showSidebarToggle = () => isEditMode() || playlists().length === 0;
+  // show sidebar toggle only while editing the playlist (not a song),
+  // or when there are no playlists
+  const showSidebarToggle = () => editingPlaylist() || playlists().length === 0;
 
   // the sidebar is only ever visible while an edit panel is open (or there are
   // no playlists). when allowed, it opens according to the user's last toggle.

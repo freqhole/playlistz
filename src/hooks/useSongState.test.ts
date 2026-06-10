@@ -152,7 +152,7 @@ describe("useSongState edit mode", () => {
   });
 
   describe("handleSongSaved", () => {
-    it("updates song in IDB and clears editingSong", async () => {
+    it("updates song in IDB and keeps editing the saved song", async () => {
       const { updateSong } = await import("../services/indexedDBService.js");
       let savedHook: ReturnType<typeof useSongState> | undefined;
       createRoot((dispose) => {
@@ -169,8 +169,9 @@ describe("useSongState edit mode", () => {
       const updatedSong = { ...mockSong, title: "updated title" };
       await hook.handleSongSaved(updatedSong);
       expect(updateSong).toHaveBeenCalledWith(updatedSong.id, updatedSong);
-      expect(hook.editingSong()).toBeNull();
-      expect(hook.isEditMode()).toBe(false);
+      // panel stays open with the saved values
+      expect(hook.editingSong()).toEqual(updatedSong);
+      expect(hook.isEditMode()).toBe(true);
     });
 
     it("sets error when IDB update fails", async () => {

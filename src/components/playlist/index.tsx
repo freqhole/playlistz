@@ -4,6 +4,7 @@ import {
   For,
   createSignal,
   createEffect,
+  on,
   onCleanup,
   onMount,
 } from "solid-js";
@@ -69,6 +70,15 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     return props.playlist().songIds.indexOf(song.id);
   };
 
+  // neighbouring song relative to the one being edited (for panel navigation)
+  const songAtOffset = (offset: number): Song | undefined => {
+    const idx = editingSongIndex();
+    if (idx < 0) return undefined;
+    const targetId = props.playlist().songIds[idx + offset];
+    if (!targetId) return undefined;
+    return playlistSongs().find((s) => s.id === targetId);
+  };
+
   const FLYOUT_MS = 100;
 
   // stagger delay per row during exit (in ms)
@@ -110,18 +120,23 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     onCleanup(() => document.removeEventListener("keydown", onKeyDown));
   });
 
-  createEffect(() => {
-    if (isEditing()) {
-      setRowsGone(false);
-      // collapse layout and show panel after the first few rows have started exiting,
-      // not after the last row finishes - remaining row animations complete behind the panel
-      const totalMs = rowExitDelayMs(2) + FLYOUT_MS;
-      const t = setTimeout(() => setRowsGone(true), totalMs);
-      onCleanup(() => clearTimeout(t));
-    } else {
-      setRowsGone(false);
-    }
-  });
+  // only animate rows on the closed -> open transition. navigating between
+  // song edit panels keeps isEditing() true, so rowsGone stays true and the
+  // hidden rows don't flash back in between panels
+  createEffect(
+    on(isEditing, (editing, prevEditing) => {
+      if (editing && !prevEditing) {
+        setRowsGone(false);
+        // collapse layout and show panel after the first few rows have started
+        // exiting - remaining row animations complete behind the panel
+        const totalMs = rowExitDelayMs(2) + FLYOUT_MS;
+        const t = setTimeout(() => setRowsGone(true), totalMs);
+        onCleanup(() => clearTimeout(t));
+      } else if (!editing) {
+        setRowsGone(false);
+      }
+    })
+  );
 
   // outer wrapper: collapses to 0 height ONLY after animation completes.
   // no overflow:hidden here so inner transforms can fly freely.
@@ -536,8 +551,13 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
         ref={scrollContainerRef}
         class={`${isMobile() ? "flex-1" : "flex-1 overflow-y-auto"}`}
       >
-        {/* inline playlist edit panel - only renders once rows have animated out */}
-        <Show when={editingPlaylist() && rowsGone()}>
+        {/* inline playlist edit panel - only renders once rows have animated out.
+            keyed on playlist id so the form remounts with fresh data when
+            switching playlists via the sidebar */}
+        <Show
+          when={editingPlaylist() && rowsGone() ? props.playlist().id : null}
+          keyed
+        >
           <div
             style={panelEntryStyle()}
             class={isMobile() ? "p-2" : "px-6 pt-2 pb-4"}
@@ -551,8 +571,12 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
           </div>
         </Show>
 
-        {/* inline song edit panel - only renders once rows have animated out */}
-        <Show when={editingSong() && rowsGone()}>
+        {/* inline song edit panel - only renders once rows have animated out.
+            keyed on song id so the form remounts when navigating between songs */}
+        <Show
+          when={editingSong() && rowsGone() ? editingSong()!.id : null}
+          keyed
+        >
           <div
             style={panelEntryStyle()}
             class={isMobile() ? "" : "px-6 pt-2 pb-4"}
@@ -562,6 +586,9 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               index={editingSongIndex()}
               onClose={handleCloseEdit}
               onSave={handleSongSaved}
+              prevSong={songAtOffset(-1)}
+              nextSong={songAtOffset(1)}
+              onNavigate={handleEditSong}
             />
           </div>
         </Show>

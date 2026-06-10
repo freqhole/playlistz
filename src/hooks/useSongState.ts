@@ -33,12 +33,13 @@ export function useSongState() {
     setEditingPlaylist(false);
   };
 
-  // handle song update after editing
+  // handle song update after editing - keeps the edit panel open and refreshes
+  // the editing song reference with the saved values
   const handleSongSaved = async (updatedSong: Song) => {
     try {
       setError(null);
       await updateSong(updatedSong.id, updatedSong);
-      setEditingSong(null);
+      setEditingSong(updatedSong);
     } catch (err) {
       console.error("Error saving song:", err);
       setError("Failed to save song changes");
