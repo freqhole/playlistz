@@ -208,8 +208,8 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
         style={headerStyle()}
         class={`flex items-center justify-between ${isMobile() ? "p-2 flex-col" : "p-6"}`}
       >
-        {/* playlist cover image for mobile */}
-        <div class={`${isMobile() ? "" : "hidden"}`}>
+        {/* playlist cover image for mobile - hidden in edit mode (edit panel has its own) */}
+        <div class={`${isMobile() && !isEditing() ? "" : "hidden"}`}>
           <button
             onClick={() => {
               openImageModal(props.playlist(), playlistSongs(), 0);
