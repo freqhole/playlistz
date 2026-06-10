@@ -94,6 +94,52 @@
     background-color: rgba(26, 26, 26, 0.8);
     border: 1px solid rgba(255, 255, 255, 0.125);
   }
+  /* slide-down animation for inline edit panels */
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* song row exit animations - small translate + opacity so they stay visible within scroll containers */
+  @keyframes rowFlyDown {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(56px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes rowFlyUp {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(-56px);
+      opacity: 0;
+    }
+  }
+
+  /* song row enter animation */
+  @keyframes rowFlyIn {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
 }
 
 @layer utilities {

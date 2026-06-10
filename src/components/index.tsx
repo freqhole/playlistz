@@ -1,5 +1,5 @@
 /* @jsxImportSource solid-js */
-import { Show } from "solid-js";
+import { Show, createEffect } from "solid-js";
 
 import {
   PlaylistzProvider,
@@ -11,8 +11,6 @@ import {
 } from "../context/PlaylistzContext.js";
 
 import { PlaylistSidebar } from "./PlaylistSidebar.js";
-import { SongEditModal } from "./SongEditModal.js";
-import { PlaylistCoverModal } from "./PlaylistCoverModal.js";
 import { PlaylistContainer } from "./playlist/index.js";
 function PlaylistzInner() {
   // context hooks
@@ -25,27 +23,16 @@ function PlaylistzInner() {
   const {
     playlists,
     selectedPlaylist,
-    playlistSongs,
     isInitialized,
     error: managerError,
     backgroundImageUrl,
     selectPlaylist,
   } = playlistManager;
 
-  const {
-    showPlaylistCover,
-    setShowPlaylistCover,
-    showDeleteConfirm,
-    setShowDeleteConfirm,
-    handleDeletePlaylist,
-  } = playlistManager;
+  const { showDeleteConfirm, setShowDeleteConfirm, handleDeletePlaylist } =
+    playlistManager;
 
-  const {
-    editingSong,
-    setEditingSong,
-    handleSongSaved,
-    error: songError,
-  } = songState;
+  const { isEditMode, error: songError } = songState;
 
   const { isMobile, sidebarCollapsed, setSidebarCollapsed } = uiState;
 
@@ -73,6 +60,16 @@ function PlaylistzInner() {
 
   // 1 error 2 rule 'em all!
   const error = () => managerError() || songError() || dragError();
+
+  // show sidebar toggle when in edit mode or there are no playlists
+  const showSidebarToggle = () => isEditMode() || playlists().length === 0;
+
+  // collapse sidebar whenever edit mode ends (sidebar only accessible in edit mode)
+  createEffect(() => {
+    if (!isEditMode()) {
+      setSidebarCollapsed(true);
+    }
+  });
 
   // create a wrapper that provides the necessary options to handleFileDrop
   const handleFileDropWrapper = async (e: DragEvent) => {
@@ -169,30 +166,32 @@ function PlaylistzInner() {
         </div>
       </Show>
 
-      {/* sidebar toggle button */}
-      <div
-        class={`fixed top-0 inset-0 bg-black bg-opacity-80 flex items-center justify-center z-10 transition-all duration-300 ease-in-out w-10 h-10 ${sidebarCollapsed() ? "left-0" : isMobile() ? "left-[calc(100vw-40px)]" : "left-72"}`}
-      >
-        <button
-          onClick={() => setSidebarCollapsed((prev) => !prev)}
-          class="p-2 text-magenta-200 hover:text-magenta-500 hover:bg-gray-800 transition-colors bg-black bg-opacity-80"
-          title={`${sidebarCollapsed() ? "show" : "hide"} playlist sidebar`}
+      {/* sidebar toggle button - only shown in edit mode or when there are no playlists */}
+      <Show when={showSidebarToggle()}>
+        <div
+          class={`fixed top-0 inset-0 bg-black bg-opacity-80 flex items-center justify-center z-10 transition-all duration-300 ease-in-out w-10 h-10 ${sidebarCollapsed() ? "left-0" : isMobile() ? "left-[calc(100vw-40px)]" : "left-72"}`}
         >
-          <svg
-            class={`w-8 h-8 transform transition-transform duration-600 ease-in-out ${sidebarCollapsed() ? "rotate-0" : "rotate-180"}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+          <button
+            onClick={() => setSidebarCollapsed((prev: boolean) => !prev)}
+            class="p-2 text-magenta-200 hover:text-magenta-500 hover:bg-gray-800 transition-colors bg-black bg-opacity-80"
+            title={`${sidebarCollapsed() ? "show" : "hide"} playlist sidebar`}
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
-      </div>
+            <svg
+              class={`w-8 h-8 transform transition-transform duration-600 ease-in-out ${sidebarCollapsed() ? "rotate-0" : "rotate-180"}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </button>
+        </div>
+      </Show>
 
       {/* drag'n'drop overlay */}
       <Show when={isDragOver()}>
@@ -251,28 +250,6 @@ function PlaylistzInner() {
             </div>
           </div>
         </div>
-      </Show>
-
-      {/* song edit modal */}
-      <Show when={editingSong()}>
-        <SongEditModal
-          song={editingSong()!}
-          isOpen={!!editingSong()}
-          onClose={() => setEditingSong(null)}
-          onSave={handleSongSaved}
-        />
-      </Show>
-
-      {/* playlist cover modal */}
-      <Show when={showPlaylistCover()}>
-        <PlaylistCoverModal
-          playlist={selectedPlaylist()!}
-          playlistSongs={playlistSongs()}
-          isOpen={showPlaylistCover()}
-          onClose={() => setShowPlaylistCover(false)}
-          onSave={selectPlaylist}
-          onDelete={handleDeletePlaylist}
-        />
       </Show>
 
       {/* image modal */}

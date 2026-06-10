@@ -1,4 +1,11 @@
-import { Accessor, Show, For } from "solid-js";
+import {
+  Accessor,
+  Show,
+  For,
+  createSignal,
+  createEffect,
+  onCleanup,
+} from "solid-js";
 import type { Playlist, Song } from "../../types/playlist.js";
 import {
   usePlaylistzManager,
@@ -9,6 +16,8 @@ import {
 import { getImageUrlForContext } from "../../services/imageService.js";
 import { AudioPlayer } from "../AudioPlayer.js";
 import { SongRow } from "../SongRow.js";
+import { PlaylistEditPanel } from "../PlaylistEditPanel.js";
+import { SongEditPanel } from "../SongEditPanel.js";
 
 export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const playlistManager = usePlaylistzManager();
@@ -18,7 +27,6 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   const {
     playlistSongs,
-    setShowPlaylistCover,
     setShowDeleteConfirm,
     isDownloading,
     isCaching,
@@ -30,7 +38,16 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     handleReorderSongs,
   } = playlistManager;
 
-  const { handleEditSong, handlePlaySong, handlePauseSong } = songState;
+  const {
+    handleEditSong,
+    handleEditPlaylist,
+    handlePlaySong,
+    handlePauseSong,
+    editingSong,
+    editingPlaylist,
+    handleCloseEdit,
+    handleSongSaved,
+  } = songState;
 
   // create a wrapper that passes the playlist context
   const handlePlaySongWithPlaylist = async (song: Song) => {
@@ -41,10 +58,101 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   const { openImageModal } = imageModal;
 
+  // true when any edit panel is open
+  const isEditing = () => editingSong() !== null || editingPlaylist();
+
+  // index of the song being edited (for directional row animation)
+  const editingSongIndex = () => {
+    const song = editingSong();
+    if (!song) return -1;
+    return props.playlist().songIds.indexOf(song.id);
+  };
+
+  const FLYOUT_MS = 300;
+
+  // stagger delay per row during exit (in ms)
+  const rowExitDelayMs = (index: number): number =>
+    index < 5 ? index * 50 : 250 + (index - 5) * 15;
+
+  // which CSS keyframe to use for a row's exit
+  const rowExitKeyframe = (rowIndex: number): string => {
+    if (editingPlaylist()) return "rowFlyDown";
+    const editIdx = editingSongIndex();
+    if (editIdx >= 0) {
+      return rowIndex < editIdx ? "rowFlyUp" : "rowFlyDown";
+    }
+    return "rowFlyDown";
+  };
+
+  // phase signal: tracks whether rows have completed their exit animation.
+  // "gone" = rows are done animating and should be collapsed out of layout.
+  const [rowsGone, setRowsGone] = createSignal(false);
+
+  createEffect(() => {
+    if (isEditing()) {
+      setRowsGone(false);
+      const count = props.playlist().songIds.length;
+      const lastIdx = Math.max(0, count - 1);
+      const totalMs = rowExitDelayMs(lastIdx) + FLYOUT_MS + 60;
+      const t = setTimeout(() => setRowsGone(true), totalMs);
+      onCleanup(() => clearTimeout(t));
+    } else {
+      setRowsGone(false);
+    }
+  });
+
+  // outer wrapper: collapses to 0 height ONLY after animation completes.
+  // no overflow:hidden here so inner transforms can fly freely.
+  const rowOuterStyle = () =>
+    rowsGone()
+      ? { "max-height": "0px", overflow: "hidden" as const }
+      : { "max-height": "400px" };
+
+  // inner wrapper: CSS keyframe animation.
+  // animation-name changes trigger a fresh animation on every edit mode transition.
+  const rowInnerStyle = (rowIndex: number) => {
+    if (isEditing() && !rowsGone()) {
+      const delay = rowExitDelayMs(rowIndex);
+      return {
+        animation: `${rowExitKeyframe(rowIndex)} ${FLYOUT_MS}ms ease ${delay}ms both`,
+      };
+    }
+    if (!isEditing()) {
+      // fly back in when returning from edit mode (all rows together, subtle)
+      return { animation: `rowFlyIn ${FLYOUT_MS}ms ease both` };
+    }
+    return {};
+  };
+
+  // header collapses completely (out of layout) when editing a song.
+  // overflow:hidden only applied while collapsing so it doesn't clip mobile content.
+  const headerStyle = () =>
+    editingSong()
+      ? {
+          transition: "max-height 350ms ease, opacity 300ms ease",
+          "max-height": "0px",
+          overflow: "hidden" as const,
+          opacity: "0",
+          "pointer-events": "none" as const,
+        }
+      : {
+          transition: "max-height 350ms ease, opacity 300ms ease",
+          "max-height": "1200px",
+          opacity: "1",
+          "pointer-events": "auto" as const,
+        };
+
+  // panel slides in immediately after rows have collapsed (panel only mounts when rowsGone())
+  const panelEntryStyle = () =>
+    ({ animation: "slideDown 350ms ease both" }) as const;
+
   return (
-    <div class={`flex-1 flex flex-col ${isMobile() ? "p-2" : "h-full p-6"}`}>
-      {/* playlist header */}
+    <div
+      class={`flex-1 flex flex-col overflow-x-hidden ${isMobile() ? "p-2" : "h-full p-6"}`}
+    >
+      {/* playlist header - animates up/out when editing a specific song */}
       <div
+        style={headerStyle()}
         class={`flex items-center justify-between ${isMobile() ? "p-2 flex-col" : "p-6"}`}
       >
         {/* playlist cover image for mobile */}
@@ -225,11 +333,15 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   </Show>
                 </Show>
 
-                {/* edit playlist image button */}
+                {/* edit playlist button - toggles edit panel */}
                 <button
-                  onClick={() => setShowPlaylistCover(true)}
-                  class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors bg-black bg-opacity-80"
-                  title="edit playlist"
+                  onClick={() =>
+                    editingPlaylist() ? handleCloseEdit() : handleEditPlaylist()
+                  }
+                  class={`p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black bg-opacity-80 ${editingPlaylist() ? "text-magenta-400" : "text-gray-400"}`}
+                  title={
+                    editingPlaylist() ? "close edit panel" : "edit playlist"
+                  }
                 >
                   <svg
                     class="w-4 h-4"
@@ -385,42 +497,86 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
         </div>
       </div>
 
-      {/* songz list */}
+      {/* songz list and edit panels */}
       <div class={`${isMobile() ? "flex-1" : "flex-1 overflow-y-auto"}`}>
+        {/* inline playlist edit panel - only renders once rows have animated out */}
+        <Show when={editingPlaylist() && rowsGone()}>
+          <div
+            style={panelEntryStyle()}
+            class={isMobile() ? "p-2" : "px-6 pt-2 pb-4"}
+          >
+            <PlaylistEditPanel
+              playlist={props.playlist()}
+              playlistSongs={playlistSongs()}
+              onClose={handleCloseEdit}
+              onSave={(updated) => playlistManager.selectPlaylist(updated)}
+            />
+          </div>
+        </Show>
+
+        {/* inline song edit panel - only renders once rows have animated out */}
+        <Show when={editingSong() && rowsGone()}>
+          <div
+            style={panelEntryStyle()}
+            class={isMobile() ? "" : "px-6 pt-2 pb-4"}
+          >
+            <SongEditPanel
+              song={editingSong()!}
+              index={editingSongIndex()}
+              onClose={handleCloseEdit}
+              onSave={handleSongSaved}
+            />
+          </div>
+        </Show>
+
+        {/* rows container - no overflow:hidden here; scroll container clips instead */}
         <div class={`${isMobile() ? "space-y-1" : "p-6 space-y-2"}`}>
+          {/* empty playlist message - hidden during edit mode */}
           <Show
             when={
-              props.playlist().songIds && props.playlist().songIds.length > 0
-            }
-            fallback={
-              <div class="text-center py-16">
-                <div class="text-gray-400 text-xl mb-4">no songz yet</div>
-                <p class="text-gray-400 mb-4">
-                  drag and drop audio filez (or a .zip file!) here to add them
-                  to this playlist
-                </p>
-                <div class="text-xs text-gray-500 space-y-1">
-                  <div>playlist id: {props.playlist().id}</div>
-                  <div>supported formatz: mp3, wav, flac, aiff, ogg, mp4</div>
-                </div>
-              </div>
+              !isEditing() &&
+              (!props.playlist().songIds ||
+                props.playlist().songIds.length === 0)
             }
           >
-            <For each={props.playlist().songIds}>
-              {(songId, index) => (
-                <SongRow
-                  songId={songId}
-                  index={index()}
-                  showRemoveButton={true}
-                  onRemove={handleRemoveSong}
-                  onPlay={handlePlaySongWithPlaylist}
-                  onPause={handlePauseSong}
-                  onEdit={handleEditSong}
-                  onReorder={handleReorderSongs}
-                />
-              )}
-            </For>
+            <div class="text-center py-16">
+              <div class="text-gray-400 text-xl mb-4">no songz yet</div>
+              <p class="text-gray-400 mb-4">
+                drag and drop audio filez (or a .zip file!) here to add them to
+                this playlist
+              </p>
+              <div class="text-xs text-gray-500 space-y-1">
+                <div>playlist id: {props.playlist().id}</div>
+                <div>supported formatz: mp3, wav, flac, aiff, ogg, mp4</div>
+              </div>
+            </div>
           </Show>
+
+          {/* animated song rows: outer wrapper collapses height after animation,
+              inner wrapper runs the CSS keyframe flyout/flyin animation */}
+          <For each={props.playlist().songIds}>
+            {(songId, index) => {
+              const isBeingEdited = () => editingSong()?.id === songId;
+              return (
+                <Show when={!isBeingEdited()}>
+                  <div style={rowOuterStyle()}>
+                    <div style={rowInnerStyle(index())}>
+                      <SongRow
+                        songId={songId}
+                        index={index()}
+                        showRemoveButton={true}
+                        onRemove={handleRemoveSong}
+                        onPlay={handlePlaySongWithPlaylist}
+                        onPause={handlePauseSong}
+                        onEdit={handleEditSong}
+                        onReorder={handleReorderSongs}
+                      />
+                    </div>
+                  </div>
+                </Show>
+              );
+            }}
+          </For>
         </div>
       </div>
     </div>

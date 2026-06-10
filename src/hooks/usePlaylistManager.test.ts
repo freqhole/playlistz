@@ -380,8 +380,6 @@ describe("usePlaylistManager consolidated delete operations", () => {
       // And all the UI state
       expect(typeof hook.showDeleteConfirm).toBe("function");
       expect(typeof hook.setShowDeleteConfirm).toBe("function");
-      expect(typeof hook.showPlaylistCover).toBe("function");
-      expect(typeof hook.setShowPlaylistCover).toBe("function");
     });
   });
 });

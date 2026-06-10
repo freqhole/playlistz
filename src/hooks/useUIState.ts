@@ -4,9 +4,7 @@ import { createSignal, onMount, onCleanup } from "solid-js";
 export function useUIState() {
   const [isMobile, setIsMobile] = createSignal(false);
 
-  const [sidebarCollapsed, setSidebarCollapsed] = createSignal(
-    window.STANDALONE_MODE || false
-  );
+  const [sidebarCollapsed, setSidebarCollapsed] = createSignal(true);
 
   const [isDragOver, setIsDragOver] = createSignal(false);
 

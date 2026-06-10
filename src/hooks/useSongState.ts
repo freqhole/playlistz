@@ -11,11 +11,26 @@ import {
 
 export function useSongState() {
   const [editingSong, setEditingSong] = createSignal<Song | null>(null);
+  const [editingPlaylist, setEditingPlaylist] = createSignal(false);
+
+  // true when any edit panel is open
+  const isEditMode = () => editingSong() !== null || editingPlaylist();
 
   const [error, setError] = createSignal<string | null>(null);
 
   const handleEditSong = (song: Song) => {
+    setEditingPlaylist(false);
     setEditingSong(song);
+  };
+
+  const handleEditPlaylist = () => {
+    setEditingSong(null);
+    setEditingPlaylist(true);
+  };
+
+  const handleCloseEdit = () => {
+    setEditingSong(null);
+    setEditingPlaylist(false);
   };
 
   // handle song update after editing
@@ -67,13 +82,18 @@ export function useSongState() {
 
   return {
     editingSong,
+    editingPlaylist,
+    isEditMode,
     error,
 
     // setterz
     setEditingSong,
+    setEditingPlaylist,
 
     // actionz
     handleEditSong,
+    handleEditPlaylist,
+    handleCloseEdit,
     handleSongSaved,
     handlePlaySong,
     handlePauseSong,

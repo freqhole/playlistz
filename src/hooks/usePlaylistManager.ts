@@ -43,7 +43,6 @@ export function usePlaylistManager() {
   const [error, setError] = createSignal<string | null>(null);
 
   // modal and UI state (consolidated from usePlaylistState)
-  const [showPlaylistCover, setShowPlaylistCover] = createSignal(false);
   const [showImageModal, setShowImageModal] = createSignal(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = createSignal(false);
   const [modalImageIndex, setModalImageIndex] = createSignal(0);
@@ -512,7 +511,6 @@ export function usePlaylistManager() {
     imageUrlCache,
 
     // modal and UI state
-    showPlaylistCover,
     showImageModal,
     showDeleteConfirm,
     modalImageIndex,
@@ -523,7 +521,6 @@ export function usePlaylistManager() {
     // setterz
     setSelectedPlaylist,
     setPlaylistSongs,
-    setShowPlaylistCover,
     setShowImageModal,
     setShowDeleteConfirm,
     setModalImageIndex,
