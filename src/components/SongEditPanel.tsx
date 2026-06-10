@@ -144,9 +144,9 @@ export function SongEditPanel(props: SongEditPanelProps) {
     imageUrl() ?? getImageUrlForContext(props.song, "thumbnail") ?? undefined;
 
   return (
-    <div class="bg-gray-900 border border-gray-700 overflow-hidden min-w-0 w-full">
+    <div class="bg-black/40 border border-gray-700 overflow-hidden min-w-0 w-full">
       {/* read-only song row preview - updates live as user edits */}
-      <div class="flex items-center gap-2 px-3 py-3 bg-gray-800 border-b border-gray-700 select-none min-w-0">
+      <div class="flex items-center gap-2 px-3 py-3 bg-black border-b border-gray-700 select-none min-w-0">
         {/* track number - matches SongRow format */}
         <span class="text-gray-500 text-sm w-8 text-right flex-shrink-0 font-mono">
           {props.index.toString().padStart(3, "0")}
@@ -200,97 +200,62 @@ export function SongEditPanel(props: SongEditPanelProps) {
         </span>
       </div>
 
-      {/* spacer between preview row and edit form */}
-      <div class="h-4" />
-
-      {/* header */}
-      <div class="flex items-center justify-between p-4 border-b border-gray-700">
-        <h2 class="text-xl font-bold text-white font-mono">
-          song<span class="text-magenta-500">z</span>
-        </h2>
-        <button
-          onClick={handleCancel}
-          class="text-gray-400 hover:text-white p-1"
-          disabled={isLoading()}
-          title="close"
-        >
-          <svg
-            class="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
-      </div>
-
       {/* edit form */}
       <div class="p-4 space-y-4">
         {/* album art */}
-        <div>
-          <label class="block text-sm font-medium text-gray-300 mb-3">
-            album art
-          </label>
-          <div class="flex items-center gap-3">
-            <div class="w-16 h-16 overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0">
-              <Show
-                when={imageUrl()}
-                fallback={
-                  <svg
-                    class="w-8 h-8 text-gray-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-                    />
-                  </svg>
-                }
-              >
-                <img
-                  src={imageUrl()}
-                  alt="album art"
-                  class="w-full h-full object-cover"
-                />
-              </Show>
-            </div>
-
-            <div class="flex-1 space-y-2">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                disabled={isLoading()}
-                class="hidden"
-                id="song-image-upload-panel"
-              />
-              <label
-                for="song-image-upload-panel"
-                class="inline-block w-full px-4 py-2 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-sm text-center font-medium transition-colors"
-              >
-                choose image
-              </label>
-
-              <Show when={imageData()}>
-                <button
-                  onClick={handleRemoveImage}
-                  disabled={isLoading()}
-                  class="block w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm text-center font-medium transition-colors"
+        <div class="flex items-start gap-3">
+          <div class="w-32 h-32 overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0">
+            <Show
+              when={imageUrl()}
+              fallback={
+                <svg
+                  class="w-8 h-8 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  remove image
-                </button>
-              </Show>
-            </div>
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                  />
+                </svg>
+              }
+            >
+              <img
+                src={imageUrl()}
+                alt="album art"
+                class="w-full h-full object-cover"
+              />
+            </Show>
+          </div>
+
+          <div class="space-y-2">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              disabled={isLoading()}
+              class="hidden"
+              id="song-image-upload-panel"
+            />
+            <label
+              for="song-image-upload-panel"
+              class="inline-block px-3 py-1.5 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-sm font-medium transition-colors"
+            >
+              choose image
+            </label>
+
+            <Show when={imageData()}>
+              <button
+                onClick={handleRemoveImage}
+                disabled={isLoading()}
+                class="block px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white text-sm font-medium transition-colors"
+              >
+                remove image
+              </button>
+            </Show>
           </div>
         </div>
 
@@ -304,7 +269,7 @@ export function SongEditPanel(props: SongEditPanelProps) {
             value={title()}
             onInput={(e) => setTitle(e.currentTarget.value)}
             disabled={isLoading()}
-            class="w-full bg-gray-800 text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors"
+            class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors"
             placeholder="song title"
           />
         </div>
@@ -319,7 +284,7 @@ export function SongEditPanel(props: SongEditPanelProps) {
             value={artist()}
             onInput={(e) => setArtist(e.currentTarget.value)}
             disabled={isLoading()}
-            class="w-full bg-gray-800 text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors"
+            class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors"
             placeholder="artist name"
           />
         </div>
@@ -334,7 +299,7 @@ export function SongEditPanel(props: SongEditPanelProps) {
             value={album()}
             onInput={(e) => setAlbum(e.currentTarget.value)}
             disabled={isLoading()}
-            class="w-full bg-gray-800 text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors"
+            class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors"
             placeholder="album name"
           />
         </div>
@@ -344,7 +309,7 @@ export function SongEditPanel(props: SongEditPanelProps) {
           <label class="block text-sm font-medium text-gray-300 mb-3">
             file information
           </label>
-          <div class="bg-gray-800 p-4">
+          <div class="bg-black p-4">
             <div class="text-sm text-gray-400 space-y-1">
               <div>filename: {props.song.originalFilename || "unknown"}</div>
               <Show when={props.song.fileSize}>
@@ -362,41 +327,24 @@ export function SongEditPanel(props: SongEditPanelProps) {
           </div>
         </div>
 
-        {/* delete song */}
-        <div class="space-y-3">
-          <Show
-            when={!showDeleteConfirm()}
-            fallback={
-              <div class="bg-red-900 bg-opacity-30 border border-red-500 p-4 space-y-3">
-                <p class="text-white text-sm">
-                  are you sure you want to delete this song? this action cannot
-                  be undone.
-                </p>
-                <div class="flex gap-2">
-                  <button
-                    onClick={() =>
-                      handleRemoveSong(props.song.id, props.onClose)
-                    }
-                    disabled={isLoading()}
-                    class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-medium transition-colors"
-                  >
-                    yes, delete
-                  </button>
-                  <button
-                    onClick={() => setShowDeleteConfirm(false)}
-                    disabled={isLoading()}
-                    class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white font-medium transition-colors"
-                  >
-                    cancel
-                  </button>
-                </div>
-              </div>
-            }
-          >
+        {/* error message */}
+        <Show when={error()}>
+          <div class="bg-red-900/30 border border-red-500 p-3">
+            <div class="text-red-400 text-sm">{error()}</div>
+          </div>
+        </Show>
+      </div>
+
+      {/* footer: delete on left, cancel+save on right */}
+      <Show
+        when={showDeleteConfirm()}
+        fallback={
+          <div class="flex items-center gap-3 px-4 py-3 border-t border-gray-700">
             <button
               onClick={() => setShowDeleteConfirm(true)}
               disabled={isLoading()}
-              class="w-full px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-medium transition-colors flex items-center justify-center gap-2"
+              class="px-3 py-2 bg-red-700 hover:bg-red-800 disabled:bg-red-400 text-white text-sm font-medium transition-colors flex items-center gap-2"
+              title="delete song"
             >
               <svg
                 class="w-4 h-4"
@@ -411,56 +359,66 @@ export function SongEditPanel(props: SongEditPanelProps) {
                   d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                 />
               </svg>
-              delete song
+              delete
             </button>
-          </Show>
-        </div>
-
-        {/* error message */}
-        <Show when={error()}>
-          <div class="bg-red-900 bg-opacity-30 border border-red-500 p-3">
-            <div class="text-red-400 text-sm">{error()}</div>
-          </div>
-        </Show>
-      </div>
-
-      {/* footer */}
-      <div class="flex items-center justify-end gap-3 px-4 py-3 border-t border-gray-700">
-        <button
-          onClick={handleCancel}
-          disabled={isLoading()}
-          class="px-4 py-2 text-gray-400 hover:text-white disabled:text-gray-600 font-medium transition-colors"
-        >
-          cancel
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={isLoading()}
-          class="px-6 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white font-medium transition-colors flex items-center gap-2"
-        >
-          <Show
-            when={!isLoading()}
-            fallback={
-              <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            }
-          >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+            <div class="flex-1" />
+            <button
+              onClick={handleCancel}
+              disabled={isLoading()}
+              class="px-4 py-2 text-gray-400 hover:text-white disabled:text-gray-600 font-medium transition-colors"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-          </Show>
-          save
-        </button>
-      </div>
+              cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isLoading()}
+              class="px-6 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white font-medium transition-colors flex items-center gap-2"
+            >
+              <Show
+                when={!isLoading()}
+                fallback={
+                  <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                }
+              >
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </Show>
+              save
+            </button>
+          </div>
+        }
+      >
+        <div class="bg-red-900/30 border-t border-red-500 px-4 py-3 space-y-2">
+          <p class="text-white text-sm">delete this song? cannot be undone.</p>
+          <div class="flex gap-2">
+            <button
+              onClick={() => handleRemoveSong(props.song.id, props.onClose)}
+              disabled={isLoading()}
+              class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium transition-colors"
+            >
+              yes, delete
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={isLoading()}
+              class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white text-sm font-medium transition-colors"
+            >
+              cancel
+            </button>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 }

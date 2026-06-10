@@ -68,11 +68,11 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     return props.playlist().songIds.indexOf(song.id);
   };
 
-  const FLYOUT_MS = 300;
+  const FLYOUT_MS = 100;
 
   // stagger delay per row during exit (in ms)
   const rowExitDelayMs = (index: number): number =>
-    index < 5 ? index * 50 : 250 + (index - 5) * 15;
+    index < 5 ? index * 20 : 50 + (index - 5) * 5;
 
   // which CSS keyframe to use for a row's exit
   const rowExitKeyframe = (rowIndex: number): string => {
@@ -91,9 +91,9 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   createEffect(() => {
     if (isEditing()) {
       setRowsGone(false);
-      const count = props.playlist().songIds.length;
-      const lastIdx = Math.max(0, count - 1);
-      const totalMs = rowExitDelayMs(lastIdx) + FLYOUT_MS + 60;
+      // collapse layout and show panel after the first few rows have started exiting,
+      // not after the last row finishes - remaining row animations complete behind the panel
+      const totalMs = rowExitDelayMs(2) + FLYOUT_MS;
       const t = setTimeout(() => setRowsGone(true), totalMs);
       onCleanup(() => clearTimeout(t));
     } else {

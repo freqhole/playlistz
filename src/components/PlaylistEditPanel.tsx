@@ -22,15 +22,6 @@ interface PlaylistEditPanelProps {
 }
 
 export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
-  const [selectedImageData, setSelectedImageData] = createSignal<
-    ArrayBuffer | undefined
-  >();
-  const [selectedThumbnailData, setSelectedThumbnailData] = createSignal<
-    ArrayBuffer | undefined
-  >();
-  const [selectedImageType, setSelectedImageType] = createSignal<
-    string | undefined
-  >();
   const [selectedImageUrl, setSelectedImageUrl] = createSignal<
     string | undefined
   >();
@@ -41,15 +32,12 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
 
   onMount(() => {
     if (props.playlist.imageData && props.playlist.imageType) {
-      setSelectedImageData(props.playlist.imageData);
-      setSelectedThumbnailData(props.playlist.thumbnailData);
-      setSelectedImageType(props.playlist.imageType);
       const displayData =
         props.playlist.thumbnailData || props.playlist.imageData;
-      const url = createImageUrlFromData(displayData, props.playlist.imageType);
-      setSelectedImageUrl(url);
+      setSelectedImageUrl(
+        createImageUrlFromData(displayData, props.playlist.imageType)
+      );
     } else if (props.playlist.imageFilePath) {
-      setSelectedImageType(props.playlist.imageType);
       setSelectedImageUrl(props.playlist.imageFilePath);
     }
   });
@@ -75,18 +63,54 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         const prevUrl = selectedImageUrl();
         if (prevUrl) URL.revokeObjectURL(prevUrl);
 
-        setSelectedImageData(result.imageData);
-        setSelectedThumbnailData(result.thumbnailData);
-        setSelectedImageType(file.type);
         setSelectedImageUrl(
           createImageUrlFromData(result.thumbnailData, file.type)
         );
+
+        // immediately persist - no save button needed
+        const updates = {
+          imageData: result.imageData,
+          thumbnailData: result.thumbnailData,
+          imageType: file.type,
+          updatedAt: Date.now(),
+        };
+        await updatePlaylist(props.playlist.id, updates);
+        const { image: _image, ...rest } = props.playlist as Playlist & {
+          image?: unknown;
+        };
+        props.onSave({ ...rest, ...updates });
       } else {
         setError(result.error || "failed to process image");
       }
     } catch (err) {
       setError("error uploading image");
       console.error("image upload error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    const url = selectedImageUrl();
+    if (url) URL.revokeObjectURL(url);
+    setSelectedImageUrl(undefined);
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      const updates = {
+        imageData: undefined,
+        thumbnailData: undefined,
+        imageType: undefined,
+        updatedAt: Date.now(),
+      };
+      await updatePlaylist(props.playlist.id, updates);
+      const { image: _image, ...rest } = props.playlist as Playlist & {
+        image?: unknown;
+      };
+      props.onSave({ ...rest, ...updates });
+    } catch (err) {
+      setError("failed to remove image");
     } finally {
       setIsLoading(false);
     }
@@ -125,91 +149,16 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
     }
   };
 
-  const handleSave = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const updates = {
-        imageData: selectedImageData(),
-        thumbnailData: selectedThumbnailData(),
-        imageType: selectedImageType(),
-        updatedAt: Date.now(),
-      };
-
-      await updatePlaylist(props.playlist.id, updates);
-
-      const { image: _image, ...playlistWithoutOldImage } =
-        props.playlist as Playlist & { image?: unknown };
-      const updatedPlaylist: Playlist = {
-        ...playlistWithoutOldImage,
-        ...updates,
-      };
-
-      props.onSave(updatedPlaylist);
-      props.onClose();
-    } catch (err) {
-      setError("failed to save");
-      console.error("save error:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCancel = () => {
-    const url = selectedImageUrl();
-    if (url) URL.revokeObjectURL(url);
-    setError(null);
-    setShowDeleteConfirm(false);
-    props.onClose();
-  };
-
-  const handleRemoveImage = () => {
-    const url = selectedImageUrl();
-    if (url) URL.revokeObjectURL(url);
-    setSelectedImageData(undefined);
-    setSelectedThumbnailData(undefined);
-    setSelectedImageType(undefined);
-    setSelectedImageUrl(undefined);
-  };
-
   const songsWithArt = () =>
     props.playlistSongs.filter((s) => s.imageType || s.imageFilePath);
 
   return (
-    <div class="bg-gray-900 border border-gray-700 overflow-hidden">
-      {/* header */}
-      <div class="flex items-center justify-between p-4 border-b border-gray-700">
-        <h2 class="text-xl font-bold text-white font-mono">
-          cover<span class="text-magenta-500">z</span>
-        </h2>
-        <button
-          onClick={handleCancel}
-          class="text-gray-400 hover:text-white p-1"
-          disabled={isLoading()}
-          title="close"
-        >
-          <svg
-            class="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
-      </div>
-
+    <div class="bg-black/40 border border-gray-700 overflow-hidden">
       {/* content */}
       <div class="p-6 space-y-6">
-        {/* cover image */}
-        <div class="flex items-center gap-4">
-          <div class="w-25 h-25 overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0">
+        {/* cover image - larger preview, smaller buttons */}
+        <div class="flex items-start gap-4">
+          <div class="w-48 h-48 overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0">
             <Show
               when={selectedImageUrl()}
               fallback={
@@ -236,7 +185,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
             </Show>
           </div>
 
-          <div class="flex-1 space-y-2">
+          <div class="w-44 space-y-2">
             <input
               type="file"
               accept="image/*"
@@ -247,16 +196,16 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
             />
             <label
               for="cover-upload-panel"
-              class="block w-full px-4 py-3 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-center font-medium transition-colors"
+              class="block w-full px-3 py-1.5 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-sm font-medium transition-colors text-center"
             >
               upload image
             </label>
 
-            <Show when={selectedImageData()}>
+            <Show when={selectedImageUrl()}>
               <button
                 onClick={handleRemoveImage}
                 disabled={isLoading()}
-                class="block w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+                class="block w-full px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white text-sm font-medium transition-colors text-center"
               >
                 remove cover image
               </button>
@@ -264,18 +213,68 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           </div>
         </div>
 
-        {/* playlist actions */}
-        <Show when={window.location.protocol !== "file:"}>
-          <button
-            onClick={handleDownloadPlaylist}
-            disabled={isDownloading() || isLoading()}
-            class="w-full px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-400 text-white font-medium transition-colors flex items-center justify-center gap-2"
+        {/* actions: download + delete in a row on wider screens */}
+        <div class="flex flex-col sm:flex-row gap-2 max-w-xs">
+          <Show when={window.location.protocol !== "file:"}>
+            <button
+              onClick={handleDownloadPlaylist}
+              disabled={isDownloading() || isLoading()}
+              class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-400 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <Show
+                when={!isDownloading()}
+                fallback={
+                  <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                }
+              >
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+              </Show>
+              {isDownloading() ? "downloading..." : "download"}
+            </button>
+          </Show>
+
+          <Show
+            when={!showDeleteConfirm()}
+            fallback={
+              <div class="flex-1 bg-red-900/30 border border-red-500 p-2 space-y-2">
+                <p class="text-white text-sm whitespace-nowrap">
+                  delete this playlist?
+                </p>
+                <div class="flex gap-2">
+                  <button
+                    onClick={handleDeletePlaylist}
+                    disabled={isLoading()}
+                    class="flex-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium transition-colors whitespace-nowrap"
+                  >
+                    yes, delete
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={isLoading()}
+                    class="flex-1 px-3 py-1.5 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white text-sm font-medium transition-colors"
+                  >
+                    cancel
+                  </button>
+                </div>
+              </div>
+            }
           >
-            <Show
-              when={!isDownloading()}
-              fallback={
-                <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              }
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={isLoading()}
+              class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2"
             >
               <svg
                 class="w-4 h-4"
@@ -287,16 +286,16 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   stroke-width="2"
-                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                 />
               </svg>
-            </Show>
-            {isDownloading() ? "downloading..." : "download playlist"}
-          </button>
-        </Show>
+              delete
+            </button>
+          </Show>
+        </div>
 
         {/* playlist info */}
-        <div class="bg-gray-800 p-4">
+        <div class="bg-black p-4">
           <h3 class="text-sm font-medium text-gray-300 mb-2">
             playlist information
           </h3>
@@ -350,102 +349,12 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           </div>
         </Show>
 
-        {/* delete playlist */}
-        <div class="space-y-3">
-          <Show
-            when={!showDeleteConfirm()}
-            fallback={
-              <div class="bg-red-900 bg-opacity-30 border border-red-500 p-4 space-y-3">
-                <p class="text-white text-sm">
-                  are you sure you want to delete this playlist? this action
-                  cannot be undone.
-                </p>
-                <div class="flex gap-2">
-                  <button
-                    onClick={handleDeletePlaylist}
-                    disabled={isLoading()}
-                    class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-medium transition-colors"
-                  >
-                    yes, delete
-                  </button>
-                  <button
-                    onClick={() => setShowDeleteConfirm(false)}
-                    disabled={isLoading()}
-                    class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white font-medium transition-colors"
-                  >
-                    cancel
-                  </button>
-                </div>
-              </div>
-            }
-          >
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              disabled={isLoading()}
-              class="w-full px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-medium transition-colors flex items-center justify-center gap-2"
-            >
-              <svg
-                class="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
-              delete playlist
-            </button>
-          </Show>
-        </div>
-
         {/* error message */}
         <Show when={error()}>
-          <div class="bg-red-900 bg-opacity-30 border border-red-500 p-3">
+          <div class="bg-red-900/30 border border-red-500 p-3">
             <div class="text-red-400 text-sm">{error()}</div>
           </div>
         </Show>
-      </div>
-
-      {/* footer */}
-      <div class="flex items-center justify-end gap-3 p-4 border-t border-gray-700">
-        <button
-          onClick={handleCancel}
-          disabled={isLoading() || isDownloading()}
-          class="px-4 py-2 text-gray-400 hover:text-white disabled:text-gray-600 font-medium transition-colors"
-        >
-          close
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={isLoading() || isDownloading()}
-          class="px-6 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white font-medium transition-colors flex items-center gap-2"
-        >
-          <Show
-            when={!isLoading()}
-            fallback={
-              <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            }
-          >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-          </Show>
-          save
-        </button>
       </div>
     </div>
   );
