@@ -200,14 +200,18 @@ export function SongEditPanel(props: SongEditPanelProps) {
         </span>
       </div>
 
-      {/* edit form: 2-col grid on wider viewports */}
-      <div class="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* col 1: album art + image buttons */}
-        <div class="flex flex-col gap-2">
-          <div class="w-full aspect-square overflow-hidden bg-gray-700 flex items-center justify-center">
-            <Show
-              when={imageUrl()}
-              fallback={
+      {/* edit form: on sm+ the text fields sit left (clamped to 500px), image
+          right. justify-between pushes the columns apart so spare width sits in
+          the middle. order utilities keep the image on top for mobile */}
+      <div class="p-4 grid grid-cols-1 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] sm:justify-between gap-4">
+        {/* album art + image buttons */}
+        <div class="flex flex-col gap-2 sm:order-2">
+          {/* image sizes naturally at its own aspect ratio (no gray bars);
+              the gray square only shows as the no-image fallback */}
+          <Show
+            when={imageUrl()}
+            fallback={
+              <div class="w-full aspect-square bg-gray-700 flex items-center justify-center">
                 <svg
                   class="w-8 h-8 text-gray-400"
                   fill="none"
@@ -221,15 +225,11 @@ export function SongEditPanel(props: SongEditPanelProps) {
                     d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
                   />
                 </svg>
-              }
-            >
-              <img
-                src={imageUrl()}
-                alt="album art"
-                class="w-full h-full object-cover"
-              />
-            </Show>
-          </div>
+              </div>
+            }
+          >
+            <img src={imageUrl()} alt="album art" class="w-full h-auto" />
+          </Show>
           <input
             type="file"
             accept="image/*"
@@ -238,9 +238,11 @@ export function SongEditPanel(props: SongEditPanelProps) {
             class="hidden"
             id="song-image-upload-panel"
           />
+          {/* mt-auto pushes the buttons to the column bottom so both columns
+              end at the same height regardless of image aspect ratio */}
           <label
             for="song-image-upload-panel"
-            class="block w-full px-3 py-1.5 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-sm font-medium transition-colors text-center"
+            class="mt-auto block w-full px-3 py-1.5 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-sm font-medium transition-colors text-center"
           >
             choose image
           </label>
@@ -255,8 +257,8 @@ export function SongEditPanel(props: SongEditPanelProps) {
           </Show>
         </div>
 
-        {/* col 2: text fields + file info */}
-        <div class="flex flex-col gap-3">
+        {/* text fields + file info */}
+        <div class="flex flex-col gap-3 sm:order-1">
           <div>
             <label class="block text-xs font-medium text-gray-400 mb-1">
               title

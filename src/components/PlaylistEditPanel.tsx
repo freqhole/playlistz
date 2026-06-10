@@ -213,13 +213,18 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
 
   return (
     <div class="bg-black/40 border border-gray-700 overflow-hidden">
-      <div class="p-4 grid grid-cols-1 sm:grid-cols-2 gap-6">
-        {/* col 1: cover image + upload buttons */}
-        <div class="flex flex-col gap-3">
-          <div class="w-full aspect-square overflow-hidden bg-gray-700 flex items-center justify-center">
-            <Show
-              when={selectedImageUrl()}
-              fallback={
+      {/* on sm+: form controls left (clamped to 500px), image right.
+          justify-between pushes the columns apart so spare width sits in the
+          middle. order utilities keep the image on top for the mobile column */}
+      <div class="p-4 grid grid-cols-1 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] sm:justify-between gap-6">
+        {/* image + upload buttons */}
+        <div class="flex flex-col gap-3 sm:order-2">
+          {/* image sizes naturally at its own aspect ratio (no gray bars);
+              the gray square only shows as the no-image fallback */}
+          <Show
+            when={selectedImageUrl()}
+            fallback={
+              <div class="w-full aspect-square bg-gray-700 flex items-center justify-center">
                 <svg
                   class="w-8 h-8 text-gray-400"
                   fill="none"
@@ -233,15 +238,15 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                     d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
                   />
                 </svg>
-              }
-            >
-              <img
-                src={selectedImageUrl()}
-                alt="playlist cover"
-                class="w-full h-full object-cover"
-              />
-            </Show>
-          </div>
+              </div>
+            }
+          >
+            <img
+              src={selectedImageUrl()}
+              alt="playlist cover"
+              class="w-full h-auto"
+            />
+          </Show>
 
           <input
             type="file"
@@ -251,9 +256,11 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
             class="hidden"
             id="cover-upload-panel"
           />
+          {/* mt-auto pushes the buttons to the column bottom so both columns
+              end at the same height regardless of image aspect ratio */}
           <label
             for="cover-upload-panel"
-            class="block w-full px-3 py-1.5 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-sm font-medium transition-colors text-center"
+            class="mt-auto block w-full px-3 py-1.5 bg-magenta-500 hover:bg-magenta-600 text-white cursor-pointer text-sm font-medium transition-colors text-center"
           >
             upload image
           </label>
@@ -268,8 +275,8 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           </Show>
         </div>
 
-        {/* col 2: filter controls + playlist info */}
-        <div class="flex flex-col gap-5">
+        {/* filter controls + playlist info */}
+        <div class="flex flex-col gap-5 sm:order-1">
           {/* background image filter */}
           <div class="space-y-3">
             <div class="flex items-center gap-2">
@@ -442,8 +449,9 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
             </div>
           </div>
 
-          {/* playlist info */}
-          <div class="bg-black p-3 text-xs text-gray-400 space-y-1">
+          {/* playlist info - mt-auto pushes this (and everything after) to the
+              bottom so the column stretches to match the image column height */}
+          <div class="bg-black p-3 text-xs text-gray-400 space-y-1 mt-auto">
             <div>title: {props.playlist.title}</div>
             <div>id: {props.playlist.id}</div>
             <div>rev: {props.playlist.rev || 0}</div>
