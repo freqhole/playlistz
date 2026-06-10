@@ -1,5 +1,5 @@
 /* @jsxImportSource solid-js */
-import { createSignal } from "solid-js";
+import { createSignal, batch } from "solid-js";
 import type { Song, Playlist } from "../types/playlist.js";
 import { updateSong } from "../services/indexedDBService.js";
 import {
@@ -18,8 +18,9 @@ export function useSongState() {
 
   const [error, setError] = createSignal<string | null>(null);
 
+  // note: does not clear playlist edit mode - the song edit panel can
+  // coexist below the playlist edit panel
   const handleEditSong = (song: Song) => {
-    setEditingPlaylist(false);
     setEditingSong(song);
   };
 
@@ -28,9 +29,14 @@ export function useSongState() {
     setEditingPlaylist(true);
   };
 
+  // batched so dependent effects see both signals cleared at once
+  // (otherwise clearing the song while playlist edit is still open would
+  // re-trigger the default-song effect and re-open the song panel)
   const handleCloseEdit = () => {
-    setEditingSong(null);
-    setEditingPlaylist(false);
+    batch(() => {
+      setEditingSong(null);
+      setEditingPlaylist(false);
+    });
   };
 
   // handle song update after editing - keeps the edit panel open and refreshes

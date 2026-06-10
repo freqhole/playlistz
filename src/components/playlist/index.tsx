@@ -47,6 +47,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     handlePauseSong,
     editingSong,
     editingPlaylist,
+    setEditingSong,
     handleCloseEdit,
     handleSongSaved,
   } = songState;
@@ -109,6 +110,20 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     }
   });
 
+  // in playlist edit mode, a song edit panel is shown below the playlist
+  // panel. default it to the first song, and re-sync when switching
+  // playlists (the previous playlist's song may not exist here)
+  createEffect(() => {
+    if (!editingPlaylist()) return;
+    const ids = props.playlist().songIds || [];
+    const current = editingSong();
+    if (current && ids.includes(current.id)) return;
+    const first = ids.length
+      ? playlistSongs().find((s) => s.id === ids[0])
+      : undefined;
+    setEditingSong(first ?? null);
+  });
+
   // escape key closes the edit panels
   onMount(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -162,9 +177,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   };
 
   // header collapses completely (out of layout) when editing a song.
+  // stays visible in playlist edit mode (where the song panel is secondary).
   // overflow:hidden only applied while collapsing so it doesn't clip mobile content.
   const headerStyle = () =>
-    editingSong()
+    editingSong() && !editingPlaylist()
       ? {
           transition: "max-height 350ms ease, opacity 300ms ease",
           "max-height": "0px",

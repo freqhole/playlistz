@@ -106,12 +106,12 @@ describe("useSongState edit mode", () => {
       });
     });
 
-    it("clears playlist edit when entering song edit", () => {
+    it("keeps playlist edit open when entering song edit", () => {
       createRoot((dispose) => {
         const hook = useSongState();
         hook.handleEditPlaylist();
         hook.handleEditSong(mockSong);
-        expect(hook.editingPlaylist()).toBe(false);
+        expect(hook.editingPlaylist()).toBe(true);
         expect(hook.editingSong()).toEqual(mockSong);
         dispose();
       });
