@@ -80,7 +80,15 @@ export function usePlaylistManager() {
             const updated = value.find((p: Playlist) => p.id === current.id);
             if (updated) {
               setSelectedPlaylist(updated);
+            } else if (value.length > 0) {
+              // selected playlist was deleted - pick the first available
+              setSelectedPlaylist(value[0]!);
+            } else {
+              setSelectedPlaylist(null);
             }
+          } else if (value.length > 0) {
+            // no selection yet but playlists exist - auto-select first
+            setSelectedPlaylist(value[0]!);
           }
         }
       );
