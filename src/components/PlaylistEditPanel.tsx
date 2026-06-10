@@ -214,7 +214,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         </div>
 
         {/* actions: download + delete in a row on wider screens */}
-        <div class="flex flex-col sm:flex-row gap-2 max-w-xs">
+        <div class="flex flex-col sm:flex-row gap-2 max-w-xl">
           <Show when={window.location.protocol !== "file:"}>
             <button
               onClick={handleDownloadPlaylist}
@@ -241,7 +241,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                   />
                 </svg>
               </Show>
-              {isDownloading() ? "downloading..." : "download"}
+              {isDownloading() ? "downloading..." : "download playlist"}
             </button>
           </Show>
 
@@ -289,7 +289,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                   d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                 />
               </svg>
-              delete
+              delete playlist
             </button>
           </Show>
         </div>
@@ -307,47 +307,6 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
             <div>with album art: {songsWithArt().length}</div>
           </div>
         </div>
-
-        {/* songz with album art preview */}
-        <Show when={songsWithArt().length > 0}>
-          <div class="grid grid-cols-4 gap-3">
-            <For each={songsWithArt()}>
-              {(song) => (
-                <div
-                  class="aspect-square overflow-hidden bg-gray-700"
-                  title={`${song.title} - ${song.artist}`}
-                >
-                  <Show
-                    when={song.imageType || song.imageFilePath}
-                    fallback={
-                      <div class="w-full h-full flex items-center justify-center">
-                        <svg
-                          class="w-6 h-6 text-gray-400"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-                          />
-                        </svg>
-                      </div>
-                    }
-                  >
-                    <img
-                      src={getImageUrlForContext(song, "thumbnail") ?? ""}
-                      alt={song.title}
-                      class="w-full h-full object-cover"
-                    />
-                  </Show>
-                </div>
-              )}
-            </For>
-          </div>
-        </Show>
 
         {/* error message */}
         <Show when={error()}>
