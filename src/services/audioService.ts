@@ -49,7 +49,7 @@ const [songPlaybackPositions, setSongPlaybackPositions] = createSignal<Map<strin
 // pending seek time to apply after loadedmetadata fires for the new song
 let pendingSeekTime = 0;
 
-// load all persisted positions from indexeddb into the in-memory signal (called once on first play)
+// load all persisted positions from indexeddb into the in-memory signal
 let positionsLoaded = false;
 async function ensurePositionsLoaded(): Promise<void> {
   if (positionsLoaded) return;
@@ -59,6 +59,9 @@ async function ensurePositionsLoaded(): Promise<void> {
     setSongPlaybackPositions(saved);
   }
 }
+
+// load positions eagerly so song rows can show progress fills before playback starts
+ensurePositionsLoaded().catch(() => {});
 
 // persist current song position to indexeddb (fire-and-forget)
 function flushCurrentPosition(): void {
@@ -150,15 +153,18 @@ function initializeAudio(): HTMLAudioElement {
   });
   audioElement.addEventListener("ended", () => {
     setIsPlaying(false);
-    // clear saved position when song completes naturally
+    // mark a complete listen by saving the full duration - the row keeps a
+    // full progress fill, and next play restarts from the beginning since
+    // positions >=95% are treated as complete
     const song = currentSong();
-    if (song) {
+    const dur = audioElement?.duration ?? 0;
+    if (song && dur > 0) {
       setSongPlaybackPositions((prev) => {
         const next = new Map(prev);
-        next.delete(song.id);
+        next.set(song.id, dur);
         return next;
       });
-      deletePlaybackPosition(song.id).catch(() => {});
+      savePlaybackPosition(song.id, dur).catch(() => {});
     }
     handleSongEnded();
   });

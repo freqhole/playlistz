@@ -1041,7 +1041,7 @@ describe("Audio Service Tests", () => {
       expect(pos).toBeUndefined();
     });
 
-    it("clears position from map when song ends naturally", async () => {
+    it("saves full duration when song ends naturally (complete listen)", async () => {
       fireTimeUpdate(60);
       expect(audioService.audioState.songPlaybackPositions().get(mockSong1.id)).toBe(60);
 
@@ -1051,7 +1051,7 @@ describe("Audio Service Tests", () => {
         .map((c: any) => c[1]);
       for (const h of endedHandlers) await h();
 
-      expect(audioService.audioState.songPlaybackPositions().get(mockSong1.id)).toBeUndefined();
+      expect(audioService.audioState.songPlaybackPositions().get(mockSong1.id)).toBe(audio.duration);
     });
 
     it("sets pendingSeekTime and resumes from saved position on re-play", async () => {

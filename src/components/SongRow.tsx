@@ -237,6 +237,14 @@ export function SongRow(props: SongRowProps) {
             return savedPos > 0 && dur > 0 ? (savedPos / dur) * 100 : 0;
           };
 
+          // show the progress fill whenever the song is playing or has saved
+          // progress past 5%. positions >=95% count as a complete listen and
+          // stay fully filled (next play restarts from the beginning)
+          const showProgressFill = () => {
+            if (isCurrentlyPlaying()) return true;
+            return getProgressPercentage() > 5;
+          };
+
           return (
             <div
               class={`group relative flex items-center p-3 group-hover:bg-opacity-70 hover:bg-magenta-500 transition-all duration-200 overflow-hidden ${
@@ -268,8 +276,8 @@ export function SongRow(props: SongRowProps) {
               <div
                 class="absolute inset-0 transition-all duration-200"
                 style={{
-                  background: isCurrentlyPlaying()
-                    ? `linear-gradient(to right, rgba(236, 72, 153, 0.5) ${getProgressPercentage()}%, transparent ${getProgressPercentage()}%)`
+                  background: showProgressFill()
+                    ? `linear-gradient(to right, rgba(236, 72, 153, ${isCurrentlyPlaying() ? "0.5" : "0.3"}) ${getProgressPercentage()}%, transparent ${getProgressPercentage()}%)`
                     : isCurrentlySelected()
                       ? "rgba(236, 72, 153, 0.3)"
                       : draggedOver()
