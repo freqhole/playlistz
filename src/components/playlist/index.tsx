@@ -16,6 +16,7 @@ import {
   usePlaylistzImageModal,
 } from "../../context/PlaylistzContext.js";
 import { getImageUrlForContext } from "../../services/imageService.js";
+import { audioState } from "../../services/audioService.js";
 import { AudioPlayer } from "../AudioPlayer.js";
 import { SongRow } from "../SongRow.js";
 import { PlaylistEditPanel } from "../PlaylistEditPanel.js";
@@ -659,9 +660,19 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
           <For each={props.playlist().songIds}>
             {(songId, index) => {
               const isBeingEdited = () => editingSong()?.id === songId;
+              // sticky has to live on this outer wrapper: the row itself is
+              // boxed in by the animation wrappers, so position: sticky on it
+              // can't escape and never actually sticks
+              const isActiveRow = () =>
+                audioState.selectedSongId() === songId ||
+                (audioState.currentSong()?.id === songId &&
+                  audioState.isPlaying());
               return (
                 <Show when={!isBeingEdited()}>
-                  <div style={rowOuterStyle()}>
+                  <div
+                    style={rowOuterStyle()}
+                    class={isActiveRow() ? "sticky top-0 bottom-0 z-100" : ""}
+                  >
                     <div style={rowInnerStyle(index())}>
                       <SongRow
                         songId={songId}
