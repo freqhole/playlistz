@@ -203,9 +203,9 @@ export function SongEditPanel(props: SongEditPanelProps) {
     imageUrl() ?? getImageUrlForContext(props.song, "thumbnail") ?? undefined;
 
   return (
-    <div class="bg-black/40 border border-gray-700 overflow-hidden min-w-0 w-full">
+    <div class="bg-black/40 border-none overflow-hidden min-w-0 w-full">
       {/* read-only song row preview - updates live as user edits */}
-      <div class="flex items-center gap-2 px-3 py-3 bg-black border-b border-gray-700 select-none min-w-0">
+      <div class="flex items-center gap-2 px-3 py-3 bg-black border-none select-none min-w-0">
         {/* close button */}
         <button
           onClick={handleClose}
@@ -456,7 +456,7 @@ export function SongEditPanel(props: SongEditPanelProps) {
       <Show
         when={showDeleteConfirm()}
         fallback={
-          <div class="flex items-center gap-3 px-4 py-3 border-t border-gray-700">
+          <div class="flex items-center gap-3 px-4 py-3 border-none">
             <button
               onClick={() => setShowDeleteConfirm(true)}
               disabled={isLoading()}

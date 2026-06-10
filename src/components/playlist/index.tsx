@@ -38,6 +38,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     handleCachePlaylist,
     handleRemoveSong,
     handleReorderSongs,
+    setBackgroundOverride,
   } = playlistManager;
 
   const {
@@ -123,6 +124,22 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
       : undefined;
     setEditingSong(first ?? null);
   });
+
+  // while in playlist edit mode, the page background follows the song being
+  // edited (if it has an image) so the filter sliders are easier to tune.
+  // the "use cover" button in the edit panel can override this until the
+  // editing song changes again. cleared when leaving edit mode
+  createEffect(
+    on([editingPlaylist, editingSong], ([inPlaylistEdit, song]) => {
+      if (inPlaylistEdit && song?.imageType) {
+        setBackgroundOverride(song);
+      } else {
+        setBackgroundOverride(null);
+      }
+    })
+  );
+
+  onCleanup(() => setBackgroundOverride(null));
 
   // escape key closes the edit panels
   onMount(() => {

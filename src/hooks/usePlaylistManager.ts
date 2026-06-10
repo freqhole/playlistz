@@ -57,6 +57,18 @@ export function usePlaylistManager() {
   >(null);
   const [imageUrlCache] = createSignal(new Map<string, string>());
 
+  // manual background override: a specific song's image (e.g. the song being
+  // edited) or "cover" to force the selected playlist's cover image.
+  // null falls through to the default priority (playing song > playlist)
+  const [backgroundOverride, setBackgroundOverride] = createSignal<
+    Song | "cover" | null
+  >(null);
+
+  // which image the background currently shows ("song-<id>" or "playlist-<id>")
+  const [backgroundSource, setBackgroundSource] = createSignal<string | null>(
+    null
+  );
+
   // query mgmt
   let playlistsQueryUnsubscribe: (() => void) | null = null;
   let songsQueryUnsubscribe: (() => void) | null = null;
@@ -222,8 +234,9 @@ export function usePlaylistManager() {
     });
   });
 
-  // update background image based on currently playing song or selected playlist
+  // update background image based on override, currently playing song, or selected playlist
   createEffect(() => {
+    const override = backgroundOverride();
     const currentSong = audioState.currentSong();
     const currentPlaylist = audioState.currentPlaylist();
     const selectedPl = selectedPlaylist();
@@ -232,8 +245,30 @@ export function usePlaylistManager() {
     let newImageUrl: string | null = null;
     let cacheKey: string | null = null;
 
+    // priority 0: manual override (song being edited, or forced playlist cover)
+    if (override && override !== "cover" && override.imageType) {
+      cacheKey = `song-${override.id}`;
+      if (cache.has(cacheKey)) {
+        newImageUrl = cache.get(cacheKey)!;
+      } else {
+        newImageUrl = getImageUrlForContext(override, "background");
+        if (newImageUrl) {
+          cache.set(cacheKey, newImageUrl);
+        }
+      }
+    } else if (override === "cover" && selectedPl?.imageType) {
+      cacheKey = `playlist-${selectedPl.id}`;
+      if (cache.has(cacheKey)) {
+        newImageUrl = cache.get(cacheKey)!;
+      } else {
+        newImageUrl = getImageUrlForContext(selectedPl, "background");
+        if (newImageUrl) {
+          cache.set(cacheKey, newImageUrl);
+        }
+      }
+    }
     // priority 1: use song's image if available (when playing)
-    if (currentSong?.imageType) {
+    else if (currentSong?.imageType) {
       cacheKey = `song-${currentSong.id}`;
       if (cache.has(cacheKey)) {
         newImageUrl = cache.get(cacheKey)!;
@@ -274,6 +309,7 @@ export function usePlaylistManager() {
     if (prevUrl !== newImageUrl) {
       setBackgroundImageUrl(newImageUrl);
     }
+    setBackgroundSource(cacheKey);
   });
 
   // update PWA manifest when playlist changes
@@ -508,6 +544,7 @@ export function usePlaylistManager() {
     isInitialized,
     error,
     backgroundImageUrl,
+    backgroundSource,
     imageUrlCache,
 
     // modal and UI state
@@ -524,6 +561,7 @@ export function usePlaylistManager() {
     setShowImageModal,
     setShowDeleteConfirm,
     setModalImageIndex,
+    setBackgroundOverride,
 
     // actionz
     initialize,

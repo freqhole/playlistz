@@ -10,6 +10,7 @@ import {
   createImageUrlFromData,
 } from "../services/imageService.js";
 import { downloadPlaylistAsZip } from "../services/playlistDownloadService.js";
+import { usePlaylistzManager } from "../context/PlaylistzContext.js";
 import type { Playlist, Song } from "../types/playlist.js";
 
 interface PlaylistEditPanelProps {
@@ -21,6 +22,8 @@ interface PlaylistEditPanelProps {
 }
 
 export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
+  const { backgroundSource, setBackgroundOverride } = usePlaylistzManager();
+
   const [selectedImageUrl, setSelectedImageUrl] = createSignal<
     string | undefined
   >();
@@ -212,11 +215,11 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
   };
 
   return (
-    <div class="bg-black/40 border border-gray-700 overflow-hidden">
+    <div class="bg-black/40 overflow-hidden">
       {/* on sm+: form controls left (clamped to 500px), image right.
           justify-between pushes the columns apart so spare width sits in the
           middle. order utilities keep the image on top for the mobile column */}
-      <div class="p-4 grid grid-cols-1 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] sm:justify-between gap-6">
+      <div class="p-4 border-none grid grid-cols-1 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] sm:justify-between gap-6">
         {/* image + upload buttons */}
         <div class="flex flex-col gap-3 sm:order-2">
           {/* image sizes naturally at its own aspect ratio (no gray bars);
@@ -241,11 +244,37 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
               </div>
             }
           >
-            <img
-              src={selectedImageUrl()}
-              alt="playlist cover"
-              class="w-full h-auto"
-            />
+            {/* hovering reveals a bottom strip; clicking anywhere on the image
+                sets the page background to this cover (only when the background
+                is currently something else, e.g. the song being edited) */}
+            <Show
+              when={
+                props.playlist.imageType &&
+                backgroundSource() !== `playlist-${props.playlist.id}`
+              }
+              fallback={
+                <img
+                  src={selectedImageUrl()}
+                  alt="playlist cover"
+                  class="w-full h-auto"
+                />
+              }
+            >
+              <button
+                onClick={() => setBackgroundOverride("cover")}
+                class="relative block w-full group cursor-pointer"
+                title="set the page background to this playlist's cover image"
+              >
+                <img
+                  src={selectedImageUrl()}
+                  alt="playlist cover"
+                  class="w-full h-auto"
+                />
+                <span class="absolute bottom-0 inset-x-0 px-3 py-2 bg-black/70 text-white text-sm font-medium text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  show cover background preview
+                </span>
+              </button>
+            </Show>
           </Show>
 
           <input
@@ -448,6 +477,9 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
               </span>
             </div>
           </div>
+
+          {/* playlist info - mt-auto pushes this (and everything after) to the
+              bottom so the column stretches to match the image column height */}
 
           {/* playlist info - mt-auto pushes this (and everything after) to the
               bottom so the column stretches to match the image column height */}
