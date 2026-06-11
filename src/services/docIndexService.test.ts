@@ -2,6 +2,7 @@
 // uses fake-indexeddb (wired via test-setup.ts) so no real IDB needed.
 
 import { describe, it, expect, beforeEach } from "vitest";
+import { IDBFactory } from "fake-indexeddb";
 import { resetDBCache } from "./indexedDBService.js";
 import {
   addDocIndexEntry,
@@ -19,8 +20,9 @@ import {
 } from "./docIndexService.js";
 import type { DocIndexEntry, KnockRecord, AccessGrantRecord } from "./indexedDBService.js";
 
-// fresh db connection for each test
+// fresh idb + db connection for each test (avoids data leaking across tests)
 beforeEach(() => {
+  globalThis.indexedDB = new IDBFactory();
   resetDBCache();
 });
 

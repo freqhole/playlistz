@@ -9,7 +9,7 @@ import { parsePlaylistZip } from "../services/playlistDownloadService.js";
 import {
   createPlaylist,
   addSongToPlaylist,
-} from "../services/indexedDBService.js";
+} from "../services/playlistDocService.js";
 
 export interface DragInfo {
   type: "audio-files" | "non-audio-files" | "song-reorder" | "unknown";
@@ -219,7 +219,10 @@ export function useDragAndDrop() {
         continue;
       }
 
-      const newPlaylist = await createPlaylist(playlistData);
+      const newPlaylist = await createPlaylist({
+        title: playlistData.title,
+        description: playlistData.description,
+      });
 
       // and add the songz
       for (const songData of songsData) {
@@ -266,7 +269,6 @@ export function useDragAndDrop() {
         description: `created from ${audioFiles.length} dropped file${
           audioFiles.length > 1 ? "z" : ""
         }`,
-        songIds: [],
       });
       options.onPlaylistCreated?.(targetPlaylist);
       options.onPlaylistSelected?.(targetPlaylist);

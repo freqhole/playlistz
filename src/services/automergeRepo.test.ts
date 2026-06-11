@@ -25,6 +25,7 @@ vi.mock("freqhole-api-client/automerge", async () => {
     }
     connect() {}
     disconnect() {}
+    send() {}
   }
 
   MockIrohNetworkAdapterClass.mockImplementation(

@@ -47,10 +47,15 @@ function updateCacheFromDoc(documentId: DocumentId, rawDoc: unknown): void {
 // peers map or acl. docs not in the cache (unknown to this instance) are
 // not announced. this matches the plan's access model - the doc id is an
 // unguessable bearer capability; unsolicited announcement is off by default.
+let _sharePolicyCalls = 0;
 async function sharePolicy(
   peerId: PeerId,
   documentId?: DocumentId
 ): Promise<boolean> {
+  _sharePolicyCalls++;
+  if (_sharePolicyCalls % 100 === 1) {
+    console.log("[trace] sharePolicy call #", _sharePolicyCalls, peerId, documentId);
+  }
   if (!documentId) return false;
   const entry = docPeerCache.get(documentId);
   if (!entry) return false;
@@ -60,15 +65,19 @@ async function sharePolicy(
 let _repo: Repo | null = null;
 
 function buildRepo(): Repo {
+  console.log("[trace] buildRepo: constructing adapters");
   const storage = new IndexedDBStorageAdapter("freqhole-automerge");
   const broadcastAdapter = new BroadcastChannelNetworkAdapter();
   const irohAdapter = new IrohNetworkAdapter(getAdapterOptions());
 
-  return new Repo({
+  console.log("[trace] buildRepo: constructing Repo");
+  const repo = new Repo({
     storage,
     network: [broadcastAdapter, irohAdapter],
     sharePolicy,
   });
+  console.log("[trace] buildRepo: done");
+  return repo;
 }
 
 // returns the lazily-constructed repo singleton.
@@ -82,10 +91,17 @@ export function getRepo(): Repo {
 
 // attach a change listener that keeps the peer cache current for a handle.
 // also seeds the cache from whatever the handle has now (if ready).
+// documentIds that already have a change listener attached via watchHandle.
+// prevents unbounded listener growth when findPlaylistDoc is called repeatedly.
+const watchedDocs = new Set<DocumentId>();
+
+let _watchHandleCalls = 0;
 function watchHandle(
   handle: DocHandle<PlaylistDoc>,
   documentId: DocumentId
 ): void {
+  _watchHandleCalls++;
+  console.log("[trace] watchHandle call #", _watchHandleCalls, documentId);
   let rawDoc: unknown;
   try {
     rawDoc = handle.doc();
@@ -95,7 +111,13 @@ function watchHandle(
   if (rawDoc !== undefined) {
     updateCacheFromDoc(documentId, rawDoc);
   }
-  handle.on("change", ({ doc }) => updateCacheFromDoc(documentId, doc));
+  if (!watchedDocs.has(documentId)) {
+    watchedDocs.add(documentId);
+    handle.on("change", ({ doc }) => {
+      console.log("[trace] doc change event (watchHandle)", documentId);
+      updateCacheFromDoc(documentId, doc);
+    });
+  }
 }
 
 // create a new playlist doc seeded with emptyPlaylistDoc + optional overrides.
@@ -104,9 +126,12 @@ export function createPlaylistDoc(initial?: Partial<PlaylistDoc>): {
   docId: AutomergeUrl;
   handle: DocHandle<PlaylistDoc>;
 } {
+  console.log("[trace] createPlaylistDoc: getRepo");
   const repo = getRepo();
   const seed = emptyPlaylistDoc(initial);
+  console.log("[trace] createPlaylistDoc: repo.create");
   const handle = repo.create<PlaylistDoc>(seed);
+  console.log("[trace] createPlaylistDoc: created", handle.url);
   const { documentId } = parseAutomergeUrl(handle.url);
   watchHandle(handle, documentId);
   return { docId: handle.url, handle };
@@ -114,11 +139,15 @@ export function createPlaylistDoc(initial?: Partial<PlaylistDoc>): {
 
 // find an existing playlist doc by its AutomergeUrl, waiting for the handle
 // to reach a ready (or terminal) state before returning.
+let _findCalls = 0;
 export async function findPlaylistDoc(
   docId: AutomergeUrl
 ): Promise<DocHandle<PlaylistDoc>> {
+  _findCalls++;
+  console.log("[trace] findPlaylistDoc call #", _findCalls, docId);
   const repo = getRepo();
   const handle = await repo.find<PlaylistDoc>(docId);
+  console.log("[trace] findPlaylistDoc: resolved", docId);
   const { documentId } = parseAutomergeUrl(handle.url);
   watchHandle(handle, documentId);
   return handle;
@@ -138,6 +167,7 @@ export async function deletePlaylistDoc(docId: AutomergeUrl): Promise<void> {
 export function _resetRepoForTests(): void {
   _repo = null;
   docPeerCache.clear();
+  watchedDocs.clear();
 }
 
 // expose the share policy for unit testing.

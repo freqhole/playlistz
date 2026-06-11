@@ -1,12 +1,7 @@
 // streaming audio service
-// handles efficient audio streaming with parallel caching to indexeddb
+// handles efficient audio streaming with parallel caching to the blob store
 
-import {
-  setupDB,
-  SONGS_STORE,
-  mutateAndNotify,
-  DB_NAME,
-} from "./indexedDBService.js";
+import { storeBlob } from "freqhole-api-client/storage";
 import type { Song } from "../types/playlist.js";
 
 interface StreamingDownloadResult {
@@ -22,10 +17,8 @@ interface DownloadProgress {
 
 type ProgressCallback = (progress: DownloadProgress) => void;
 
-/**
- * Downloads audio file with streaming, providing immediate blob URL for playback
- * while simultaneously caching to IndexedDB
- */
+// downloads audio file with streaming, providing immediate url for playback
+// while simultaneously caching to the blob store
 export async function streamAudioWithCaching(
   song: Song,
   standaloneFilePath: string,
@@ -33,10 +26,9 @@ export async function streamAudioWithCaching(
 ): Promise<StreamingDownloadResult> {
   try {
     // for http/https urls, return the direct url for immediate streaming
-    // the browser will handle progressive download/streaming automatically
     const blobUrl = standaloneFilePath;
 
-    // start background download and caching to indexeddb
+    // start background download and caching
     const downloadPromise = downloadAndCacheAudio(
       song,
       standaloneFilePath,
@@ -48,33 +40,37 @@ export async function streamAudioWithCaching(
       downloadPromise,
     };
   } catch (error) {
-    console.error("Error in streamAudioWithCaching:", error);
+    console.error("error in streamaudiowithcaching:", error);
     throw error;
   }
 }
 
-/**
- * downloads and caches audio file in the background
- */
+// downloads and caches audio file in the blob store
 export async function downloadAndCacheAudio(
   song: Song,
   standaloneFilePath: string,
   onProgress?: ProgressCallback
 ): Promise<boolean> {
   try {
-    // check if already cached to avoid duplicate downloads
-    const db = await setupDB();
-    const existingSong = await db.get(SONGS_STORE, song.id);
-
-    if (existingSong?.audioData && existingSong.audioData.byteLength > 0) {
-      return true; // already cached
+    // if the song already has a sha, check the blob store.
+    // a failed check is non-fatal - proceed with the download.
+    if (song.sha ?? song.sha256) {
+      try {
+        const { getBlobMetadata } = await import("freqhole-api-client/storage");
+        const existing = await getBlobMetadata((song.sha ?? song.sha256)!);
+        if (existing) {
+          return true; // already cached
+        }
+      } catch (error) {
+        console.error("error checking blob store cache status:", error);
+      }
     }
 
     const response = await fetch(standaloneFilePath);
 
     if (!response.ok) {
       throw new Error(
-        `Failed to fetch: ${response.status} ${response.statusText}`
+        `failed to fetch: ${response.status} ${response.statusText}`
       );
     }
 
@@ -84,7 +80,7 @@ export async function downloadAndCacheAudio(
 
     const reader = response.body?.getReader();
     if (!reader) {
-      throw new Error("Response body is not readable");
+      throw new Error("response body is not readable");
     }
 
     const chunks: Uint8Array[] = [];
@@ -108,77 +104,52 @@ export async function downloadAndCacheAudio(
       }
     }
 
-    // combine chunks into arraybuffer
-    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const audioData = new ArrayBuffer(totalLength);
-    const uint8View = new Uint8Array(audioData);
-
-    let offset = 0;
-    for (const chunk of chunks) {
-      uint8View.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    // store in indexeddb
+    // combine chunks into a blob
     const mimeType =
       song.mimeType || response.headers.get("content-type") || "audio/mpeg";
-    const updatedSong = {
-      ...song,
-      audioData,
-      mimeType,
-      updatedAt: Date.now(),
-    };
+    const audioBlob = new Blob(chunks as BlobPart[], { type: mimeType });
 
-    await mutateAndNotify({
-      dbName: DB_NAME,
-      storeName: SONGS_STORE,
-      key: song.id,
-      updateFn: () => updatedSong,
-    });
+    // store in blob store - the sha256 hash is computed by storeBlob
+    await storeBlob(audioBlob, mimeType);
 
     return true;
   } catch (error) {
-    console.error(`Error downloading and caching audio for ${song.id}:`, error);
+    console.error(`error downloading and caching audio for ${song.id}:`, error);
     return false;
   }
 }
 
-/**
- * checks if a song is currently being downloaded/cached
- */
+// tracks active downloads to prevent duplicates
 const activeDownloads = new Map<string, Promise<boolean>>();
 
 export function isSongDownloading(songId: string): boolean {
   return activeDownloads.has(songId);
 }
 
-/**
- * wrapper that tracks active downloads to prevent duplicates
- */
+// wrapper that tracks active downloads to prevent duplicates
 export async function downloadSongIfNeeded(
   song: Song,
   standaloneFilePath: string,
   onProgress?: ProgressCallback
 ): Promise<boolean> {
-  // check if already downloading
   const existingDownload = activeDownloads.get(song.id);
   if (existingDownload) {
     return existingDownload;
   }
 
-  // check if already cached
-  try {
-    const db = await setupDB();
-    const existingSong = await db.get(SONGS_STORE, song.id);
-
-    if (existingSong?.audioData && existingSong.audioData.byteLength > 0) {
-      return true; // already cached
+  // check if already cached in blob store
+  if (song.sha ?? song.sha256) {
+    try {
+      const { getBlobMetadata } = await import("freqhole-api-client/storage");
+      const existing = await getBlobMetadata((song.sha ?? song.sha256)!);
+      if (existing) {
+        return true;
+      }
+    } catch (error) {
+      console.error("error checking blob store cache status:", error);
     }
-  } catch (error) {
-    console.error("Error checking cache status:", error);
   }
 
-  // start new download
   const downloadPromise = downloadAndCacheAudio(
     song,
     standaloneFilePath,
@@ -187,7 +158,6 @@ export async function downloadSongIfNeeded(
 
   activeDownloads.set(song.id, downloadPromise);
 
-  // clean up when done
   downloadPromise.finally(() => {
     activeDownloads.delete(song.id);
   });

@@ -18,8 +18,12 @@ export function createDocIndexQuery(): Accessor<DocIndexEntry[]> {
     equals: false,
   });
 
+  let _refreshCalls = 0;
   async function refresh(): Promise<void> {
+    _refreshCalls++;
+    console.log("[trace] docIndexQuery refresh #", _refreshCalls);
     const all = await getAllDocIndexEntries();
+    console.log("[trace] docIndexQuery refresh #", _refreshCalls, "got", all.length, "entries");
     setEntries(all);
   }
 
@@ -28,6 +32,7 @@ export function createDocIndexQuery(): Accessor<DocIndexEntry[]> {
   const bc = new BroadcastChannel(`${DB_NAME}-changes`);
   bc.onmessage = (e: MessageEvent) => {
     if (e.data?.type === "mutation" && e.data.store === DOC_INDEX_STORE) {
+      console.log("[trace] docIndexQuery: broadcast invalidation received");
       void refresh();
     }
   };

@@ -8,9 +8,10 @@ import {
   For,
 } from "solid-js";
 import {
-  updatePlaylist,
   deletePlaylist,
-} from "../services/indexedDBService.js";
+  setPlaylistCoverImage,
+  clearPlaylistCoverImage,
+} from "../services/playlistDocService.js";
 import {
   processPlaylistCover,
   validateImageFile,
@@ -157,7 +158,13 @@ export function PlaylistCoverModal(props: PlaylistCoverModalProps) {
         updatedAt: Date.now(),
       };
 
-      await updatePlaylist(props.playlist.id, updates);
+      const imageData = selectedImageData();
+      const imageType = selectedImageType();
+      if (imageData && imageType) {
+        await setPlaylistCoverImage(props.playlist.id, imageData, imageType);
+      } else {
+        await clearPlaylistCoverImage(props.playlist.id);
+      }
 
       // create updated playlist object, removing old image property if it exists
       const { image: _image, ...playlistWithoutOldImage } =

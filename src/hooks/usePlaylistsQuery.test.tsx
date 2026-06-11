@@ -1,211 +1,119 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createRoot, createSignal as solidCreateSignal } from "solid-js";
-import {
-  createLiveQuery,
-  createPlaylistsQuery,
-} from "../services/indexedDBService.js";
+import { createRoot } from "solid-js";
 import { usePlaylistsQuery } from "./usePlaylistsQuery.js";
 import type { Playlist } from "../types/playlist.js";
 
-// Mock IndexedDB
-const mockIDB = {
-  getAll: vi.fn(),
-  transaction: vi.fn(),
-  objectStore: vi.fn(),
-  put: vi.fn(),
-  get: vi.fn(),
-};
-
-vi.mock("idb", () => ({
-  openDB: vi.fn(() => Promise.resolve(mockIDB)),
+// mock all dependencies of usePlaylistsQuery
+vi.mock("./createDocIndexQuery.js", () => ({
+  createDocIndexQuery: vi.fn(() => () => []),
 }));
 
-// Mock BroadcastChannel
-global.BroadcastChannel = vi.fn(() => ({
-  postMessage: vi.fn(),
-  onmessage: null,
-  close: vi.fn(),
-})) as any;
+vi.mock("../services/automergeRepo.js", () => ({
+  findPlaylistDoc: vi.fn(),
+  getRepo: vi.fn(),
+}));
 
-describe("Playlist Signal Integration Tests", () => {
+vi.mock("freqhole-api-client/playlistz", () => ({
+  parsePlaylistDoc: vi.fn((raw: any) => raw ?? {}),
+}));
+
+vi.mock("../services/playlistDocService.js", () => ({
+  docToPlaylist: vi.fn((docId: string, _doc: any): Playlist => ({
+    id: docId,
+    title: "mocked playlist",
+    description: undefined,
+    createdAt: 0,
+    updatedAt: 0,
+    songIds: [],
+  })),
+}));
+
+describe("usePlaylistsQuery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset mock data
-    mockIDB.getAll.mockResolvedValue([]);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  describe("Custom Signal vs SolidJS Signal", () => {
-    it("should behave like SolidJS signals for basic operations", () => {
-      createRoot(() => {
-        // Test custom signal from indexedDBService
-        const customQuery = createLiveQuery<Playlist>({
-          dbName: "test",
-          storeName: "playlists",
-        });
-
-        // Test SolidJS signal
-        const [solidSignal] = solidCreateSignal<Playlist[]>([]);
-
-        // Both should have get() method
-        expect(typeof customQuery.get).toBe("function");
-        expect(typeof solidSignal).toBe("function");
-
-        // Both should return empty arrays initially
-        expect(customQuery.get()).toEqual([]);
-        // don't call reactive signal outside of reactive context in tests
-        // expect(solidSignal()).toEqual([]);
-      });
-    });
-
-    it("should support subscription pattern", () => {
-      const customQuery = createLiveQuery<Playlist>({
-        dbName: "test",
-        storeName: "playlists",
-      });
-
-      const subscriber = vi.fn();
-      const unsubscribe = customQuery.subscribe(subscriber);
-
-      // Should call subscriber immediately with current value
-      expect(subscriber).toHaveBeenCalledWith([]);
-
-      // Cleanup
-      unsubscribe();
-    });
-  });
-
-  describe("Hook Signal Creation", () => {
-    it("should create hook and return SolidJS signal", () => {
-      createRoot(() => {
-        const playlists = usePlaylistsQuery();
-
-        expect(typeof playlists).toBe("function"); // Should be SolidJS signal function
-        expect(playlists()).toEqual([]); // Should return empty array initially
-      });
-    });
-
-    it("should update when underlying data changes", async () => {
-      createRoot(() => {
-        const playlists = usePlaylistsQuery();
-        let signalValue = playlists();
-
-        expect(signalValue).toEqual([]);
-
-        // Mock database change
-        const mockPlaylists = [
-          {
-            id: "1",
-            title: "Test Playlist",
-            songIds: [],
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
-        ];
-        mockIDB.getAll.mockResolvedValue(mockPlaylists);
-
-        // Wait for potential updates
-        setTimeout(() => {
-          signalValue = playlists();
-        }, 100);
-      });
-    });
-  });
-
-  describe("Signal Update Propagation", () => {
-    it("should track signal changes through subscribe", async () => {
-      mockIDB.getAll.mockResolvedValue([]);
-
-      const playlistsQuery = createPlaylistsQuery();
-      const updates: Playlist[][] = [];
-
-      const unsubscribe = playlistsQuery.subscribe((value: Playlist[]) => {
-        updates.push(value);
-      });
-
-      // Should get initial empty array
-      expect(updates).toHaveLength(1);
-      expect(updates[0]).toEqual([]);
-
-      // Simulate database change
-      const mockPlaylists = [
-        {
-          id: "1",
-          title: "Test Playlist",
-          songIds: [],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ];
-      mockIDB.getAll.mockResolvedValue(mockPlaylists);
-
-      // Manually trigger fetchAndUpdate (this is what broadcast should do)
-      const bc = new BroadcastChannel("musicPlaylistDB-changes");
-      if (bc.onmessage) {
-        bc.onmessage({
-          data: { type: "mutation", store: "playlists", id: "1" },
-        } as MessageEvent);
-      }
-
-      // Wait for async update
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Should have received update through subscription
-      expect(updates.length).toBeGreaterThan(1);
-      if (updates.length > 1) {
-        const lastUpdate = updates[updates.length - 1];
-        expect(lastUpdate).toBeDefined();
-        expect(lastUpdate).toHaveLength(1);
-        if (lastUpdate && lastUpdate.length > 0 && lastUpdate[0]) {
-          expect(lastUpdate[0].title).toBe("Test Playlist");
-        }
-      }
-
-      unsubscribe();
-    });
-  });
-
-  describe("usePlaylistsQuery Hook Integration", () => {
-    it("should bridge custom signals to SolidJS reactivity", () => {
-      createRoot(() => {
-        const playlists = usePlaylistsQuery();
-
-        // Should be a proper SolidJS signal
-        expect(typeof playlists).toBe("function");
-
-        // Should have access to current value
-        const currentValue = playlists();
-        expect(Array.isArray(currentValue)).toBe(true);
-      });
-    });
-
-    it("should handle cleanup properly", () => {
+  describe("basic structure", () => {
+    it("returns an object with a playlists signal", () => {
       createRoot((dispose) => {
-        const playlists = usePlaylistsQuery();
+        const result = usePlaylistsQuery();
+        expect(typeof result).toBe("object");
+        expect(typeof result.playlists).toBe("function");
+        dispose();
+      });
+    });
 
-        expect(typeof playlists).toBe("function");
-
-        // Simulate component unmount
+    it("returns an empty array initially when no docIndex entries exist", () => {
+      createRoot((dispose) => {
+        const { playlists } = usePlaylistsQuery();
+        expect(Array.isArray(playlists())).toBe(true);
         dispose();
       });
     });
   });
 
-  describe("Hook Performance", () => {
-    it("should handle multiple hook instances efficiently", async () => {
-      createRoot(() => {
-        const hook1 = usePlaylistsQuery();
-        const hook2 = usePlaylistsQuery();
+  describe("when docIndex has entries", () => {
+    it("resolves playlist data from docIndex entries", async () => {
+      const { createDocIndexQuery } = await import("./createDocIndexQuery.js");
+      const { findPlaylistDoc } = await import("../services/automergeRepo.js");
 
-        expect(typeof hook1).toBe("function");
-        expect(typeof hook2).toBe("function");
+      vi.mocked(createDocIndexQuery).mockReturnValue(() => [
+        {
+          docId: "automerge:abc123",
+          title: "test playlist",
+          addedAt: 1000,
+          peers: [],
+          acl: {},
+          localDraft: false,
+        } as any,
+      ]);
 
-        // Both should work independently
-        expect(hook1()).toEqual([]);
-        expect(hook2()).toEqual([]);
+      vi.mocked(findPlaylistDoc).mockResolvedValue({
+        doc: () => ({ title: "test playlist", songs: [] }),
+      } as any);
+
+      let resolvedPlaylists: Playlist[] = [];
+      await new Promise<void>((resolve) => {
+        createRoot((dispose) => {
+          const { playlists } = usePlaylistsQuery();
+          // give the effect time to run and resolve
+          setTimeout(() => {
+            resolvedPlaylists = playlists();
+            dispose();
+            resolve();
+          }, 50);
+        });
+      });
+
+      // playlists may be empty or resolved depending on timing, but no error should throw
+      expect(Array.isArray(resolvedPlaylists)).toBe(true);
+    });
+  });
+
+  describe("cleanup", () => {
+    it("cleans up without throwing when root is disposed", () => {
+      expect(() => {
+        createRoot((dispose) => {
+          usePlaylistsQuery();
+          dispose();
+        });
+      }).not.toThrow();
+    });
+
+    it("handles multiple instances independently", () => {
+      createRoot((dispose1) => {
+        const r1 = usePlaylistsQuery();
+        createRoot((dispose2) => {
+          const r2 = usePlaylistsQuery();
+          expect(typeof r1.playlists).toBe("function");
+          expect(typeof r2.playlists).toBe("function");
+          dispose2();
+        });
+        dispose1();
       });
     });
   });

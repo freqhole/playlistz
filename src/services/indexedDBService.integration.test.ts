@@ -1,181 +1,104 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRoot, createSignal } from "solid-js";
+import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
 
-// Mock IndexedDB with persistence for integration testing
-class MockIndexedDB {
-  private stores: Map<string, Map<string, any>> = new Map();
-
-  constructor() {
-    this.stores.set("playlists", new Map());
-    this.stores.set("songs", new Map());
-  }
-
-  getAll(storeName: string) {
-    const store = this.stores.get(storeName) || new Map();
-    return Promise.resolve(Array.from(store.values()));
-  }
-
-  transaction(storeName: string, _mode: string) {
-    const store = this.stores.get(storeName) || new Map();
-    return {
-      objectStore: () => ({
-        put: (item: any) => {
-          store.set(item.id, item);
-          return Promise.resolve();
-        },
-        get: (id: string) => Promise.resolve(store.get(id)),
-        delete: (id: string) => {
-          store.delete(id);
-          return Promise.resolve();
-        },
-        index: () => ({ openCursor: () => Promise.resolve(null) }),
-      }),
-      done: Promise.resolve(),
-    };
-  }
-
-  reset() {
-    this.stores.clear();
-    this.stores.set("playlists", new Map());
-    this.stores.set("songs", new Map());
-  }
-}
-
-const mockIndexedDB = new MockIndexedDB();
-
-vi.mock("idb", () => ({
-  openDB: vi.fn(() => Promise.resolve(mockIndexedDB)),
-}));
-
-global.BroadcastChannel = vi.fn(() => ({
-  postMessage: vi.fn(),
-  onmessage: null,
-  close: vi.fn(),
-})) as any;
-
-let idCounter = 0;
-Object.defineProperty(global, "crypto", {
-  value: {
-    randomUUID: vi.fn(() => `playlist-${++idCounter}`),
-  },
-  writable: true,
+// each test gets a fresh idb instance to prevent data leaks
+beforeEach(() => {
+  globalThis.indexedDB = new IDBFactory();
 });
 
-import { createPlaylistsQuery, createPlaylist } from "./indexedDBService.js";
-import type { Playlist } from "../types/playlist.js";
+// reset the db cache so setupDB re-opens after the idb reset
+vi.mock("./indexedDBService.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./indexedDBService.js")>();
+  return mod;
+});
 
-describe("IndexedDB Service Integration Tests", () => {
+import {
+  resetDBCache,
+  savePlaybackPosition,
+  loadAllPlaybackPositions,
+  deletePlaybackPosition,
+  saveLastPlayed,
+  loadLastPlayed,
+  saveSetting,
+  loadSetting,
+} from "./indexedDBService.js";
+
+describe("indexedDBService integration tests", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockIndexedDB.reset();
-    idCounter = 0;
+    resetDBCache();
   });
 
-  it("should update live queries immediately after mutations", async () => {
-    let updateCount = 0;
-    let finalCount = 0;
+  describe("playback positions", () => {
+    it("persists a position and reads it back", async () => {
+      await savePlaybackPosition("song-a", 55.5);
+      const positions = await loadAllPlaybackPositions();
+      expect(positions.get("song-a")).toBe(55.5);
+    });
 
-    await new Promise<void>((resolve) => {
-      createRoot(async (dispose) => {
-        const playlistQuery = createPlaylistsQuery();
-        const unsubscribe = playlistQuery.subscribe((playlists: Playlist[]) => {
-          updateCount++;
-          finalCount = playlists.length;
-        });
+    it("overwrites an existing position", async () => {
+      await savePlaybackPosition("song-b", 10);
+      await savePlaybackPosition("song-b", 20);
+      const positions = await loadAllPlaybackPositions();
+      expect(positions.get("song-b")).toBe(20);
+    });
 
-        await new Promise((r) => setTimeout(r, 50));
+    it("deletes a position", async () => {
+      await savePlaybackPosition("song-c", 30);
+      await deletePlaybackPosition("song-c");
+      const positions = await loadAllPlaybackPositions();
+      expect(positions.has("song-c")).toBe(false);
+    });
 
-        // Create playlist - should trigger immediate update
-        await createPlaylist({
-          title: "Test Playlist",
-          description: "Integration test",
-          songIds: [],
-        });
-
-        await new Promise((r) => setTimeout(r, 50));
-
-        expect(updateCount).toBeGreaterThan(1);
-        expect(finalCount).toBe(1);
-
-        unsubscribe();
-        dispose();
-        resolve();
-      });
+    it("returns an empty map when no positions exist", async () => {
+      const positions = await loadAllPlaybackPositions();
+      expect(positions.size).toBe(0);
     });
   });
 
-  it("should support multiple concurrent queries", async () => {
-    let query1Count = 0;
-    let query2Count = 0;
+  describe("last played", () => {
+    it("saves and loads the last-played song id", async () => {
+      await saveLastPlayed("pl-1", "song-xyz");
+      const result = await loadLastPlayed("pl-1");
+      expect(result).toBe("song-xyz");
+    });
 
-    await new Promise<void>((resolve) => {
-      createRoot(async (dispose) => {
-        const query1 = createPlaylistsQuery();
-        const query2 = createPlaylistsQuery();
+    it("returns null when nothing has been played", async () => {
+      const result = await loadLastPlayed("pl-none");
+      expect(result).toBeNull();
+    });
 
-        const unsubscribe1 = query1.subscribe((playlists: Playlist[]) => {
-          query1Count = playlists.length;
-        });
-
-        const unsubscribe2 = query2.subscribe((playlists: Playlist[]) => {
-          query2Count = playlists.length;
-        });
-
-        await new Promise((r) => setTimeout(r, 50));
-
-        await createPlaylist({
-          title: "Shared Playlist",
-          description: "Should update both queries",
-          songIds: [],
-        });
-
-        await new Promise((r) => setTimeout(r, 50));
-
-        expect(query1Count).toBe(1);
-        expect(query2Count).toBe(1);
-
-        unsubscribe1();
-        unsubscribe2();
-        dispose();
-        resolve();
-      });
+    it("overwrites the previous last-played entry", async () => {
+      await saveLastPlayed("pl-1", "song-1");
+      await saveLastPlayed("pl-1", "song-2");
+      const result = await loadLastPlayed("pl-1");
+      expect(result).toBe("song-2");
     });
   });
 
-  it("should fix the original UI reactivity bug", async () => {
-    let backendCount = 0;
-    let uiCount = 0;
+  describe("settings", () => {
+    it("saves and loads a string setting", async () => {
+      await saveSetting("theme", "dark");
+      const result = await loadSetting("theme");
+      expect(result).toBe("dark");
+    });
 
-    await new Promise<void>((resolve) => {
-      createRoot(async (dispose) => {
-        const [playlists, setPlaylists] = createSignal<Playlist[]>([]);
+    it("saves and loads a numeric setting", async () => {
+      await saveSetting("volume", 0.75);
+      const result = await loadSetting("volume");
+      expect(result).toBe(0.75);
+    });
 
-        const playlistQuery = createPlaylistsQuery();
-        const unsubscribe = playlistQuery.subscribe((value: Playlist[]) => {
-          backendCount = value.length;
-          setPlaylists([...value]);
-          uiCount = playlists().length;
-        });
+    it("returns null for an unknown setting", async () => {
+      const result = await loadSetting("nonexistent");
+      expect(result).toBeNull();
+    });
 
-        await new Promise((r) => setTimeout(r, 50));
-
-        // Original bug: create playlist but UI doesn't update
-        await createPlaylist({
-          title: "Bug Fix Test",
-          description: "Testing the fix",
-          songIds: [],
-        });
-
-        await new Promise((r) => setTimeout(r, 100));
-
-        // Bug is fixed when backend and UI counts match
-        expect(backendCount).toBe(1);
-        expect(uiCount).toBe(1);
-
-        unsubscribe();
-        dispose();
-        resolve();
-      });
+    it("overwrites an existing setting", async () => {
+      await saveSetting("volume", 0.5);
+      await saveSetting("volume", 0.9);
+      const result = await loadSetting("volume");
+      expect(result).toBe(0.9);
     });
   });
 });

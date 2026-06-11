@@ -20,6 +20,7 @@ import type {
 
 // broadcast a docIndex mutation so same-tab queries and other tabs refresh.
 function broadcastDocIndexChange(): void {
+  console.log("[trace] broadcastDocIndexChange");
   try {
     const bc = new BroadcastChannel(`${DB_NAME}-changes`);
     bc.postMessage({ type: "mutation", store: DOC_INDEX_STORE });
@@ -29,15 +30,25 @@ function broadcastDocIndexChange(): void {
   }
 }
 
+// temp debug helper: first few stack frames of the caller
+function callerStack(): string {
+  return (new Error().stack ?? "")
+    .split("\n")
+    .slice(2, 6)
+    .join(" <- ");
+}
+
 // --- docIndex ---
 
 export async function addDocIndexEntry(entry: DocIndexEntry): Promise<void> {
+  console.log("[trace] addDocIndexEntry", entry.docId, "from:", callerStack());
   const db = await setupDB();
   await db.put(DOC_INDEX_STORE, entry);
   broadcastDocIndexChange();
 }
 
 export async function removeDocIndexEntry(docId: string): Promise<void> {
+  console.log("[trace] removeDocIndexEntry", docId, "from:", callerStack());
   const db = await setupDB();
   await db.delete(DOC_INDEX_STORE, docId);
   broadcastDocIndexChange();

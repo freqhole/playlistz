@@ -1,7 +1,7 @@
 /* @jsxImportSource solid-js */
 import { createSignal, batch } from "solid-js";
 import type { Song, Playlist } from "../types/playlist.js";
-import { updateSong } from "../services/indexedDBService.js";
+import { updateSongInDoc } from "../services/playlistDocService.js";
 import {
   playSong,
   playSongFromPlaylist,
@@ -44,11 +44,12 @@ export function useSongState() {
   const handleSongSaved = async (updatedSong: Song) => {
     try {
       setError(null);
-      await updateSong(updatedSong.id, updatedSong);
+      // song.playlistId is the docId for doc-backed songs
+      await updateSongInDoc(updatedSong.playlistId, updatedSong.id, updatedSong);
       setEditingSong(updatedSong);
     } catch (err) {
-      console.error("Error saving song:", err);
-      setError("Failed to save song changes");
+      console.error("error saving song:", err);
+      setError("failed to save song changes");
     }
   };
 

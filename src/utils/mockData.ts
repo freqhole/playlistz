@@ -1,10 +1,8 @@
 // test utilities for creating properly typed mock data
 
 import type { Playlist, Song } from "../types/playlist.js";
-import type {
-  StandaloneData,
-  StandaloneSongData,
-} from "../services/standaloneService.js";
+import type { StandaloneData } from "../services/standaloneService.js";
+import type { FreqholePlaylistSong as StandaloneSongData } from "../utils/standaloneTemplates.js";
 
 // create a minimal but valid song object for testing
 export function createMockSong(overrides: Partial<Song> = {}): Song {

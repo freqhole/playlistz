@@ -1,17 +1,27 @@
 /* @jsxImportSource solid-js */
-import { createSignal, createEffect, onMount, onCleanup } from "solid-js";
-import type { Playlist, Song } from "../types/playlist.js";
 import {
-  setupDB,
+  createSignal,
+  createEffect,
+  createMemo,
+  on,
+  onMount,
+  onCleanup,
+  untrack,
+} from "solid-js";
+import type { Playlist, Song } from "../types/playlist.js";
+import { createDocIndexQuery } from "./createDocIndexQuery.js";
+import {
   createPlaylist,
   updatePlaylist,
   deletePlaylist,
-  removeSongFromPlaylist,
-  reorderSongs,
-  createPlaylistsQuery,
-  createPlaylistSongsQuery,
   addSongToPlaylist,
-} from "../services/indexedDBService.js";
+  deleteSong,
+  reorderSongsInDoc,
+  getSongsForPlaylist,
+  docToPlaylist,
+} from "../services/playlistDocService.js";
+import { findPlaylistDoc } from "../services/automergeRepo.js";
+import { parsePlaylistDoc } from "freqhole-api-client/playlistz";
 import {
   refreshPlaylistQueue,
   audioState,
@@ -28,10 +38,12 @@ import {
   updatePWAManifest,
 } from "../services/offlineService.js";
 import {
-  initializeStandalonePlaylist,
+  initializeAllStandalonePlaylists,
   clearStandaloneLoadingProgress,
 } from "../services/standaloneService.js";
 import { getImageUrlForContext } from "../services/imageService.js";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { DocIndexEntry } from "../services/indexedDBService.js";
 
 export function usePlaylistManager() {
   const [playlists, setPlaylists] = createSignal<Playlist[]>([]);
@@ -42,12 +54,12 @@ export function usePlaylistManager() {
   const [isInitialized, setIsInitialized] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
-  // modal and UI state (consolidated from usePlaylistState)
+  // modal and UI state
   const [showImageModal, setShowImageModal] = createSignal(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = createSignal(false);
   const [modalImageIndex, setModalImageIndex] = createSignal(0);
 
-  // loading and operation state (consolidated from usePlaylistState)
+  // loading and operation state
   const [isDownloading, setIsDownloading] = createSignal(false);
   const [isCaching, setIsCaching] = createSignal(false);
   const [allSongsCached, setAllSongsCached] = createSignal(false);
@@ -57,90 +69,127 @@ export function usePlaylistManager() {
   >(null);
   const [imageUrlCache] = createSignal(new Map<string, string>());
 
-  // manual background override: a specific song's image (e.g. the song being
-  // edited) or "cover" to force the selected playlist's cover image.
-  // null falls through to the default priority (playing song > playlist)
   const [backgroundOverride, setBackgroundOverride] = createSignal<
     Song | "cover" | null
   >(null);
 
-  // which image the background currently shows ("song-<id>" or "playlist-<id>")
   const [backgroundSource, setBackgroundSource] = createSignal<string | null>(
     null
   );
 
-  // query mgmt
-  let playlistsQueryUnsubscribe: (() => void) | null = null;
-  let songsQueryUnsubscribe: (() => void) | null = null;
+  // live docIndex query - drives sidebar
+  const docIndexEntries = createDocIndexQuery();
 
-  // init the database and set up queries
+  // unsubscribe fn for the selected playlist's doc change listener
+  let docStoreCleanup: (() => void) | null = null;
+
+  // convert docIndex entries to Playlist view objects and update signal
+  let _syncCalls = 0;
+  async function syncPlaylistsFromDocIndex(
+    entries: DocIndexEntry[]
+  ): Promise<void> {
+    _syncCalls++;
+    const syncId = _syncCalls;
+    console.log("[trace] syncPlaylists #", syncId, "entries:", entries.length);
+    try {
+      const resolved = await Promise.all(
+        entries.map(async (entry) => {
+          try {
+            const handle = await findPlaylistDoc(
+              entry.docId as AutomergeUrl
+            );
+            const raw = handle.doc();
+            const doc = parsePlaylistDoc(raw ?? {});
+            return docToPlaylist(entry.docId, doc);
+          } catch {
+            // doc not yet available - use entry metadata as placeholder
+            return {
+              id: entry.docId,
+              title: entry.title,
+              description: undefined,
+              createdAt: entry.addedAt,
+              updatedAt: entry.addedAt,
+              songIds: [],
+            } as Playlist;
+          }
+        })
+      );
+
+      console.log("[trace] syncPlaylists #", syncId, "resolved", resolved.length);
+      setPlaylists(resolved);
+
+      // keep selected playlist in sync
+      const current = selectedPlaylist();
+      if (current) {
+        const updated = resolved.find((p) => p.id === current.id);
+        if (updated) {
+          setSelectedPlaylist(updated);
+        } else if (resolved.length > 0) {
+          setSelectedPlaylist(resolved[0]!);
+        } else {
+          setSelectedPlaylist(null);
+        }
+      } else if (resolved.length > 0) {
+        // nothing selected but playlists exist - auto-select first
+        setSelectedPlaylist(resolved[0]!);
+      }
+    } catch (err) {
+      console.error("error syncing playlists from doc index:", err);
+    }
+  }
+
+  // update songs when selected playlist changes
+  async function loadSongsForSelected(playlist: Playlist | null): Promise<void> {
+    if (!playlist) {
+      setPlaylistSongs([]);
+      return;
+    }
+    try {
+      const songs = await getSongsForPlaylist(playlist.id);
+      setPlaylistSongs(songs);
+    } catch (err) {
+      console.error("error loading songs for playlist:", err);
+      setPlaylistSongs([]);
+    }
+  }
+
   const initialize = async () => {
     try {
       setError(null);
 
-      await setupDB();
-
-      const playlistQuery = createPlaylistsQuery();
-      playlistsQueryUnsubscribe = playlistQuery.subscribe(
-        (value: Playlist[]) => {
-          setPlaylists([...value]); // force new array reference
-
-          // update selected playlist if it exists in the new data
-          const current = selectedPlaylist();
-          if (current) {
-            const updated = value.find((p: Playlist) => p.id === current.id);
-            if (updated) {
-              setSelectedPlaylist(updated);
-            } else if (value.length > 0) {
-              // selected playlist was deleted - pick the first available
-              setSelectedPlaylist(value[0]!);
-            } else {
-              setSelectedPlaylist(null);
-            }
-          } else if (value.length > 0) {
-            // no selection yet but playlists exist - auto-select first
-            setSelectedPlaylist(value[0]!);
-          }
-        }
-      );
-
-      // check to init standalone mode (offline support)
+      // check to init standalone mode
       if (window.STANDALONE_MODE) {
         await initializeOfflineSupport();
         await updatePWAManifest("Playlistz", undefined);
 
-        // handle deferred playlist data from standalone initialization
         const deferredData = window.DEFERRED_PLAYLIST_DATA;
-        if (deferredData && deferredData.playlist && deferredData.songs) {
+        if (deferredData && deferredData.length > 0) {
           try {
-            await initializeStandalonePlaylist(deferredData, {
+            await initializeAllStandalonePlaylists(deferredData, {
               setSelectedPlaylist,
               setPlaylistSongs,
-              setSidebarCollapsed: () => {}, // not used in this context
+              setSidebarCollapsed: () => {},
               setError,
             });
             delete window.DEFERRED_PLAYLIST_DATA;
           } catch (err) {
-            console.error("onoz! error initializing deferred playlist:", err);
+            console.error("error initializing deferred playlist:", err);
             setError("failed to initialize playlist!");
           }
         }
 
-        // done, clear loading ui
         clearStandaloneLoadingProgress();
       }
 
-      // init offline support
       try {
         await initializeOfflineSupport();
       } catch (offlineError) {
-        // prolly not https://
         console.warn("offline support initialization failed:", offlineError);
       }
 
       setIsInitialized(true);
     } catch (err) {
-      console.error("onoz! error initializing playlist manager:", err);
+      console.error("error initializing playlist manager:", err);
       setError("failed to initialize playlist");
     }
   };
@@ -148,14 +197,10 @@ export function usePlaylistManager() {
   const createNewPlaylist = async (title: string = "new playlist") => {
     try {
       setError(null);
-      const playlist = await createPlaylist({
-        title,
-        description: "",
-        songIds: [],
-      });
+      const playlist = await createPlaylist({ title, description: "" });
       return playlist;
     } catch (err) {
-      console.error("onoz! error creating playlist:", err);
+      console.error("error creating playlist:", err);
       setError("failed to create new playlist!");
       return null;
     }
@@ -165,21 +210,18 @@ export function usePlaylistManager() {
     try {
       setError(null);
 
-      // is it a single zip file?
       if (files.length === 1 && files[0]?.name.toLowerCase().endsWith(".zip")) {
         const zipFile = files[0];
         const result = await parsePlaylistZip(zipFile);
         return result.playlist;
       }
 
-      // only accept audio-like files
       const audioFiles = filterAudioFiles(Array.from(files));
       if (audioFiles.length === 0) {
         setError("no audio filez found!");
         return null;
       }
 
-      // if no target playlist specified, create a new one!
       let playlistId = targetPlaylistId;
       if (!playlistId) {
         const newPlaylist = await createNewPlaylist("dropped filez");
@@ -187,52 +229,114 @@ export function usePlaylistManager() {
         playlistId = newPlaylist.id;
       }
 
-      // add audio files to the new playlist
       for (const audioFile of audioFiles) {
         await addSongToPlaylist(playlistId, audioFile);
       }
 
+      // reload songs for selected playlist if this is it
+      const sel = selectedPlaylist();
+      if (sel && sel.id === playlistId) {
+        await loadSongsForSelected(sel);
+      }
+
       return playlistId;
     } catch (err) {
-      console.error("o noz! error handling file drop:", err);
+      console.error("error handling file drop:", err);
       setError("failed to process dropped files");
       return null;
     }
   };
 
-  // load playlist songs when selected playlist changes using reactive queries
+  // reactive effect: when docIndex changes, refresh the playlists list
   createEffect(() => {
-    const playlist = selectedPlaylist();
-
-    // cleanup previous songs query subscription
-    if (songsQueryUnsubscribe) {
-      songsQueryUnsubscribe();
-      songsQueryUnsubscribe = null;
-    }
-
-    if (playlist && playlist.songIds.length > 0) {
-      // create reactive query for this playlist's songs
-      const songsQuery = createPlaylistSongsQuery(playlist.id);
-      songsQueryUnsubscribe = songsQuery.subscribe((songs: Song[]) => {
-        // sort songs according to playlist order
-        const sortedSongs = songs.sort((a: Song, b: Song) => {
-          const indexA = playlist.songIds.indexOf(a.id);
-          const indexB = playlist.songIds.indexOf(b.id);
-          return indexA - indexB;
-        });
-        setPlaylistSongs(sortedSongs);
-      });
-    } else {
-      setPlaylistSongs([]);
-    }
-
-    // cleanup songs query subscription on unmount
-    onCleanup(() => {
-      if (songsQueryUnsubscribe) {
-        songsQueryUnsubscribe();
-      }
-    });
+    const entries = docIndexEntries();
+    console.log("[trace] docIndex effect fired, entries:", entries.length);
+    void syncPlaylistsFromDocIndex(entries);
   });
+
+  // reactive effect (keyed by playlist id): when the selection changes,
+  // subscribe to the doc handle so any mutation (adding songs, edits,
+  // remote sync) refreshes the songs list and the playlist view object.
+  // the memo is critical: selectedPlaylist() gets a new object identity on
+  // every doc refresh, but the effect must only re-run when the id changes,
+  // otherwise refresh -> setSelectedPlaylist -> effect would loop forever.
+  const selectedPlaylistId = createMemo(() => selectedPlaylist()?.id ?? null);
+
+  createEffect(
+    on(
+      selectedPlaylistId,
+      (playlistId) => {
+        console.log("[trace] selection effect fired:", playlistId);
+        if (docStoreCleanup) {
+          docStoreCleanup();
+          docStoreCleanup = null;
+        }
+
+        if (!playlistId) {
+          setPlaylistSongs([]);
+          return;
+        }
+
+        let disposed = false;
+
+        let _refreshCount = 0;
+        const refresh = async (
+          handle: Awaited<ReturnType<typeof findPlaylistDoc>>
+        ) => {
+          _refreshCount++;
+          console.log("[trace] selected-doc refresh #", _refreshCount, playlistId);
+          try {
+            const raw = handle.doc();
+            const doc = parsePlaylistDoc(raw ?? {});
+            const updated = docToPlaylist(playlistId, doc);
+
+            setPlaylists((prev) =>
+              prev.map((p) => (p.id === playlistId ? updated : p))
+            );
+            const current = untrack(selectedPlaylist);
+            if (current?.id === playlistId) {
+              setSelectedPlaylist(updated);
+            }
+
+            const songs = await getSongsForPlaylist(playlistId);
+            if (!disposed) {
+              setPlaylistSongs(songs);
+            }
+          } catch (err) {
+            console.error("error refreshing selected playlist doc:", err);
+          }
+        };
+
+        void (async () => {
+          try {
+            const handle = await findPlaylistDoc(playlistId as AutomergeUrl);
+            if (disposed) return;
+
+            const onChange = () => {
+              console.log(
+                "[trace] selected-doc change event -> refresh",
+                playlistId
+              );
+              void refresh(handle);
+            };
+            handle.on("change", onChange);
+            docStoreCleanup = () => handle.off("change", onChange);
+
+            await refresh(handle);
+          } catch (err) {
+            console.error("error subscribing to playlist doc:", err);
+            if (!disposed) {
+              setPlaylistSongs([]);
+            }
+          }
+        })();
+
+        onCleanup(() => {
+          disposed = true;
+        });
+      }
+    )
+  );
 
   // update background image based on override, currently playing song, or selected playlist
   createEffect(() => {
@@ -245,7 +349,6 @@ export function usePlaylistManager() {
     let newImageUrl: string | null = null;
     let cacheKey: string | null = null;
 
-    // priority 0: manual override (song being edited, or forced playlist cover)
     if (override && override !== "cover" && override.imageType) {
       cacheKey = `song-${override.id}`;
       if (cache.has(cacheKey)) {
@@ -266,9 +369,7 @@ export function usePlaylistManager() {
           cache.set(cacheKey, newImageUrl);
         }
       }
-    }
-    // priority 1: use song's image if available (when playing)
-    else if (currentSong?.imageType) {
+    } else if (currentSong?.imageType) {
       cacheKey = `song-${currentSong.id}`;
       if (cache.has(cacheKey)) {
         newImageUrl = cache.get(cacheKey)!;
@@ -278,9 +379,7 @@ export function usePlaylistManager() {
           cache.set(cacheKey, newImageUrl);
         }
       }
-    }
-    // priority 2: use current playlist's image if song has no image (when playing)
-    else if (currentSong && currentPlaylist?.imageType) {
+    } else if (currentSong && currentPlaylist?.imageType) {
       cacheKey = `playlist-${currentPlaylist.id}`;
       if (cache.has(cacheKey)) {
         newImageUrl = cache.get(cacheKey)!;
@@ -290,9 +389,7 @@ export function usePlaylistManager() {
           cache.set(cacheKey, newImageUrl);
         }
       }
-    }
-    // priority 3: Use selected playlist's image (when not playing but playlist selected)
-    else if (selectedPl?.imageType) {
+    } else if (selectedPl?.imageType) {
       cacheKey = `playlist-${selectedPl.id}`;
       if (cache.has(cacheKey)) {
         newImageUrl = cache.get(cacheKey)!;
@@ -304,7 +401,6 @@ export function usePlaylistManager() {
       }
     }
 
-    // only update if URL actually changed
     const prevUrl = backgroundImageUrl();
     if (prevUrl !== newImageUrl) {
       setBackgroundImageUrl(newImageUrl);
@@ -316,6 +412,7 @@ export function usePlaylistManager() {
   createEffect(() => {
     const playlist = selectedPlaylist();
     if (playlist) {
+      console.log("[trace] PWA manifest effect fired", playlist.id);
       updatePWAManifest(playlist.title, playlist);
     }
   });
@@ -334,7 +431,6 @@ export function usePlaylistManager() {
 
   const searchPlaylists = (query: string): Playlist[] => {
     if (!query.trim()) return playlists();
-
     const lowercaseQuery = query.toLowerCase();
     return playlists().filter(
       (playlist) =>
@@ -347,24 +443,24 @@ export function usePlaylistManager() {
     setSelectedPlaylist(playlist);
   };
 
-  // CRUD stuff (consolidated from usePlaylistState)
   const handlePlaylistUpdate = async (updates: Partial<Playlist>) => {
     const playlist = selectedPlaylist();
     if (!playlist) return;
 
+    console.log(
+      "[trace] handlePlaylistUpdate",
+      playlist.id,
+      JSON.stringify(updates)
+    );
     try {
       setError(null);
-
-      const updatedFields = {
-        ...updates,
-        updatedAt: Date.now(),
-      };
-
-      await updatePlaylist(playlist.id, updatedFields);
-
-      // note: the reactive query should update the selectedPlaylist
+      await updatePlaylist(playlist.id, {
+        title: updates.title,
+        description: updates.description,
+      });
+      // reactive query will refresh from docIndex
     } catch (err) {
-      console.error("onoz! error updating playlist:", err);
+      console.error("error updating playlist:", err);
       setError("failed to update playlist!");
     }
   };
@@ -376,7 +472,6 @@ export function usePlaylistManager() {
     try {
       setError(null);
 
-      // check if a song from this playlist is currently playing and stop it
       const currentSong = audioState.currentSong();
       if (currentSong && currentSong.playlistId === playlist.id) {
         stop();
@@ -386,7 +481,7 @@ export function usePlaylistManager() {
       setSelectedPlaylist(null);
       setShowDeleteConfirm(false);
     } catch (err) {
-      console.error("onoz! error deleting playlist:", err);
+      console.error("error deleting playlist:", err);
       setError("failed to delete playlist!");
     }
   };
@@ -405,7 +500,7 @@ export function usePlaylistManager() {
         includeHTML: true,
       });
     } catch (err) {
-      console.error("onoz! error downloading playlist:", err);
+      console.error("error downloading playlist:", err);
       setError("failed to download playlist!");
     } finally {
       setIsDownloading(false);
@@ -419,22 +514,19 @@ export function usePlaylistManager() {
     try {
       setError(null);
 
-      // check if the deleted song is currently playing and stop it
       const currentSong = audioState.currentSong();
       if (currentSong && currentSong.id === songId) {
         stop();
       }
 
-      await removeSongFromPlaylist(playlist.id, songId);
+      await deleteSong(playlist.id, songId);
+      await loadSongsForSelected(playlist);
 
-      // close modal if callback provided (e.g. SongEditModal)
       if (onClose) {
         onClose();
       }
-
-      // reactive queries should update the state automatically
     } catch (err) {
-      console.error("onoz! error removing song from playlist:", err);
+      console.error("error removing song from playlist:", err);
       setError("failed to remove song from playlist!");
     }
   };
@@ -445,60 +537,48 @@ export function usePlaylistManager() {
 
     try {
       setError(null);
-      await reorderSongs(playlist.id as string, oldIndex, newIndex);
+      await reorderSongsInDoc(playlist.id, oldIndex, newIndex);
 
-      // manually refresh audio queue if this playlist is currently playing
+      // reload songs to reflect new order
+      await loadSongsForSelected(playlist);
+
+      // refresh audio queue if this playlist is currently playing
       const currentPlaylist = audioState.currentPlaylist();
       if (currentPlaylist && currentPlaylist.id === playlist.id) {
-        // manually create updated playlist with new song order
-        const newSongIds = [...playlist.songIds];
-        if (oldIndex >= 0 && oldIndex < newSongIds.length) {
-          const [movedSong] = newSongIds.splice(oldIndex, 1);
-          if (movedSong) {
-            newSongIds.splice(newIndex, 0, movedSong);
-
-            const updatedPlaylist = {
-              ...playlist,
-              songIds: newSongIds,
-            };
-
-            await refreshPlaylistQueue(updatedPlaylist);
-          }
+        const updated = selectedPlaylist();
+        if (updated) {
+          await refreshPlaylistQueue(updated);
         }
       }
     } catch (err) {
-      console.error("onoz! error reordering songz:", err);
+      console.error("error reordering songz:", err);
       setError("failed to reorder songz");
     }
   };
 
   const handleCachePlaylist = async () => {
-    const playlist = selectedPlaylist();
     const songs = playlistSongs();
-    if (!playlist || songs.length === 0) return;
+    if (songs.length === 0) return;
 
     setIsCaching(true);
     try {
       setError(null);
 
-      // gotta cache 'em all!
       for (const song of songs) {
-        if (song.audioData && song.id) {
-          const blob = new Blob([song.audioData], {
-            type: song.mimeType || "audio/mpeg",
-          });
-          const blobUrl = URL.createObjectURL(blob);
+        // songs are now blob-store backed; use blobUrl if available
+        const url = song.blobUrl;
+        if (url && song.id) {
           try {
-            await cacheAudioFile(blobUrl, song.title || "unknown song");
-          } finally {
-            URL.revokeObjectURL(blobUrl);
+            await cacheAudioFile(url, song.title || "unknown song");
+          } catch {
+            // ignore individual caching failures
           }
         }
       }
 
       setAllSongsCached(true);
     } catch (err) {
-      console.error("onoz! error caching playlist:", err);
+      console.error("error caching playlist:", err);
       setError("failed to cache playlist for offline use!");
     } finally {
       setIsCaching(false);
@@ -508,14 +588,11 @@ export function usePlaylistManager() {
   onMount(initialize);
 
   onCleanup(() => {
-    if (playlistsQueryUnsubscribe) {
-      playlistsQueryUnsubscribe();
-    }
-    if (songsQueryUnsubscribe) {
-      songsQueryUnsubscribe();
+    if (docStoreCleanup) {
+      docStoreCleanup();
+      docStoreCleanup = null;
     }
 
-    // trash image URLz
     const cache = imageUrlCache();
     cache.forEach((url) => {
       if (url.startsWith("blob:")) {

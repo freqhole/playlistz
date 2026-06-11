@@ -22,7 +22,7 @@ vi.mock("../services/playlistDownloadService.js", () => ({
   parsePlaylistZip: vi.fn(),
 }));
 
-vi.mock("../services/indexedDBService.js", () => ({
+vi.mock("../services/playlistDocService.js", () => ({
   createPlaylist: vi.fn(),
   addSongToPlaylist: vi.fn(),
 }));
@@ -224,7 +224,7 @@ describe("useDragAndDrop", () => {
     it("should fail to extract proper duration initially", async () => {
       // This test will fail initially because extractMetadata returns duration: 0
       const { addSongToPlaylist } = await import(
-        "../services/indexedDBService.js"
+        "../services/playlistDocService.js"
       );
 
       vi.mocked(addSongToPlaylist).mockImplementation(
@@ -287,7 +287,7 @@ describe("useDragAndDrop", () => {
       // handleFileDrop function throws an error, the drag overlay gets stuck
 
       const { addSongToPlaylist } = await import(
-        "../services/indexedDBService.js"
+        "../services/playlistDocService.js"
       );
 
       // Mock service to throw an error
@@ -347,7 +347,7 @@ describe("useDragAndDrop", () => {
 
     it("should work correctly when wrapper has proper error handling", async () => {
       const { addSongToPlaylist } = await import(
-        "../services/indexedDBService.js"
+        "../services/playlistDocService.js"
       );
 
       // Mock service to succeed
@@ -411,7 +411,7 @@ describe("useDragAndDrop", () => {
   describe("integration with empty callbacks", () => {
     it("should handle drop with empty callbacks but may not update UI", async () => {
       const { createPlaylist, addSongToPlaylist } = await import(
-        "../services/indexedDBService.js"
+        "../services/playlistDocService.js"
       );
 
       vi.mocked(createPlaylist).mockResolvedValue({

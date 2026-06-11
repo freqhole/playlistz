@@ -6,7 +6,7 @@ import {
   onMount,
   onCleanup,
 } from "solid-js";
-import { getSongById } from "../services/indexedDBService.js";
+import { getSongById } from "../services/playlistDocService.js";
 import { createRelativeTimeSignal } from "../utils/timeUtils.js";
 import { getSongSpecificTrigger } from "../services/songReactivity.js";
 import {

@@ -1,9 +1,9 @@
 export interface Playlist {
-  id: string; // UUID
+  id: string; // UUID or AutomergeUrl (doc-backed)
   title: string; // User-editable playlist name
   description?: string; // Optional description
-  imageData?: ArrayBuffer; // Full-size image data as ArrayBuffer
-  thumbnailData?: ArrayBuffer; // Thumbnail image data as ArrayBuffer (300x300)
+  imageData?: ArrayBuffer; // Full-size image data (optional, populated on-demand from blob store)
+  thumbnailData?: ArrayBuffer; // Thumbnail image data (optional, populated on-demand)
   imageType?: string; // MIME type for the image
   createdAt: number; // Timestamp
   updatedAt: number; // Timestamp
@@ -11,6 +11,8 @@ export interface Playlist {
   needsImageLoad?: boolean;
   imageFilePath?: string;
   rev?: number; // Revision number for standalone mode (starts at 0, incremented on download)
+  // internal: primary image sha for lazy blob store loading (set by docToPlaylist)
+  _primaryImageSha?: string;
   // background image filter settings
   bgFilterEnabled?: boolean; // default: true
   bgFilterBlur?: number; // default: 3 (px)
@@ -25,7 +27,7 @@ export interface Song {
   id: string; // UUID
   file?: File; // Original audio file (only available during upload or when loaded for playback)
   blobUrl?: string; // Object URL for audio playback (created on-demand)
-  audioData?: ArrayBuffer; // Audio data stored in IndexedDB
+  audioData?: ArrayBuffer; // Audio data (legacy, no longer stored in idb)
   mimeType: string; // MIME type for recreating blob from stored data
   originalFilename: string; // Original filename with extension for downloads
   fileSize?: number; // File size in bytes
@@ -34,16 +36,19 @@ export interface Song {
   album: string; // User-editable album name
   duration: number; // Length in seconds
   position: number; // Position within playlist (0-based)
-  imageData?: ArrayBuffer; // Full-size cover art data as ArrayBuffer
-  thumbnailData?: ArrayBuffer; // Thumbnail cover art data as ArrayBuffer (300x300)
+  imageData?: ArrayBuffer; // Cover art data (optional, populated on-demand from blob store)
+  thumbnailData?: ArrayBuffer; // Thumbnail cover art (optional, populated on-demand)
   imageType?: string; // MIME type for the cover art
   createdAt: number; // Timestamp
   updatedAt: number; // Timestamp
-  playlistId: string; // Reference to parent playlist
+  playlistId: string; // Reference to parent playlist (or docId for doc-backed songs)
   standaloneFilePath?: string; // Path to audio file in standalone mode
   needsImageLoad?: boolean;
   imageFilePath?: string;
-  sha?: string; // SHA-256 hash of the raw audio data
+  sha?: string; // SHA-256 hash of the raw audio data (blob store key)
+  sha256?: string; // Alias for sha, set by doc adapter
+  // image refs from automerge doc (for blob store image loading)
+  images?: Array<{ blobId: string; isPrimary: boolean; blobType: string }>;
 }
 
 export interface AudioState {

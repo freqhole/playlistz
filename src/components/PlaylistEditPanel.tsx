@@ -3,7 +3,9 @@ import { createSignal, Show, onMount } from "solid-js";
 import {
   updatePlaylist,
   deletePlaylist,
-} from "../services/indexedDBService.js";
+  setPlaylistCoverImage,
+  clearPlaylistCoverImage,
+} from "../services/playlistDocService.js";
 import {
   processPlaylistCover,
   validateImageFile,
@@ -76,7 +78,11 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           imageType: file.type,
           updatedAt: Date.now(),
         };
-        await updatePlaylist(props.playlist.id, updates);
+        await setPlaylistCoverImage(
+          props.playlist.id,
+          result.imageData,
+          file.type
+        );
         const { image: _image, ...rest } = props.playlist as Playlist & {
           image?: unknown;
         };
@@ -106,7 +112,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         imageType: undefined,
         updatedAt: Date.now(),
       };
-      await updatePlaylist(props.playlist.id, updates);
+      await clearPlaylistCoverImage(props.playlist.id);
       const { image: _image, ...rest } = props.playlist as Playlist & {
         image?: unknown;
       };
@@ -175,8 +181,12 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
   const saveFilterUpdates = async (updates: Partial<typeof props.playlist>) => {
     try {
       await updatePlaylist(props.playlist.id, {
-        ...updates,
-        updatedAt: Date.now(),
+        bgFilterEnabled: updates.bgFilterEnabled,
+        bgFilterBlur: updates.bgFilterBlur,
+        bgFilterContrast: updates.bgFilterContrast,
+        bgFilterBrightness: updates.bgFilterBrightness,
+        coverFilterEnabled: updates.coverFilterEnabled,
+        coverFilterBlur: updates.coverFilterBlur,
       });
     } catch (err) {
       setError("failed to save filter settings");

@@ -102,7 +102,9 @@ function generatePWAManifest(
 
   const link = document.createElement("link");
   link.rel = "manifest";
-  link.href = `${manifestURL}?v=${Date.now()}`;
+  // note: blob urls must not carry query strings - browsers treat the whole
+  // string as the lookup key and fail with ERR_FILE_NOT_FOUND
+  link.href = manifestURL;
   document.head.appendChild(link);
 
   // Add iOS meta tags
@@ -186,6 +188,7 @@ export function updatePWAManifest(
   playlistTitle: string,
   playlist?: Playlist
 ): void {
+  console.log("[trace] updatePWAManifest", playlistTitle);
   const imagePath = playlist ? getPlaylistImagePath(playlist) : undefined;
   generatePWAManifest(playlistTitle, imagePath);
 }

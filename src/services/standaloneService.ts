@@ -1,19 +1,38 @@
+// standalone playlist ingestion and caching service.
+// ingests FreqholePlaylist data (embedded via window.__PLAYLISTZ__) into
+// automerge docs and the blob store. designed for standalone zip export playback.
+
 import { createSignal } from "solid-js";
+import { saveSetting, loadSetting } from "./indexedDBService.js";
+import { createPlaylistDoc, findPlaylistDoc } from "./automergeRepo.js";
 import {
-  setupDB,
-  DB_NAME,
-  PLAYLISTS_STORE,
-  SONGS_STORE,
-} from "./indexedDBService.js";
-import { mutateAndNotify } from "./indexedDBService.js";
-import { triggerSongUpdateWithOptions } from "./songReactivity.js";
+  emptyPlaylistDoc,
+  upsertSong,
+  setMetadata,
+  parsePlaylistDoc,
+  type SongEntry,
+} from "freqhole-api-client/playlistz";
+import { getBlobMetadata } from "freqhole-api-client/storage";
+import { addDocIndexEntry } from "./docIndexService.js";
+import {
+  docToPlaylist,
+  setSongCoverImage,
+  setPlaylistCoverImage,
+  getSongsForPlaylist,
+  getSongById,
+} from "./playlistDocService.js";
+import { downloadSongIfNeeded } from "./streamingAudioService.js";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { Playlist, Song } from "../types/playlist.js";
-import type { FreqholePlaylist, FreqholePlaylistSong } from "../utils/standaloneTemplates.js";
+import type {
+  FreqholePlaylist,
+  FreqholePlaylistSong,
+} from "../utils/standaloneTemplates.js";
 
 // backwards-compatible alias for FreqholePlaylist
 export type StandaloneData = FreqholePlaylist;
 
-// Interface for callback functions
+// interface for callback functions
 interface StandaloneCallbacks {
   setSelectedPlaylist: (playlist: Playlist) => void;
   setPlaylistSongs: (songs: Song[]) => void;
@@ -21,7 +40,7 @@ interface StandaloneCallbacks {
   setError: (error: string) => void;
 }
 
-// Loading progress signal
+// loading progress signal
 const [standaloneLoadingProgress, setStandaloneLoadingProgress] = createSignal<{
   current: number;
   total: number;
@@ -29,233 +48,167 @@ const [standaloneLoadingProgress, setStandaloneLoadingProgress] = createSignal<{
   phase: "initializing" | "checking" | "updating" | "complete" | "reloading";
 } | null>(null);
 
-// Export the signal and setter for UI components to use
 export { standaloneLoadingProgress, setStandaloneLoadingProgress };
 
-// Track which images are currently being loaded to prevent duplicates
-const loadingImages = new Set<string>();
+// module-level registry: songId -> standaloneFilePath
+// populated during initializeStandalonePlaylist, used by loadStandaloneSongAudioData
+const standalonePathRegistry = new Map<string, string>();
 
-/**
- * Create a song object from playlist data
- */
-function createSongFromStandaloneData(
-  songData: FreqholePlaylistSong,
-  index: number,
-  playlistId: string,
-  standaloneFilePath: string,
-  audioData?: ArrayBuffer,
-  mimeType: string = "audio/mpeg"
-) {
-  const song = {
-    id: songData.id,
-    title: songData.title,
-    artist: songData.artist,
-    album: songData.album,
-    duration: songData.duration,
-    position: index,
-    mimeType: mimeType,
-    originalFilename: songData.originalFilename,
-    fileSize: songData.fileSize,
-    audioData: audioData,
-    blobUrl: undefined,
-    file: undefined,
-    imageData: undefined as ArrayBuffer | undefined,
-    thumbnailData: undefined as ArrayBuffer | undefined,
-    imageType: undefined as string | undefined,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    playlistId: playlistId,
-    // Always store standalone file path for potential file:// usage
-    standaloneFilePath: standaloneFilePath,
-    needsImageLoad: true,
-    imageFilePath: "",
-    sha: songData.sha, // Include SHA from standalone data
-  };
-
-  // Set song image metadata for file-based loading
-  if (songData.imageFilePath && songData.imageMimeType) {
-    song.imageType = songData.imageMimeType;
-    song.needsImageLoad = true;
-    song.imageFilePath = songData.imageFilePath;
-  } else if (songData.imageExtension && songData.imageMimeType) {
-    // backwards compat with old exports that used imageExtension
-    song.imageType = songData.imageMimeType;
-    song.needsImageLoad = true;
-    song.imageFilePath = `data/${songData.safeFilename?.replace(/\.[^.]+$/, "") || songData.originalFilename?.replace(/\.[^.]+$/, "")}-cover${songData.imageExtension}`;
-  }
-
-  return song;
+// for testing: register a standalone path for a song
+export function registerStandalonePath(songId: string, path: string): void {
+  standalonePathRegistry.set(songId, path);
 }
 
-/**
- * smart update function that preserves audio data when sha matches
- */
-async function smartUpdatePlaylistWithSongs(
-  existingPlaylist: Playlist | null,
-  existingSongs: Song[],
+// for testing: clear all registered paths between test runs
+export function clearStandaloneRegistry(): void {
+  standalonePathRegistry.clear();
+}
+
+// shape stored in settings store for idempotency tracking
+interface StandaloneRecord {
+  rev: number;
+  docId: string;
+}
+
+// resolve the data file path for a standalone song entry
+function resolveStandalonePath(songData: FreqholePlaylistSong): string {
+  return `data/${songData.safeFilename ?? songData.originalFilename}`;
+}
+
+// create an automerge doc from standalone playlist data.
+// audio bytes are not fetched upfront - sha from embedded data is stored in the doc.
+async function createStandaloneDoc(
   playlistData: StandaloneData
-): Promise<{
-  playlist: Playlist;
-  songs: Song[];
-}> {
-  // create or update playlist
-  const playlistToUpdate = {
-    id: playlistData.playlist.id,
-    title: playlistData.playlist.title,
-    description: playlistData.playlist.description,
-    rev: playlistData.playlist.rev || 0,
-    songIds: [],
-    imageData: undefined as ArrayBuffer | undefined,
-    thumbnailData: undefined as ArrayBuffer | undefined,
-    imageType: undefined as string | undefined,
-    needsImageLoad: true,
-    imageFilePath: undefined as string | undefined,
-    bgFilterEnabled: playlistData.playlist.bgFilterEnabled,
-    bgFilterBlur: playlistData.playlist.bgFilterBlur,
-    bgFilterContrast: playlistData.playlist.bgFilterContrast,
-    bgFilterBrightness: playlistData.playlist.bgFilterBrightness,
-    coverFilterEnabled: playlistData.playlist.coverFilterEnabled,
-    coverFilterBlur: playlistData.playlist.coverFilterBlur,
-  };
+): Promise<string> {
+  const { docId, handle } = createPlaylistDoc(
+    emptyPlaylistDoc({
+      title: playlistData.playlist.title,
+      description: playlistData.playlist.description ?? "",
+    })
+  );
 
-  // set playlist image metadata for loading from file
-  if (playlistData.playlist.imageFilePath && playlistData.playlist.imageMimeType) {
-    playlistToUpdate.imageType = playlistData.playlist.imageMimeType;
-    playlistToUpdate.needsImageLoad = true;
-    playlistToUpdate.imageFilePath = playlistData.playlist.imageFilePath;
-  } else if (
-    playlistData.playlist.imageExtension &&
-    playlistData.playlist.imageMimeType
-  ) {
-    // backwards compat with old exports that used imageExtension
-    playlistToUpdate.imageType = playlistData.playlist.imageMimeType;
-    playlistToUpdate.needsImageLoad = true;
-    playlistToUpdate.imageFilePath = `data/playlist-cover${playlistData.playlist.imageExtension}`;
-  }
-
-  const finalPlaylist: Playlist = {
-    ...playlistToUpdate,
-    createdAt: existingPlaylist?.createdAt || Date.now(),
-    updatedAt: Date.now(),
-    songIds: [],
-  };
-
-  await mutateAndNotify({
-    dbName: DB_NAME,
-    storeName: PLAYLISTS_STORE,
-    key: finalPlaylist.id,
-    updateFn: () => finalPlaylist,
-  });
-
-  // smart song updating: preserve audio data when sha matches
-  const updatedSongs: Song[] = [];
-  const finalSongIds: string[] = [];
-
-  for (let i = 0; i < playlistData.songs.length; i++) {
-    const songData = playlistData.songs[i];
-    if (!songData) continue;
-
-    const standaloneFilePath = `data/${songData.safeFilename || songData.originalFilename}`;
-
-    setStandaloneLoadingProgress({
-      current: i + 1,
-      total: playlistData.songs.length,
-      currentSong: songData.title,
-      phase: "reloading",
-    });
-
-    // check if this song already exists
-    const existingSong = existingSongs.find((s) => s.id === songData.id);
-
-    let finalSong;
-
-    if (
-      existingSong &&
-      existingSong.sha &&
-      songData.sha &&
-      existingSong.sha === songData.sha
-    ) {
-      // sha matches - preserve existing audio data but update metadata
-      finalSong = {
-        ...existingSong,
+  handle.change((doc) => {
+    for (const songData of playlistData.songs) {
+      const entry: SongEntry = {
+        id: songData.id,
         title: songData.title,
         artist: songData.artist,
         album: songData.album,
         duration: songData.duration,
-        position: i,
-        originalFilename: songData.originalFilename,
+        mimeType: songData.mimeType ?? "audio/mpeg",
         fileSize: songData.fileSize,
-        mimeType: songData.mimeType || existingSong.mimeType,
-        standaloneFilePath,
-        updatedAt: Date.now(),
-        sha: songData.sha, // keep the sha
+        sha256: songData.sha ?? "",
+        images: [],
+        urls: [],
       };
-
-      // update image metadata if changed
-      if (songData.imageFilePath && songData.imageMimeType) {
-        finalSong.imageType = songData.imageMimeType;
-        finalSong.needsImageLoad = true;
-        finalSong.imageFilePath = songData.imageFilePath;
-      } else if (songData.imageExtension && songData.imageMimeType) {
-        // backwards compat with old exports that used imageExtension
-        finalSong.imageType = songData.imageMimeType;
-        finalSong.needsImageLoad = true;
-        finalSong.imageFilePath = `data/${songData.safeFilename?.replace(/\.[^.]+$/, "") || songData.originalFilename?.replace(/\.[^.]+$/, "")}-cover${songData.imageExtension}`;
-      }
-    } else {
-      // sha different or missing - create new song without audio data (lazy loading)
-      finalSong = createSongFromStandaloneData(
-        songData,
-        i,
-        finalPlaylist.id,
-        standaloneFilePath,
-        undefined, // no audio data initially - will be loaded on-demand
-        songData.mimeType || "audio/mpeg"
-      );
+      upsertSong(doc, entry);
     }
-
-    updatedSongs.push(finalSong);
-    finalSongIds.push(finalSong.id);
-
-    // store song in indexeddb
-    await mutateAndNotify({
-      dbName: DB_NAME,
-      storeName: SONGS_STORE,
-      key: finalSong.id,
-      updateFn: () => finalSong,
-    });
-  }
-
-  // update playlist with all song ids
-  finalPlaylist.songIds = finalSongIds;
-  await mutateAndNotify({
-    dbName: DB_NAME,
-    storeName: PLAYLISTS_STORE,
-    key: finalPlaylist.id,
-    updateFn: () => finalPlaylist,
   });
 
-  return { playlist: finalPlaylist, songs: updatedSongs };
+  await addDocIndexEntry({
+    docId,
+    title: playlistData.playlist.title,
+    addedAt: Date.now(),
+    source: "local",
+  });
+
+  return docId;
 }
 
-/**
- * create a new playlist with all songs (used for first-time loading)
- */
-async function createNewPlaylist(playlistData: StandaloneData): Promise<{
-  playlist: Playlist;
-  songs: Song[];
-}> {
-  // create playlist using service function to trigger reactive updates
-  const playlistToCreate = {
-    id: playlistData.playlist.id, // Override the auto-generated ID
+// update an existing standalone doc with new revision data.
+async function updateStandaloneDoc(
+  docId: string,
+  playlistData: StandaloneData
+): Promise<void> {
+  const handle = await findPlaylistDoc(docId as AutomergeUrl);
+  handle.change((doc) => {
+    setMetadata(doc, {
+      title: playlistData.playlist.title,
+      description: playlistData.playlist.description ?? "",
+    });
+    for (const songData of playlistData.songs) {
+      const entry: SongEntry = {
+        id: songData.id,
+        title: songData.title,
+        artist: songData.artist,
+        album: songData.album,
+        duration: songData.duration,
+        mimeType: songData.mimeType ?? "audio/mpeg",
+        fileSize: songData.fileSize,
+        sha256: songData.sha ?? "",
+        images: [],
+        urls: [],
+      };
+      upsertSong(doc, entry);
+    }
+  });
+}
+
+// build Song view objects for the callbacks.
+// populates standaloneFilePath and imageFilePath from embedded standalone metadata
+// and registers paths in standalonePathRegistry for later audio loading.
+function buildStandaloneSongs(
+  playlistData: StandaloneData,
+  docId: string
+): Song[] {
+  return playlistData.songs.map((songData, i) => {
+    const standaloneFilePath = resolveStandalonePath(songData);
+    standalonePathRegistry.set(songData.id, standaloneFilePath);
+
+    const imageFilePath =
+      songData.imageFilePath ??
+      (songData.imageExtension
+        ? `data/${(songData.safeFilename ?? songData.originalFilename).replace(/\.[^.]+$/, "")}-cover${songData.imageExtension}`
+        : undefined);
+
+    const song: Song = {
+      id: songData.id,
+      title: songData.title,
+      artist: songData.artist,
+      album: songData.album,
+      duration: songData.duration,
+      mimeType: songData.mimeType ?? "audio/mpeg",
+      fileSize: songData.fileSize,
+      originalFilename: songData.originalFilename,
+      position: i,
+      createdAt: 0,
+      updatedAt: 0,
+      playlistId: docId,
+      sha: songData.sha,
+      sha256: songData.sha,
+      standaloneFilePath,
+      needsImageLoad: !!imageFilePath,
+      imageFilePath,
+      imageType: songData.imageMimeType,
+      images: [],
+    };
+
+    return song;
+  });
+}
+
+// build the Playlist view object for standalone callbacks.
+function buildStandalonePlaylist(
+  playlistData: StandaloneData,
+  docId: string
+): Playlist {
+  const imageFilePath =
+    playlistData.playlist.imageFilePath ??
+    (playlistData.playlist.imageExtension
+      ? `data/playlist-cover${playlistData.playlist.imageExtension}`
+      : undefined);
+
+  return {
+    id: docId,
     title: playlistData.playlist.title,
     description: playlistData.playlist.description,
-    songIds: [],
-    imageData: undefined as ArrayBuffer | undefined,
-    thumbnailData: undefined as ArrayBuffer | undefined,
-    imageType: undefined as string | undefined,
-    needsImageLoad: true,
-    imageFilePath: undefined as string | undefined,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    songIds: playlistData.songs.map((s) => s.id),
+    rev: playlistData.playlist.rev,
+    needsImageLoad: !!imageFilePath,
+    imageFilePath,
+    imageType: playlistData.playlist.imageMimeType,
     bgFilterEnabled: playlistData.playlist.bgFilterEnabled,
     bgFilterBlur: playlistData.playlist.bgFilterBlur,
     bgFilterContrast: playlistData.playlist.bgFilterContrast,
@@ -263,109 +216,98 @@ async function createNewPlaylist(playlistData: StandaloneData): Promise<{
     coverFilterEnabled: playlistData.playlist.coverFilterEnabled,
     coverFilterBlur: playlistData.playlist.coverFilterBlur,
   };
-
-  // set playlist image metadata for loading from file
-  if (playlistToCreate.imageFilePath === undefined) {
-    if (playlistData.playlist.imageFilePath && playlistData.playlist.imageMimeType) {
-      playlistToCreate.imageType = playlistData.playlist.imageMimeType;
-      playlistToCreate.needsImageLoad = true;
-      playlistToCreate.imageFilePath = playlistData.playlist.imageFilePath;
-    } else if (
-      playlistData.playlist.imageExtension &&
-      playlistData.playlist.imageMimeType
-    ) {
-      // backwards compat with old exports that used imageExtension
-      playlistToCreate.imageType = playlistData.playlist.imageMimeType;
-      playlistToCreate.needsImageLoad = true;
-      playlistToCreate.imageFilePath = `data/playlist-cover${playlistData.playlist.imageExtension}`;
-    }
-  }
-
-  // manually store playlist using mutateandnotify to trigger reactive updates
-  const finalPlaylist: Playlist = {
-    ...playlistToCreate,
-    id: playlistData.playlist.id,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    rev: playlistData.playlist.rev || 0,
-    songIds: [],
-  };
-
-  await mutateAndNotify({
-    dbName: DB_NAME,
-    storeName: PLAYLISTS_STORE,
-    key: finalPlaylist.id,
-    updateFn: () => finalPlaylist,
-  });
-
-  // create and store songs
-  const virtualSongs: Song[] = [];
-  const finalSongIds: string[] = [];
-
-  // create placeholder songs for all songs first so ui shows complete list
-  for (let i = 0; i < playlistData.songs.length; i++) {
-    const songData = playlistData.songs[i];
-    if (!songData) continue;
-
-    const standaloneFilePath = `data/${songData.safeFilename || songData.originalFilename}`;
-
-    // create song without audio data initially for lazy loading
-    const song = createSongFromStandaloneData(
-      songData,
-      i,
-      finalPlaylist.id,
-      standaloneFilePath,
-      undefined, // no audio data initially - will be loaded on-demand
-      songData.mimeType || "audio/mpeg"
-    );
-
-    virtualSongs.push(song);
-    finalSongIds.push(song.id);
-  }
-
-  // update playlist with all song ids immediately for ui
-  finalPlaylist.songIds = finalSongIds;
-  await mutateAndNotify({
-    dbName: DB_NAME,
-    storeName: PLAYLISTS_STORE,
-    key: finalPlaylist.id,
-    updateFn: () => finalPlaylist,
-  });
-
-  // store placeholder songs in indexeddb
-  for (const song of virtualSongs) {
-    await mutateAndNotify({
-      dbName: DB_NAME,
-      storeName: SONGS_STORE,
-      key: song.id,
-      updateFn: () => song,
-    });
-  }
-
-  // in lazy loading mode, we don't pre-load any audio data
-  // songs will be loaded on-demand when played
-
-  return { playlist: finalPlaylist, songs: virtualSongs };
 }
 
-/**
- * Initialize standalone playlist from embedded data
- */
+// fetch images from standalone file paths, store in the blob store,
+// update the doc with image refs, and refresh callbacks.
+// skipped for file:// protocol since components read images directly from paths.
+async function loadStandaloneImages(
+  _playlistData: StandaloneData,
+  docId: string,
+  playlist: Playlist,
+  songs: Song[],
+  callbacks: StandaloneCallbacks
+): Promise<void> {
+  if (window.location.protocol === "file:") {
+    return;
+  }
+
+  try {
+    let anyChanged = false;
+
+    // load playlist cover image
+    if (playlist.imageFilePath) {
+      try {
+        const response = await fetch(playlist.imageFilePath);
+        if (response.ok) {
+          const imageData = await response.arrayBuffer();
+          const mimeType = playlist.imageType ?? "image/jpeg";
+          await setPlaylistCoverImage(docId, imageData, mimeType);
+          anyChanged = true;
+        }
+      } catch (err) {
+        console.warn(
+          `could not load playlist cover from ${playlist.imageFilePath}:`,
+          err
+        );
+      }
+    }
+
+    // load song cover images
+    for (const song of songs) {
+      if (!song.imageFilePath) continue;
+      try {
+        const response = await fetch(song.imageFilePath);
+        if (response.ok) {
+          const imageData = await response.arrayBuffer();
+          const mimeType = song.imageType ?? "image/jpeg";
+          await setSongCoverImage(docId, song.id, imageData, mimeType);
+          anyChanged = true;
+        }
+      } catch (err) {
+        console.warn(
+          `could not load song image from ${song.imageFilePath}:`,
+          err
+        );
+      }
+    }
+
+    if (anyChanged) {
+      // refresh songs from doc (now has image refs) and re-add standalone paths
+      const updatedDocSongs = await getSongsForPlaylist(docId);
+      const updatedSongs = updatedDocSongs.map((s) => ({
+        ...s,
+        standaloneFilePath: standalonePathRegistry.get(s.id),
+      }));
+      callbacks.setPlaylistSongs(updatedSongs);
+
+      // refresh playlist from doc
+      const handle = await findPlaylistDoc(docId as AutomergeUrl);
+      const raw = handle.doc();
+      const doc = parsePlaylistDoc(raw ?? {});
+      callbacks.setSelectedPlaylist(docToPlaylist(docId, doc));
+    }
+  } catch (err) {
+    console.warn("error loading standalone images:", err);
+  }
+}
+
+// initialize a standalone playlist from embedded data.
+// idempotency: stored in settings as "standalone:<playlistId>" -> { rev, docId }.
+// same rev -> use existing doc; higher rev -> update existing doc; no record -> create.
 export async function initializeStandalonePlaylist(
   playlistData: StandaloneData,
   callbacks: StandaloneCallbacks
 ): Promise<void> {
   try {
-    // Validate input data
-    if (!playlistData || !playlistData.playlist || !playlistData.songs) {
+    if (!playlistData?.playlist || !playlistData?.songs) {
       console.error(
-        "Error initializing standalone playlist: Invalid playlist data"
+        "error initializing standalone playlist: invalid playlist data"
       );
-      callbacks.setError("Invalid playlist data provided");
+      callbacks.setError("invalid playlist data provided");
       return;
     }
 
-    // Validate callbacks
     if (!callbacks.setError || typeof callbacks.setError !== "function") {
       throw new Error("callbacks.setError is not a function");
     }
@@ -376,7 +318,6 @@ export async function initializeStandalonePlaylist(
       throw new Error("callbacks.setPlaylistSongs is not a function");
     }
 
-    // Show loading progress
     setStandaloneLoadingProgress({
       current: 0,
       total: playlistData.songs.length,
@@ -384,379 +325,146 @@ export async function initializeStandalonePlaylist(
       phase: "initializing",
     });
 
-    // Check if playlist with this ID already exists
-    let db;
-    try {
-      db = await setupDB();
-    } catch (error) {
-      console.error("Error initializing standalone playlist:", error);
-      callbacks.setError("Failed to load playlist - database setup failed");
-      return;
-    }
+    const settingKey = `standalone:${playlistData.playlist.id}`;
+    const existing = await loadSetting<StandaloneRecord>(settingKey);
+    const incomingRev = playlistData.playlist.rev ?? 0;
 
-    const existingPlaylist = await db.get(
-      PLAYLISTS_STORE,
-      playlistData.playlist.id
-    );
+    let docId: string;
 
-    let finalPlaylist: Playlist;
-    let finalSongs: Song[];
-
-    if (existingPlaylist) {
-      // check if playlist revision has changed and needs full reload
-      const existingRev = existingPlaylist.rev || 0;
-      const incomingRev = playlistData.playlist.rev || 0;
-      const needsFullReload = incomingRev > existingRev;
-
-      if (needsFullReload) {
-        // load existing songs for this playlist
-        const existingSongs = await db.getAll(SONGS_STORE);
-        const playlistSongs = existingSongs.filter(
-          (song: Song) => song.playlistId === existingPlaylist.id
-        );
-
-        // smart update that preserves audio data when sha matches
-        setStandaloneLoadingProgress({
-          current: 0,
-          total: playlistData.songs.length,
-          currentSong: "updating playlist revision...",
-          phase: "reloading",
-        });
-
-        const { playlist, songs } = await smartUpdatePlaylistWithSongs(
-          existingPlaylist,
-          playlistSongs,
-          playlistData
-        );
-        finalPlaylist = playlist;
-        finalSongs = songs;
-      } else {
-        // rev hasn't changed, so playlist and songs are identical
-        // just use existing data without any processing
-        const existingSongs = await db.getAll(SONGS_STORE);
-        const playlistSongs = existingSongs.filter(
-          (song: Song) => song.playlistId === existingPlaylist.id
-        );
-
-        // always re-apply imageFilePath from incoming data in case it was missing from idb
-        const incomingImageFilePath = playlistData.playlist.imageFilePath
-          ?? (playlistData.playlist.imageExtension
-            ? `data/playlist-cover${playlistData.playlist.imageExtension}`
-            : undefined);
-        if (incomingImageFilePath && !existingPlaylist.imageFilePath) {
-          existingPlaylist.imageFilePath = incomingImageFilePath;
-          existingPlaylist.imageType = existingPlaylist.imageType ?? playlistData.playlist.imageMimeType;
-          existingPlaylist.needsImageLoad = true;
-          await mutateAndNotify({
-            dbName: DB_NAME,
-            storeName: PLAYLISTS_STORE,
-            key: existingPlaylist.id,
-            updateFn: () => existingPlaylist,
-          });
-        }
-
-        finalPlaylist = existingPlaylist;
-        finalSongs = playlistSongs;
-      }
+    if (!existing) {
+      setStandaloneLoadingProgress({
+        current: 0,
+        total: playlistData.songs.length,
+        currentSong: "creating playlist...",
+        phase: "initializing",
+      });
+      docId = await createStandaloneDoc(playlistData);
+      await saveSetting(settingKey, { rev: incomingRev, docId });
+    } else if (incomingRev > existing.rev) {
+      setStandaloneLoadingProgress({
+        current: 0,
+        total: playlistData.songs.length,
+        currentSong: "updating playlist revision...",
+        phase: "reloading",
+      });
+      docId = existing.docId;
+      await updateStandaloneDoc(docId, playlistData);
+      await saveSetting(settingKey, { rev: incomingRev, docId });
     } else {
-      const { playlist, songs } = await createNewPlaylist(playlistData);
-      finalPlaylist = playlist;
-      finalSongs = songs;
+      docId = existing.docId;
+      setStandaloneLoadingProgress({
+        current: 0,
+        total: playlistData.songs.length,
+        currentSong: "loading playlist...",
+        phase: "checking",
+      });
     }
 
-    // Count successfully loaded songs
-    const songsWithoutAudio = finalSongs.filter(
-      (song) => !song.audioData && !song.standaloneFilePath
-    );
+    // populate docService song registry for getSongById lookups during audio loading
+    await getSongsForPlaylist(docId);
 
-    if (songsWithoutAudio.length > 0) {
-      console.warn(
-        `   ⚠️ ${songsWithoutAudio.length} songs failed to load audio data:`
-      );
-      songsWithoutAudio.forEach((song) =>
-        console.warn(`      - ${song.title}`)
-      );
+    // build view objects with standalone-specific fields
+    const songs = buildStandaloneSongs(playlistData, docId);
+    const playlist = buildStandalonePlaylist(playlistData, docId);
 
-      // Show user notification about failed songs
-      if (
-        songsWithoutAudio.length === finalSongs.length &&
-        window.location.protocol !== "file:"
-      ) {
-        callbacks.setError(
-          `All songs failed to load. This usually means the audio files are missing or the playlist needs to be served from a web server.`
-        );
-      } else if (
-        songsWithoutAudio.length > 0 &&
-        window.location.protocol !== "file:"
-      ) {
-        // Continue silently for file:// protocol
-      }
-    }
+    callbacks.setSelectedPlaylist(playlist);
+    callbacks.setPlaylistSongs(songs);
 
-    // Set up the playlist and songs for display
-    callbacks.setSelectedPlaylist(finalPlaylist);
-    callbacks.setPlaylistSongs(finalSongs);
-
-    // Clear loading progress (if not already cleared by background tasks)
     setTimeout(() => setStandaloneLoadingProgress(null), 500);
 
-    // Load images in background after playlist is initialized
+    // background: fetch images from file paths and store in blob store
     setTimeout(
-      () => loadStandaloneImages(finalPlaylist, finalSongs, callbacks),
+      () =>
+        loadStandaloneImages(
+          playlistData,
+          docId,
+          playlist,
+          songs,
+          callbacks
+        ),
       1000
     );
   } catch (err) {
-    console.error("Error initializing standalone playlist:", err);
-    callbacks.setError("Failed to load standalone playlist");
+    console.error("error initializing standalone playlist:", err);
+    callbacks.setError("failed to load standalone playlist");
     setStandaloneLoadingProgress(null);
   }
 }
 
-/**
- * Load audio data on-demand for a standalone song
- * Follows the same pattern as addSongToPlaylist but gets ArrayBuffer from network/file
- */
+// load and cache a standalone song's audio bytes into the blob store.
+// delegates to downloadSongIfNeeded from streamingAudioService.
+// returns true if audio is available (already cached, file:// protocol, or downloaded).
 export async function loadStandaloneSongAudioData(
   songId: string
 ): Promise<boolean> {
   try {
-    const db = await setupDB();
-    const song = await db.get(SONGS_STORE, songId);
-
-    if (!song) {
-      console.error(`Song ${songId} not found in database`);
-      return false;
-    }
-
-    // If song already has audio data, no need to load
-    if (song.audioData && song.audioData.byteLength > 0) {
+    if (window.location.protocol === "file:") {
       return true;
     }
 
-    // If no standalone file path, can't load
-    if (!song.standaloneFilePath) {
-      console.error(`Song ${songId} has no standalone file path`);
+    const standaloneFilePath = standalonePathRegistry.get(songId);
+    if (!standaloneFilePath) {
+      console.error(`no registered standalone path for song ${songId}`);
       return false;
     }
 
-    // Skip caching for file:// protocol - songs work directly from disk
-    if (window.location.protocol === "file:") {
-      return true; // Return success but don't actually cache
-    }
-
-    // For http/https, actually cache the audio data
-    const response = await fetch(song.standaloneFilePath);
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch: ${response.status} ${response.statusText}`
-      );
-    }
-    const audioData = await response.arrayBuffer();
-
-    // Store in IndexedDB using the same pattern as addSongToPlaylist
-    const updatedSong = {
-      ...song,
-      audioData, // Store audio as ArrayBuffer
-      mimeType: song.mimeType || "audio/mpeg", // Ensure mimeType is set
-      updatedAt: Date.now(),
+    // use doc registry entry for sha-based dedup check inside downloadSongIfNeeded
+    const song = await getSongById(songId);
+    const songForDownload: Song = song ?? {
+      id: songId,
+      title: songId,
+      artist: "",
+      album: "",
+      duration: 0,
+      mimeType: "audio/mpeg",
+      originalFilename: standaloneFilePath.split("/").pop() ?? songId,
+      position: 0,
+      createdAt: 0,
+      updatedAt: 0,
+      playlistId: "",
     };
 
-    await mutateAndNotify({
-      dbName: DB_NAME,
-      storeName: SONGS_STORE,
-      key: songId,
-      updateFn: () => updatedSong,
-    });
-
-    return true;
+    return await downloadSongIfNeeded(songForDownload, standaloneFilePath);
   } catch (error) {
     console.error(
-      `Error loading standalone song audio data for ${songId}:`,
+      `error loading standalone song audio data for ${songId}:`,
       error
     );
     return false;
   }
 }
 
-/**
- * Check if a song needs audio data to be loaded
- */
+// check whether a song's audio needs to be cached.
+// returns false for file:// protocol (audio served directly from disk) and
+// for songs already present in the blob store keyed by sha.
 export async function songNeedsAudioData(song: Song): Promise<boolean> {
-  // Check the database directly for the most up-to-date audio data
+  if (window.location.protocol === "file:") {
+    return false;
+  }
+
+  const sha = song.sha ?? song.sha256;
+  if (!sha) {
+    return true;
+  }
+
   try {
-    const db = await setupDB();
-    const dbSong = await db.get(SONGS_STORE, song.id);
-
-    if (!dbSong) {
-      return true; // song doesn't exist, needs data
-    }
-
-    // Skip caching check for file:// protocol - always return false (no caching needed)
-    if (window.location.protocol === "file:") {
-      return false;
-    }
-
-    // Check if it has actual audio data (raw blob data)
-    return !dbSong.audioData || dbSong.audioData.byteLength === 0;
+    const existing = await getBlobMetadata(sha);
+    return !existing;
   } catch (error) {
     console.error(
-      `Error checking song audio data status for ${song.id}:`,
+      `error checking song audio data status for ${song.id}:`,
       error
     );
-    return true; // assume needs data on error
+    return true;
   }
 }
 
-/**
- * Load images from files into IndexedDB for standalone mode
- */
-async function loadStandaloneImages(
-  playlist: Playlist,
-  songs: Song[],
-  callbacks: StandaloneCallbacks
-): Promise<void> {
-  // For file:// protocol, images work directly from paths, no need to load into IndexedDB
-  // For HTTP/HTTPS, load images from files into IndexedDB
-  if (window.location.protocol === "file:") {
-    return;
-  }
-
-  try {
-    // Load playlist image if needed
-    if (
-      playlist.needsImageLoad &&
-      playlist.imageFilePath &&
-      !playlist.imageData
-    ) {
-      const updatedPlaylist = await loadImageIntoIndexedDB(playlist, true);
-      if (updatedPlaylist) {
-        // Update the selectedPlaylist signal to trigger UI reactivity
-        if ("songIds" in updatedPlaylist) {
-          callbacks.setSelectedPlaylist(updatedPlaylist as Playlist);
-        }
-      }
-    }
-
-    // Load song images if needed
-    let songsUpdated = false;
-    for (const song of songs) {
-      if (song.needsImageLoad && song.imageFilePath && !song.imageData) {
-        const updatedSong = await loadImageIntoIndexedDB(song, false);
-        if (updatedSong) {
-          songsUpdated = true;
-        }
-      }
-    }
-
-    // If any songs were updated, refresh the playlistSongs signal for carousel
-    if (songsUpdated) {
-      try {
-        const db = await setupDB();
-        const allSongs = await db.getAll(SONGS_STORE);
-        const updatedPlaylistSongs = allSongs
-          .filter((song: Song) => playlist.songIds.includes(song.id))
-          .sort((a, b) => {
-            const indexA = playlist.songIds.indexOf(a.id);
-            const indexB = playlist.songIds.indexOf(b.id);
-            return indexA - indexB;
-          });
-        callbacks.setPlaylistSongs(updatedPlaylistSongs);
-      } catch (error) {
-        console.warn(
-          "Error refreshing playlist songs after image loading:",
-          error
-        );
-      }
-    }
-  } catch (error) {
-    console.warn("Error loading standalone images:", error);
-  }
-}
-
-/**
- * Load a single image file into IndexedDB
- */
-async function loadImageIntoIndexedDB(
-  item: Playlist | Song,
-  isPlaylist: boolean
-): Promise<Playlist | Song | null> {
-  try {
-    // double-check that we actually need to load this image
-    if (item.imageData && item.imageData.byteLength > 0) {
-      return item; // already has image data
-    }
-
-    if (!item.imageFilePath) {
-      return item; // no image file path
-    }
-
-    if (loadingImages.has(item.imageFilePath)) {
-      return null; // already loading
-    }
-
-    // Mark as loading
-    loadingImages.add(item.imageFilePath);
-
-    // For file:// protocol, load image from file path
-    const response = await fetch(item.imageFilePath);
-    if (!response.ok) {
-      console.warn(`Failed to load image: ${item.imageFilePath}`);
-      loadingImages.delete(item.imageFilePath);
-      return null;
-    }
-
-    const imageData = await response.arrayBuffer();
-
-    // Update the item with loaded image data
-    const updatedItem = {
-      ...item,
-      imageData,
-      needsImageLoad: false,
-      updatedAt: Date.now(),
-    };
-
-    const storeName = isPlaylist ? PLAYLISTS_STORE : SONGS_STORE;
-
-    await mutateAndNotify({
-      dbName: DB_NAME,
-      storeName,
-      key: item.id,
-      updateFn: () => updatedItem,
-    });
-
-    // Trigger reactivity to update UI (specific song only to prevent flickering)
-    if (!isPlaylist) {
-      triggerSongUpdateWithOptions({
-        songId: item.id,
-        type: "edit",
-        specificOnly: true,
-      });
-    }
-    // For playlists, mutateAndNotify should automatically trigger reactivity
-
-    // Remove from loading set
-    if (item.imageFilePath) {
-      loadingImages.delete(item.imageFilePath);
-    }
-
-    return updatedItem;
-  } catch (error) {
-    console.warn(`Error loading image for ${item.id}:`, error);
-    if (item.imageFilePath) {
-      loadingImages.delete(item.imageFilePath);
-    }
-    return null;
-  }
-}
-
-/**
- * Clear loading progress (useful for cleanup)
- */
-export function clearStandaloneLoadingProgress() {
+// clear loading progress (for cleanup or programmatic use)
+export function clearStandaloneLoadingProgress(): void {
   setStandaloneLoadingProgress(null);
 }
 
-// initializes multiple standalone playlists in sequence
+// initialize multiple standalone playlists in sequence
 export async function initializeAllStandalonePlaylists(
   playlists: FreqholePlaylist[],
   callbacks: StandaloneCallbacks

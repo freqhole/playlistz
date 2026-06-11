@@ -3,6 +3,37 @@ import * as audioService from "./audioService.js";
 import type { Song, Playlist } from "../types/playlist.js";
 import { mockManager } from "../test-setup.js";
 import * as indexedDBService from "./indexedDBService.js";
+import * as playlistDocService from "./playlistDocService.js";
+
+// mock playlistDocService so audioService can load songs without a real automerge repo
+vi.mock("./playlistDocService.js", () => ({
+  getSongsForPlaylist: vi.fn(),
+  getSongById: vi.fn(),
+  getSongAudioObjectURL: vi.fn(),
+  docToPlaylist: vi.fn(),
+  songEntryToSong: vi.fn(),
+  createPlaylist: vi.fn(),
+  updatePlaylist: vi.fn(),
+  deletePlaylist: vi.fn(),
+  addSongToPlaylist: vi.fn(),
+  updateSongInDoc: vi.fn(),
+  deleteSong: vi.fn(),
+  reorderSongsInDoc: vi.fn(),
+  getSongImageObjectURL: vi.fn(),
+  setPlaylistCoverImage: vi.fn(),
+  setSongCoverImage: vi.fn(),
+  getSongsWithAudioData: vi.fn().mockResolvedValue([]),
+}));
+
+// mock blob storage
+vi.mock("freqhole-api-client/storage", () => ({
+  getBlobObjectURL: vi.fn().mockResolvedValue(null),
+  storeBlob: vi.fn(),
+  getBlob: vi.fn(),
+  getBlobMetadata: vi.fn().mockResolvedValue(null),
+  deleteBlob: vi.fn(),
+  getCachedBlobObjectURL: vi.fn().mockResolvedValue(null),
+}));
 
 // Helper to get the current mocked Audio instance
 const getMockAudio = () => {
@@ -88,12 +119,11 @@ describe("Audio Service Tests", () => {
     });
 
     // Mock IndexedDB service
-    vi.spyOn(indexedDBService, "getAllSongs").mockResolvedValue([
+    vi.mocked(playlistDocService.getSongsForPlaylist).mockResolvedValue([
       mockSong1,
       mockSong2,
       mockSong3,
     ]);
-    vi.spyOn(indexedDBService, "loadSongAudioData").mockResolvedValue(null);
     // default: no last-played song (avoids resume behavior in unrelated tests)
     vi.spyOn(indexedDBService, "loadLastPlayed").mockResolvedValue(null);
     vi.spyOn(indexedDBService, "saveLastPlayed").mockResolvedValue(undefined);

@@ -144,7 +144,8 @@ export function generateData(dir: string): void {
 
     const entry: FreqholePlaylist = {
       playlist: {
-        id: parsed.id,
+        // parsed.id is always assigned above (uuidv5 from title when new)
+        id: parsed.id!,
         title: parsed.title,
         description: parsed.description || undefined,
         rev: parsed.rev,

@@ -54,9 +54,11 @@ export function PlaylistSidebar() {
   const handleCreatePlaylist = async () => {
     if (isCreating()) return;
 
+    console.log("[trace] handleCreatePlaylist: start");
     setIsCreating(true);
     try {
       const newPlaylist = await createNewPlaylist("new playlist");
+      console.log("[trace] handleCreatePlaylist: created", newPlaylist?.id);
       if (newPlaylist) {
         selectPlaylist(newPlaylist);
         // auto-collapse on mobile when playlist is selected

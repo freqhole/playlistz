@@ -3,7 +3,9 @@
 
 import { createSignal } from "solid-js";
 import type { Song, Playlist, AudioState } from "../types/playlist.js";
-import { loadSongAudioData, getAllSongs, loadAllPlaybackPositions, savePlaybackPosition, deletePlaybackPosition, saveLastPlayed, loadLastPlayed } from "./indexedDBService.js";
+import { loadAllPlaybackPositions, savePlaybackPosition, deletePlaybackPosition, saveLastPlayed, loadLastPlayed } from "./indexedDBService.js";
+import { getBlobObjectURL } from "freqhole-api-client/storage";
+import { getSongsForPlaylist } from "./playlistDocService.js";
 import {
   streamAudioWithCaching,
   downloadSongIfNeeded,
@@ -409,18 +411,12 @@ async function getMediaSessionArtwork(
 // load playlist songz into queue
 async function loadPlaylistQueue(playlist: Playlist): Promise<void> {
   try {
-    const allSongs = await getAllSongs();
-    const playlistSongs = allSongs
-      .filter((song) => playlist.songIds.includes(song.id))
-      .sort(
-        (a, b) =>
-          playlist.songIds.indexOf(a.id) - playlist.songIds.indexOf(b.id)
-      );
-
+    // songs come from the automerge doc; playlist.id is the docId
+    const playlistSongs = await getSongsForPlaylist(playlist.id);
     setPlaylistQueue(playlistSongs);
     setCurrentPlaylist(playlist);
   } catch (error) {
-    console.error("Error loading playlist queue:", error);
+    console.error("error loading playlist queue:", error);
     throw error;
   }
 }
@@ -674,8 +670,11 @@ export async function playSong(song: Song, skipResume = false): Promise<void> {
         });
         testAudio.load();
       } else {
-        // first, always try to load from indexeddb (cached data)
-        let cachedURL = await loadSongAudioData(song.id);
+        // try to load audio from the blob store (sha256-keyed opfs)
+        let cachedURL: string | null = null;
+        if (song.sha ?? song.sha256) {
+          cachedURL = await getBlobObjectURL((song.sha ?? song.sha256)!);
+        }
         if (cachedURL) {
           audioURL = cachedURL;
         } else if (song.standaloneFilePath) {
@@ -1189,9 +1188,11 @@ async function preloadNextSong(): Promise<void> {
   setLoadingSongIds((prev) => new Set(Array.from(prev).concat([nextSong.id])));
 
   try {
-    // check if song already has cached audio data
-    const cachedURL = await loadSongAudioData(nextSong.id);
-    if (cachedURL) {
+    // check if song already has audio cached in the blob store
+    const blobUrl = (nextSong.sha ?? nextSong.sha256)
+      ? await getBlobObjectURL((nextSong.sha ?? nextSong.sha256)!)
+      : null;
+    if (blobUrl) {
       setLoadingSongIds((prev) => {
         const newSet = new Set(prev);
         newSet.delete(nextSong.id);

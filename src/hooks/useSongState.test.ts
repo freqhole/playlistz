@@ -13,8 +13,8 @@ vi.mock("../services/audioService.js", () => ({
   },
 }));
 
-vi.mock("../services/indexedDBService.js", () => ({
-  updateSong: vi.fn().mockResolvedValue(undefined),
+vi.mock("../services/playlistDocService.js", () => ({
+  updateSongInDoc: vi.fn().mockResolvedValue(undefined),
 }));
 
 const mockSong: Song = {
@@ -26,9 +26,10 @@ const mockSong: Song = {
   duration: 180,
   originalFilename: "test.mp3",
   fileSize: 5000000,
+  mimeType: "audio/mpeg",
   createdAt: Date.now(),
   updatedAt: Date.now(),
-  order: 0,
+  position: 0,
 };
 
 const mockSong2: Song = { ...mockSong, id: "song-2", title: "song two" };
@@ -153,7 +154,7 @@ describe("useSongState edit mode", () => {
 
   describe("handleSongSaved", () => {
     it("updates song in IDB and keeps editing the saved song", async () => {
-      const { updateSong } = await import("../services/indexedDBService.js");
+      const { updateSongInDoc } = await import("../services/playlistDocService.js");
       let savedHook: ReturnType<typeof useSongState> | undefined;
       createRoot((dispose) => {
         savedHook = useSongState();
@@ -168,15 +169,15 @@ describe("useSongState edit mode", () => {
       })();
       const updatedSong = { ...mockSong, title: "updated title" };
       await hook.handleSongSaved(updatedSong);
-      expect(updateSong).toHaveBeenCalledWith(updatedSong.id, updatedSong);
+      expect(updateSongInDoc).toHaveBeenCalledWith(updatedSong.playlistId, updatedSong.id, updatedSong);
       // panel stays open with the saved values
       expect(hook.editingSong()).toEqual(updatedSong);
       expect(hook.isEditMode()).toBe(true);
     });
 
     it("sets error when IDB update fails", async () => {
-      const { updateSong } = await import("../services/indexedDBService.js");
-      vi.mocked(updateSong).mockRejectedValueOnce(new Error("db error"));
+      const { updateSongInDoc } = await import("../services/playlistDocService.js");
+      vi.mocked(updateSongInDoc).mockRejectedValueOnce(new Error("db error"));
       let hook: ReturnType<typeof useSongState>;
       createRoot(() => { hook = useSongState(); hook!.handleEditSong(mockSong); });
       await hook!.handleSongSaved(mockSong);

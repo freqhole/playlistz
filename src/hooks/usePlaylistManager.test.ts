@@ -4,28 +4,31 @@ import { usePlaylistManager } from "./usePlaylistManager.js";
 import type { Playlist } from "../types/playlist.js";
 
 // Mock the services
-vi.mock("../services/indexedDBService.js", () => ({
-  setupDB: vi.fn(),
+vi.mock("../services/playlistDocService.js", () => ({
   createPlaylist: vi.fn(),
   updatePlaylist: vi.fn(),
   deletePlaylist: vi.fn(),
-  getAllSongs: vi.fn(),
   addSongToPlaylist: vi.fn(),
-  removeSongFromPlaylist: vi.fn(),
-  reorderSongs: vi.fn(),
-  createPlaylistsQuery: vi.fn(() => ({
-    subscribe: vi.fn((callback) => {
-      // Simulate reactive query
-      callback([]);
-      return vi.fn(); // unsubscribe function
-    }),
-  })),
-  createPlaylistSongsQuery: vi.fn(() => ({
-    subscribe: vi.fn((callback) => {
-      callback([]);
-      return vi.fn();
-    }),
-  })),
+  deleteSong: vi.fn(),
+  reorderSongsInDoc: vi.fn(),
+  getSongsForPlaylist: vi.fn().mockResolvedValue([]),
+  getSongById: vi.fn(),
+  docToPlaylist: vi.fn(),
+  getSongsWithAudioData: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("./createDocIndexQuery.js", () => ({
+  createDocIndexQuery: vi.fn(() => () => []),
+}));
+
+vi.mock("../services/automergeRepo.js", () => ({
+  findPlaylistDoc: vi.fn(),
+  getRepo: vi.fn(),
+}));
+
+vi.mock("freqhole-api-client/playlistz", () => ({
+  parsePlaylistDoc: vi.fn(),
+  emptyPlaylistDoc: vi.fn(),
 }));
 
 vi.mock("../services/fileProcessingService.js", () => ({
@@ -94,7 +97,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
   describe("playlist deletion", () => {
     it("should delete playlist and clear selectedPlaylist", async () => {
       const { deletePlaylist } = await import(
-        "../services/indexedDBService.js"
+        "../services/playlistDocService.js"
       );
 
       // Mock successful deletion
@@ -115,7 +118,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
     it("should handle deletion errors gracefully", async () => {
       const { deletePlaylist } = await import(
-        "../services/indexedDBService.js"
+        "../services/playlistDocService.js"
       );
 
       // Mock service error
@@ -131,7 +134,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
     it("should stop playback if deleted playlist contains currently playing song", async () => {
       const { deletePlaylist } = await import(
-        "../services/indexedDBService.js"
+        "../services/playlistDocService.js"
       );
       const { audioState, stop } = await import("../services/audioService.js");
 
@@ -164,7 +167,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
     it("should not stop playback if deleted playlist does not contain currently playing song", async () => {
       const { deletePlaylist } = await import(
-        "../services/indexedDBService.js"
+        "../services/playlistDocService.js"
       );
       const { audioState, stop } = await import("../services/audioService.js");
 
@@ -198,17 +201,17 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
   describe("song removal", () => {
     it("should remove song from playlist", async () => {
-      const { removeSongFromPlaylist } = await import(
-        "../services/indexedDBService.js"
+      const { deleteSong } = await import(
+        "../services/playlistDocService.js"
       );
 
-      vi.mocked(removeSongFromPlaylist).mockResolvedValue();
+      vi.mocked(deleteSong).mockResolvedValue();
 
       hook.selectPlaylist(mockPlaylist);
 
       await hook.handleRemoveSong("song1");
 
-      expect(removeSongFromPlaylist).toHaveBeenCalledWith(
+      expect(deleteSong).toHaveBeenCalledWith(
         "test-playlist",
         "song1"
       );
@@ -216,11 +219,11 @@ describe("usePlaylistManager consolidated delete operations", () => {
     });
 
     it("should handle song removal errors", async () => {
-      const { removeSongFromPlaylist } = await import(
-        "../services/indexedDBService.js"
+      const { deleteSong } = await import(
+        "../services/playlistDocService.js"
       );
 
-      vi.mocked(removeSongFromPlaylist).mockRejectedValue(
+      vi.mocked(deleteSong).mockRejectedValue(
         new Error("Remove failed")
       );
 
@@ -234,11 +237,11 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
   describe("song deletion side effects", () => {
     it("should close edit modal when onClose callback is provided", async () => {
-      const { removeSongFromPlaylist } = await import(
-        "../services/indexedDBService.js"
+      const { deleteSong } = await import(
+        "../services/playlistDocService.js"
       );
 
-      vi.mocked(removeSongFromPlaylist).mockResolvedValue();
+      vi.mocked(deleteSong).mockResolvedValue();
 
       hook.selectPlaylist(mockPlaylist);
 
@@ -246,7 +249,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
       await hook.handleRemoveSong("song1", mockOnClose);
 
-      expect(removeSongFromPlaylist).toHaveBeenCalledWith(
+      expect(deleteSong).toHaveBeenCalledWith(
         "test-playlist",
         "song1"
       );
@@ -254,18 +257,18 @@ describe("usePlaylistManager consolidated delete operations", () => {
     });
 
     it("should work without onClose callback for regular delete operations", async () => {
-      const { removeSongFromPlaylist } = await import(
-        "../services/indexedDBService.js"
+      const { deleteSong } = await import(
+        "../services/playlistDocService.js"
       );
 
-      vi.mocked(removeSongFromPlaylist).mockResolvedValue();
+      vi.mocked(deleteSong).mockResolvedValue();
 
       hook.selectPlaylist(mockPlaylist);
 
       // Should work without callback (SongRow delete button case)
       await hook.handleRemoveSong("song1");
 
-      expect(removeSongFromPlaylist).toHaveBeenCalledWith(
+      expect(deleteSong).toHaveBeenCalledWith(
         "test-playlist",
         "song1"
       );
@@ -273,12 +276,12 @@ describe("usePlaylistManager consolidated delete operations", () => {
     });
 
     it("should stop playback if deleted song is currently playing", async () => {
-      const { removeSongFromPlaylist } = await import(
-        "../services/indexedDBService.js"
+      const { deleteSong } = await import(
+        "../services/playlistDocService.js"
       );
       const { audioState, stop } = await import("../services/audioService.js");
 
-      vi.mocked(removeSongFromPlaylist).mockResolvedValue();
+      vi.mocked(deleteSong).mockResolvedValue();
 
       // Mock that song1 is currently playing
       vi.mocked(audioState.currentSong).mockReturnValue({
@@ -301,19 +304,19 @@ describe("usePlaylistManager consolidated delete operations", () => {
       await hook.handleRemoveSong("song1");
 
       expect(stop).toHaveBeenCalled();
-      expect(removeSongFromPlaylist).toHaveBeenCalledWith(
+      expect(deleteSong).toHaveBeenCalledWith(
         "test-playlist",
         "song1"
       );
     });
 
     it("should not stop playback if deleted song is not currently playing", async () => {
-      const { removeSongFromPlaylist } = await import(
-        "../services/indexedDBService.js"
+      const { deleteSong } = await import(
+        "../services/playlistDocService.js"
       );
       const { audioState, stop } = await import("../services/audioService.js");
 
-      vi.mocked(removeSongFromPlaylist).mockResolvedValue();
+      vi.mocked(deleteSong).mockResolvedValue();
 
       // Mock that song2 is currently playing (different from deleted song)
       vi.mocked(audioState.currentSong).mockReturnValue({
@@ -336,7 +339,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
       await hook.handleRemoveSong("song1");
 
       expect(stop).not.toHaveBeenCalled();
-      expect(removeSongFromPlaylist).toHaveBeenCalledWith(
+      expect(deleteSong).toHaveBeenCalledWith(
         "test-playlist",
         "song1"
       );
@@ -345,19 +348,19 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
   describe("consolidated operations working correctly", () => {
     it("should demonstrate that delete operations now work with unified state", async () => {
-      const { deletePlaylist, removeSongFromPlaylist } = await import(
-        "../services/indexedDBService.js"
+      const { deletePlaylist, deleteSong } = await import(
+        "../services/playlistDocService.js"
       );
 
       vi.mocked(deletePlaylist).mockResolvedValue();
-      vi.mocked(removeSongFromPlaylist).mockResolvedValue();
+      vi.mocked(deleteSong).mockResolvedValue();
 
       // All operations now use the same hook, so state is unified
       hook.selectPlaylist(mockPlaylist);
 
       // Song removal should work
       await hook.handleRemoveSong("song1");
-      expect(removeSongFromPlaylist).toHaveBeenCalledWith(
+      expect(deleteSong).toHaveBeenCalledWith(
         "test-playlist",
         "song1"
       );

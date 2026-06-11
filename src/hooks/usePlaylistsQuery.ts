@@ -1,34 +1,44 @@
-import { createSignal, onCleanup, createEffect } from "solid-js";
-import { createPlaylistsQuery as createRawPlaylistsQuery } from "../services/indexedDBService.js";
+import { createSignal, createEffect } from "solid-js";
+import { createDocIndexQuery } from "./createDocIndexQuery.js";
+import { findPlaylistDoc } from "../services/automergeRepo.js";
+import { parsePlaylistDoc } from "freqhole-api-client/playlistz";
+import { docToPlaylist } from "../services/playlistDocService.js";
 import type { Playlist } from "../types/playlist.js";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 
-/**
- * SolidJS hook that creates a reactive playlist query
- * bridge the custom IndexedDB signal to SolidJS reactivity
- */
+// solid hook that creates a reactive playlist list backed by the docIndex.
+// replaces the old idb live-query approach.
 export function usePlaylistsQuery() {
-  // signal for reactive updates
   const [playlists, setPlaylists] = createSignal<Playlist[]>([], {
     equals: false,
   });
 
-  // the underlying IndexedDB query
-  const rawQuery = createRawPlaylistsQuery();
+  const entries = createDocIndexQuery();
 
-  // subscribe to updates and propagate to signalz
-  const unsubscribe = rawQuery.subscribe((value: Playlist[]) => {
-    setPlaylists([...value]); // Force new array reference for reactivity
-  });
-
-  // additional effect for reactivity
   createEffect(() => {
-    playlists();
+    const list = entries();
+    Promise.all(
+      list.map(async (entry) => {
+        try {
+          const handle = await findPlaylistDoc(entry.docId as AutomergeUrl);
+          const raw = handle.doc();
+          const doc = parsePlaylistDoc(raw ?? {});
+          return docToPlaylist(entry.docId, doc);
+        } catch {
+          return {
+            id: entry.docId,
+            title: entry.title,
+            description: undefined,
+            createdAt: entry.addedAt,
+            updatedAt: entry.addedAt,
+            songIds: [],
+          } as Playlist;
+        }
+      })
+    ).then((resolved) => setPlaylists(resolved));
   });
 
-  // cleanup subscription when component unmounts
-  onCleanup(() => {
-    unsubscribe();
-  });
-
-  return playlists;
+  return {
+    playlists,
+  };
 }

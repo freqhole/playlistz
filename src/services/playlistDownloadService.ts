@@ -1,17 +1,300 @@
 import JSZip from "jszip";
 import type { Playlist, Song } from "../types/playlist.js";
 import {
-  getSongsWithAudioData,
+  getSongsForPlaylist,
   updatePlaylist,
-  updateSong,
-} from "./indexedDBService.js";
-import { calculateSHA256 } from "../utils/hashUtils.js";
+} from "./playlistDocService.js";
+import { getBlob } from "freqhole-api-client/storage";
 import {
   generatePlaylistzJs,
   generateIndexHtml,
 } from "../utils/standaloneTemplates.js";
 import { generateSwJs } from "../utils/swTemplate.js";
 import { generateM3UContent } from "../utils/m3u.js";
+
+export interface PlaylistDownloadOptions {
+  includeMetadata?: boolean;
+  includeImages?: boolean;
+  generateM3U?: boolean;
+  includeHTML?: boolean;
+}
+
+// downloads a playlist as a zip file containing all songs, metadata, and images.
+// audio and image bytes are fetched from the blob store keyed by sha256.
+export async function downloadPlaylistAsZip(
+  playlist: Playlist,
+  options: PlaylistDownloadOptions = {
+    includeMetadata: true,
+    includeImages: true,
+    generateM3U: true,
+    includeHTML: true,
+  }
+): Promise<void> {
+  try {
+    const zip = new JSZip();
+
+    // increment playlist revision before generating the zip
+    const currentRev = playlist.rev || 0;
+    const newRev = currentRev + 1;
+    await updatePlaylist(playlist.id, { rev: newRev });
+    const updatedPlaylist = { ...playlist, rev: newRev };
+
+    // get all songs from the doc
+    const playlistSongs = await getSongsForPlaylist(playlist.id);
+
+    // create root folder with playlist name
+    const rootFolderName = createSafeFileName("", updatedPlaylist.title);
+    const rootFolder = zip.folder(rootFolderName);
+    const dataFolder = rootFolder!.folder("data");
+
+    // fetch playlist cover image from blob store
+    let playlistImageData: ArrayBuffer | undefined;
+    let playlistImageType: string | undefined;
+    const primaryImageSha = updatedPlaylist._primaryImageSha;
+    if (options.includeImages && primaryImageSha) {
+      const blob = await getBlob(primaryImageSha);
+      if (blob) {
+        playlistImageData = await blob.arrayBuffer();
+        playlistImageType =
+          blob.type || updatedPlaylist.imageType || "image/jpeg";
+      }
+    } else if (options.includeImages && updatedPlaylist.imageData) {
+      // legacy fallback for playlists with inline imageData
+      playlistImageData = updatedPlaylist.imageData;
+      playlistImageType = updatedPlaylist.imageType;
+    }
+
+    // fetch audio and image bytes for each song from the blob store
+    const songsWithBytes = await Promise.all(
+      playlistSongs.map(async (song) => {
+        let audioData: ArrayBuffer | undefined;
+        let imageData: ArrayBuffer | undefined;
+        let imageType: string | undefined;
+
+        // get audio bytes from blob store
+        if (song.sha) {
+          const audioBlob = await getBlob(song.sha);
+          if (audioBlob) {
+            audioData = await audioBlob.arrayBuffer();
+          }
+        }
+
+        // get song cover image from blob store
+        const primaryImageRef =
+          song.images?.find((i) => i.isPrimary) ?? song.images?.[0];
+        if (options.includeImages && primaryImageRef) {
+          const imageBlob = await getBlob(primaryImageRef.blobId);
+          if (imageBlob) {
+            imageData = await imageBlob.arrayBuffer();
+            imageType = imageBlob.type || "image/jpeg";
+          }
+        } else if (options.includeImages && song.imageData) {
+          // legacy fallback
+          imageData = song.imageData;
+          imageType = song.imageType;
+        }
+
+        return { song, audioData, imageData, imageType };
+      })
+    );
+
+    // build playlist entry for the playlistz.js data file
+    const playlistCoverExtension = playlistImageType
+      ? getFileExtensionFromMimeType(playlistImageType)
+      : undefined;
+
+    const playlistEntry = {
+      playlist: {
+        id: updatedPlaylist.id,
+        title: updatedPlaylist.title,
+        description: updatedPlaylist.description,
+        rev: updatedPlaylist.rev,
+        imageMimeType: playlistImageType || undefined,
+        imageFilePath: playlistCoverExtension
+          ? `data/playlist-cover${playlistCoverExtension}`
+          : undefined,
+        safeFilename: createSafeFileName("", updatedPlaylist.title),
+        bgFilterEnabled: updatedPlaylist.bgFilterEnabled,
+        bgFilterBlur: updatedPlaylist.bgFilterBlur,
+        bgFilterContrast: updatedPlaylist.bgFilterContrast,
+        bgFilterBrightness: updatedPlaylist.bgFilterBrightness,
+        coverFilterEnabled: updatedPlaylist.coverFilterEnabled,
+        coverFilterBlur: updatedPlaylist.coverFilterBlur,
+      },
+      songs: songsWithBytes.map(({ song, audioData, imageData: imgData, imageType: imgType }) => {
+        const songImageExt = imgData
+          ? getFileExtensionFromMimeType(imgType || "image/jpeg")
+          : undefined;
+        const safeName = song.originalFilename
+          ? sanitizeFilename(song.originalFilename)
+          : "";
+        const safeBase = safeName.replace(/\.[^.]+$/, "");
+        return {
+          id: song.id,
+          title: song.title,
+          artist: song.artist,
+          album: song.album,
+          duration: song.duration || 0,
+          originalFilename: song.originalFilename || "",
+          safeFilename: safeName,
+          fileSize: song.fileSize || audioData?.byteLength || 0,
+          mimeType: song.mimeType || "audio/mpeg",
+          sha: song.sha,
+          imageMimeType: imgType || undefined,
+          imageFilePath: songImageExt
+            ? `data/${safeBase}-cover${songImageExt}`
+            : undefined,
+        };
+      }),
+    };
+
+    // add playlistz.js data file to root folder
+    rootFolder!.file("playlistz.js", generatePlaylistzJs([playlistEntry]));
+
+    // add playlist cover image to data folder if available
+    if (playlistImageData && playlistImageType) {
+      const ext = getFileExtensionFromMimeType(playlistImageType);
+      dataFolder!.file(`playlist-cover${ext}`, playlistImageData);
+    }
+
+    // add all audio files and their cover images to data folder
+    const songFileNames: string[] = [];
+
+    for (const { song, audioData, imageData: imgData, imageType: imgType } of songsWithBytes) {
+      if (audioData && song.originalFilename) {
+        const safeFileName = sanitizeFilename(song.originalFilename);
+        const baseName = safeFileName.replace(/\.[^.]+$/, "");
+
+        dataFolder!.file(safeFileName, audioData);
+        songFileNames.push(safeFileName);
+
+        if (options.includeImages && imgData && imgType) {
+          const imageExtension = getFileExtensionFromMimeType(imgType);
+          dataFolder!.file(`${baseName}-cover${imageExtension}`, imgData);
+        }
+      }
+    }
+
+    // generate m3u8 playlist file
+    if (options.generateM3U) {
+      const m3uContent = generateM3UContent(
+        updatedPlaylist,
+        songsWithBytes.map(({ song }) => song),
+        songFileNames,
+        getFileExtensionFromMimeType
+      );
+      dataFolder!.file(
+        `${createSafeFileName("", updatedPlaylist.title)}.m3u8`,
+        m3uContent
+      );
+    }
+
+    // generate static shell files
+    if (options.includeHTML) {
+      rootFolder!.file("index.html", generateIndexHtml());
+      rootFolder!.file("sw.js", generateSwJs());
+
+      try {
+        const scriptEl = Array.from(
+          document.querySelectorAll("script[src]")
+        ).find(
+          (el) => (el as HTMLScriptElement).src.includes("freqhole-playlistz.js")
+        ) as HTMLScriptElement | undefined;
+        const bundleUrl =
+          scriptEl?.src ?? `${window.location.origin}/freqhole-playlistz.js`;
+        const appBundleResponse = await fetch(bundleUrl);
+        if (appBundleResponse.ok) {
+          rootFolder!.file(
+            "freqhole-playlistz.js",
+            await appBundleResponse.arrayBuffer()
+          );
+        } else {
+          console.warn(
+            "could not fetch freqhole-playlistz.js for zip bundle:",
+            appBundleResponse.status
+          );
+        }
+      } catch (err) {
+        console.warn("could not include freqhole-playlistz.js in zip:", err);
+      }
+
+      try {
+        const cliResponse = await fetch(
+          `${window.location.origin}/freqhole-playlistz-cli.mjs`
+        );
+        if (cliResponse.ok) {
+          rootFolder!.file(
+            "freqhole-playlistz-cli.mjs",
+            await cliResponse.arrayBuffer()
+          );
+        } else {
+          console.warn(
+            "could not fetch freqhole-playlistz-cli.mjs for zip bundle:",
+            cliResponse.status
+          );
+        }
+      } catch (err) {
+        console.warn(
+          "could not include freqhole-playlistz-cli.mjs in zip:",
+          err
+        );
+      }
+    }
+
+    // generate and trigger the zip download
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${rootFolderName}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("error downloading playlist:", error);
+    if (
+      error instanceof Error &&
+      (error.message.includes("ZIP generation failed") ||
+        error.message.includes("Database error") ||
+        error.message.includes("SHA calculation failed"))
+    ) {
+      throw error;
+    }
+    throw new Error("Failed to download playlist");
+  }
+}
+
+// creates a safe filename from artist and title
+function createSafeFileName(artist: string, title: string): string {
+  const combined =
+    artist && title ? `${artist} - ${title}` : title || artist || "untitled";
+  return combined
+    .replace(/[<>:"/\\|?*]/g, "_")
+    .replace(/\s+/g, "_")
+    .toLowerCase()
+    .substring(0, 100);
+}
+
+// maps a MIME type to a file extension
+function getFileExtensionFromMimeType(mimeType: string): string {
+  const extensions: { [key: string]: string } = {
+    "audio/mpeg": ".mp3",
+    "audio/mp4": ".m4a",
+    "audio/wav": ".wav",
+    "audio/flac": ".flac",
+    "audio/ogg": ".ogg",
+    "audio/webm": ".webm",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+  };
+
+  return extensions[mimeType] || ".bin";
+}
 
 // types for imported playlist data that may not match our exact schema
 interface ImportedPlaylistData {
@@ -57,270 +340,8 @@ interface ImportedSongMetadata {
   sha?: string;
 }
 
-export interface PlaylistDownloadOptions {
-  includeMetadata?: boolean;
-  includeImages?: boolean;
-  generateM3U?: boolean;
-  includeHTML?: boolean;
-}
-
-/**
- * Downloads a playlist as a ZIP file containing all songs, metadata, and images
- */
-export async function downloadPlaylistAsZip(
-  playlist: Playlist,
-  options: PlaylistDownloadOptions = {
-    includeMetadata: true,
-    includeImages: true,
-    generateM3U: true,
-    includeHTML: true,
-  }
-): Promise<void> {
-  try {
-    const zip = new JSZip();
-
-    // increment playlist revision before download
-    const currentRev = playlist.rev || 0;
-    const newRev = currentRev + 1;
-
-    // update playlist with new revision
-    await updatePlaylist(playlist.id, { rev: newRev });
-
-    const updatedPlaylist = { ...playlist, rev: newRev };
-
-    // get all songs for this playlist with audio data
-    const playlistSongs = await getSongsWithAudioData(playlist.songIds);
-
-    // calculate sha for songs that don't have it yet (legacy support)
-    const songsWithSHA = await Promise.all(
-      playlistSongs.map(async (song) => {
-        if (!song.sha && song.audioData) {
-          try {
-            const sha = await calculateSHA256(song.audioData);
-            // update the song in indexeddb with the calculated sha
-            await updateSong(song.id, { sha });
-            return { ...song, sha };
-          } catch (error) {
-            console.warn(
-              `Failed to calculate SHA for song ${song.title}:`,
-              error
-            );
-            return song;
-          }
-        }
-        return song;
-      })
-    );
-
-    // audio data is now always stored in indexeddb during initialization
-
-    // create root folder with playlist name
-    const rootFolderName = createSafeFileName("", updatedPlaylist.title);
-    const rootFolder = zip.folder(rootFolderName);
-
-    // create data folder inside root folder
-    const dataFolder = rootFolder!.folder("data");
-
-    // build playlist entry for the playlistz.js data file
-    const playlistCoverExtension = updatedPlaylist.imageData
-      ? getFileExtensionFromMimeType(updatedPlaylist.imageType || "image/jpeg")
-      : undefined;
-
-    const playlistEntry = {
-      playlist: {
-        id: updatedPlaylist.id,
-        title: updatedPlaylist.title,
-        description: updatedPlaylist.description,
-        rev: updatedPlaylist.rev,
-        imageMimeType: updatedPlaylist.imageType || undefined,
-        imageFilePath: playlistCoverExtension
-          ? `data/playlist-cover${playlistCoverExtension}`
-          : undefined,
-        safeFilename: createSafeFileName("", updatedPlaylist.title),
-        bgFilterEnabled: updatedPlaylist.bgFilterEnabled,
-        bgFilterBlur: updatedPlaylist.bgFilterBlur,
-        bgFilterContrast: updatedPlaylist.bgFilterContrast,
-        bgFilterBrightness: updatedPlaylist.bgFilterBrightness,
-        coverFilterEnabled: updatedPlaylist.coverFilterEnabled,
-        coverFilterBlur: updatedPlaylist.coverFilterBlur,
-      },
-      songs: songsWithSHA.map((song) => {
-        const songImageExt = song.imageData
-          ? getFileExtensionFromMimeType(song.imageType || "image/jpeg")
-          : undefined;
-        const safeName = song.originalFilename
-          ? sanitizeFilename(song.originalFilename)
-          : "";
-        const safeBase = safeName.replace(/\.[^.]+$/, "");
-        return {
-          id: song.id,
-          title: song.title,
-          artist: song.artist,
-          album: song.album,
-          duration: song.duration || 0,
-          originalFilename: song.originalFilename || "",
-          safeFilename: safeName,
-          fileSize: song.fileSize || song.audioData?.byteLength || 0,
-          mimeType: song.mimeType || "audio/mpeg",
-          sha: song.sha,
-          imageMimeType: song.imageType || undefined,
-          imageFilePath: songImageExt
-            ? `data/${safeBase}-cover${songImageExt}`
-            : undefined,
-        };
-      }),
-    };
-
-    // add playlistz.js data file to root folder
-    rootFolder!.file("playlistz.js", generatePlaylistzJs([playlistEntry]));
-
-    // add playlist cover image to data folder if it exists
-    if (
-      options.includeImages &&
-      updatedPlaylist.imageData &&
-      updatedPlaylist.imageType
-    ) {
-      const extension = getFileExtensionFromMimeType(updatedPlaylist.imageType);
-      dataFolder!.file(`playlist-cover${extension}`, updatedPlaylist.imageData);
-    }
-
-    // add all audio files to data folder
-    const songFileNames: string[] = [];
-
-    for (const song of songsWithSHA) {
-      if (song.audioData && song.originalFilename) {
-        // create safe filename for zip while keeping original in metadata
-        const safeFileName = sanitizeFilename(song.originalFilename);
-        const baseName = safeFileName.replace(/\.[^.]+$/, "");
-
-        dataFolder!.file(safeFileName, song.audioData);
-        songFileNames.push(safeFileName);
-
-        // add song cover art if it exists
-        if (options.includeImages && song.imageData && song.imageType) {
-          const imageExtension = getFileExtensionFromMimeType(song.imageType);
-          const imageFileName = `${baseName}-cover${imageExtension}`;
-          dataFolder!.file(imageFileName, song.imageData);
-        }
-
-        // add individual song metadata
-        // metadata is now included in the main playlist.json file
-      }
-    }
-
-    // generate m3u8 playlist file in data folder
-    if (options.generateM3U) {
-      const m3uContent = generateM3UContent(
-        updatedPlaylist,
-        songsWithSHA,
-        songFileNames,
-        getFileExtensionFromMimeType
-      );
-      dataFolder!.file(
-        `${createSafeFileName("", updatedPlaylist.title)}.m3u8`,
-        m3uContent
-      );
-    }
-
-    // generate static shell files in root folder
-    if (options.includeHTML) {
-      rootFolder!.file("index.html", generateIndexHtml());
-      rootFolder!.file("sw.js", generateSwJs());
-
-      // include the app bundle - try the script tag src first, then fall back to known path
-      try {
-        const scriptEl = Array.from(document.querySelectorAll("script[src]")).find(
-          (el) => (el as HTMLScriptElement).src.includes("freqhole-playlistz.js")
-        ) as HTMLScriptElement | undefined;
-        const bundleUrl = scriptEl?.src ?? `${window.location.origin}/freqhole-playlistz.js`;
-        const appBundleResponse = await fetch(bundleUrl);
-        if (appBundleResponse.ok) {
-          rootFolder!.file("freqhole-playlistz.js", await appBundleResponse.arrayBuffer());
-        } else {
-          console.warn("could not fetch freqhole-playlistz.js for zip bundle:", appBundleResponse.status);
-        }
-      } catch (err) {
-        console.warn("could not include freqhole-playlistz.js in zip:", err);
-      }
-
-      // include the cli bundle
-      try {
-        const cliResponse = await fetch(`${window.location.origin}/freqhole-playlistz-cli.mjs`);
-        if (cliResponse.ok) {
-          rootFolder!.file("freqhole-playlistz-cli.mjs", await cliResponse.arrayBuffer());
-        } else {
-          console.warn("could not fetch freqhole-playlistz-cli.mjs for zip bundle:", cliResponse.status);
-        }
-      } catch (err) {
-        console.warn("could not include freqhole-playlistz-cli.mjs in zip:", err);
-      }
-    }
-
-    // generate and download the zip file
-    const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${rootFolderName}.zip`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // clean up the url
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    console.error("Error downloading playlist:", error);
-    // Preserve original error message if it's descriptive
-    if (
-      error instanceof Error &&
-      (error.message.includes("ZIP generation failed") ||
-        error.message.includes("Database error") ||
-        error.message.includes("SHA calculation failed"))
-    ) {
-      throw error;
-    }
-    throw new Error("Failed to download playlist");
-  }
-}
-
-/**
-/**
- * Creates a safe filename from artist and title
- */
-function createSafeFileName(artist: string, title: string): string {
-  const combined =
-    artist && title ? `${artist} - ${title}` : title || artist || "untitled";
-  return combined
-    .replace(/[<>:"/\\|?*]/g, "_")
-    .replace(/\s+/g, "_")
-    .toLowerCase()
-    .substring(0, 100); // Limit length
-}
-
-/**
- * Gets file extension from MIME type
- */
-function getFileExtensionFromMimeType(mimeType: string): string {
-  const extensions: { [key: string]: string } = {
-    "audio/mpeg": ".mp3",
-    "audio/mp4": ".m4a",
-    "audio/wav": ".wav",
-    "audio/flac": ".flac",
-    "audio/ogg": ".ogg",
-    "audio/webm": ".webm",
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/gif": ".gif",
-    "image/webp": ".webp",
-  };
-
-  return extensions[mimeType] || ".bin";
-}
-
-/**
- * Parses an uploaded ZIP file and extracts playlist data
- */
+// parses an uploaded zip file and extracts playlist data.
+// returns metadata and song objects with inline audioData for the caller to store.
 export async function parsePlaylistZip(file: File): Promise<{
   playlist: Omit<Playlist, "id" | "createdAt" | "updatedAt">;
   songs: Omit<Song, "id" | "createdAt" | "updatedAt" | "playlistId">[];
@@ -335,12 +356,10 @@ export async function parsePlaylistZip(file: File): Promise<{
     const songs: Omit<Song, "id" | "createdAt" | "updatedAt" | "playlistId">[] =
       [];
 
-    // Parse playlist metadata - try new format first, then fall back to old format
+    // parse playlist metadata - try new format first, then fall back to old
     let playlistData: ImportedPlaylistData | null = null;
-    // Try with root folder first
     let playlistJsonFiles = zipContent.file(/^[^/]+\/data\/playlist\.json$/i);
     if (playlistJsonFiles.length === 0) {
-      // Fall back to direct data folder
       const playlistJsonFile = zipContent.file("data/playlist.json");
       if (playlistJsonFile) {
         playlistJsonFiles = [playlistJsonFile];
@@ -352,7 +371,6 @@ export async function parsePlaylistZip(file: File): Promise<{
       playlistData = JSON.parse(playlistContent);
       playlistInfo = playlistData?.playlist || null;
     } else {
-      // Fall back to old format
       const playlistInfoFile = zipContent.file("playlist-info.json");
       if (playlistInfoFile) {
         const infoContent = await playlistInfoFile.async("string");
@@ -360,7 +378,7 @@ export async function parsePlaylistZip(file: File): Promise<{
       }
     }
 
-    // Find playlist cover image - try data folder first, then root
+    // find playlist cover image
     let coverFiles = zipContent.file(
       /^[^/]+\/data\/playlist-cover\.(jpg|jpeg|png|gif|webp)$/i
     );
@@ -378,21 +396,19 @@ export async function parsePlaylistZip(file: File): Promise<{
       playlistImageData = await coverFiles[0]!.async("arraybuffer");
       playlistImageType = getMimeTypeFromExtension(coverFiles[0]!.name);
     } else if (playlistData && playlistData.playlist?.imageBase64) {
-      // Use embedded base64 image from playlist.json
       playlistImageData = base64ToArrayBuffer(
         playlistData.playlist.imageBase64
       );
       playlistImageType = playlistData.playlist.imageMimeType || undefined;
     }
 
-    // Parse M3U file if present to get song order and metadata
+    // parse m3u file if present (for song order metadata)
     const m3uFiles = zipContent.file(/\.m3u8?$/i);
     if (m3uFiles.length > 0) {
       await m3uFiles[0]!.async("string");
     }
 
-    // Extract songs from data folder first, then fall back to root directory
-    // Account for root playlist folder in ZIP structure
+    // extract audio files from data folder or root
     let songFiles = zipContent.file(
       /^[^/]+\/data\/[^/]+\.(mp3|m4a|wav|flac|ogg|webm)$/i
     );
@@ -410,7 +426,7 @@ export async function parsePlaylistZip(file: File): Promise<{
       const fileName = songFile.name.split("/").pop() || "";
       const baseName = fileName.replace(/\.[^.]+$/, "");
 
-      // Get metadata from playlist.json if available, otherwise try individual metadata file
+      // look up metadata from playlist.json
       let songMetadata: Partial<ImportedSongMetadata> = {};
       if (playlistData && playlistData.songs) {
         const songData = playlistData.songs.find(
@@ -430,7 +446,6 @@ export async function parsePlaylistZip(file: File): Promise<{
           };
         }
       } else {
-        // Fall back to old individual metadata files
         const metadataFile = zipContent.file(`${baseName}-metadata.json`);
         if (metadataFile) {
           const metadataContent = await metadataFile.async("string");
@@ -438,7 +453,7 @@ export async function parsePlaylistZip(file: File): Promise<{
         }
       }
 
-      // Try to find corresponding cover image - first check for embedded base64, then files
+      // find cover image for this song
       let imageData: ArrayBuffer | undefined;
       let imageType: string | undefined;
 
@@ -446,7 +461,6 @@ export async function parsePlaylistZip(file: File): Promise<{
         imageData = base64ToArrayBuffer(songMetadata.imageBase64);
         imageType = songMetadata.imageMimeType || undefined;
       } else {
-        // Check for image files in data folder first, then root
         let imageFiles = zipContent.file(
           new RegExp(
             `^[^/]+/data/${baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-cover\\.(jpg|jpeg|png|gif|webp)$`,
@@ -475,7 +489,6 @@ export async function parsePlaylistZip(file: File): Promise<{
         }
       }
 
-      // Extract basic info from filename if no metadata
       const [artist, title] = baseName.includes(" - ")
         ? baseName.split(" - ", 2)
         : ["Unknown Artist", baseName];
@@ -497,19 +510,17 @@ export async function parsePlaylistZip(file: File): Promise<{
       songs.push(song);
     }
 
-    // Create playlist object
-    const playlist: Omit<Playlist, "id" | "createdAt" | "updatedAt"> = {
+    const resultPlaylist: Omit<Playlist, "id" | "createdAt" | "updatedAt"> = {
       title: playlistInfo?.title || file.name.replace(/\.zip$/i, ""),
       description: playlistInfo?.description || "",
       imageData: playlistImageData,
       imageType: playlistImageType,
-      songIds: [], // Will be populated when songs are saved
+      songIds: [],
     };
 
-    return { playlist, songs };
+    return { playlist: resultPlaylist, songs };
   } catch (error) {
-    console.error("Error parsing playlist ZIP:", error);
-    // Preserve original error message if it's descriptive
+    console.error("error parsing playlist zip:", error);
     if (
       error instanceof Error &&
       (error.message.includes("Corrupted ZIP") ||
@@ -522,9 +533,7 @@ export async function parsePlaylistZip(file: File): Promise<{
   }
 }
 
-/**
- * Gets MIME type from file extension
- */
+// gets mime type from file extension
 function getMimeTypeFromExtension(fileName: string): string {
   const extension = fileName.toLowerCase().split(".").pop();
   const mimeTypes: { [key: string]: string } = {
@@ -544,9 +553,7 @@ function getMimeTypeFromExtension(fileName: string): string {
   return mimeTypes[extension || ""] || "application/octet-stream";
 }
 
-/**
- * Helper function to convert base64 to ArrayBuffer
- */
+// converts a base64 string to an ArrayBuffer
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
@@ -556,9 +563,7 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-/**
- * Sanitizes filenames for better cross-platform compatibility
- */
+// sanitizes filenames for cross-platform compatibility
 function sanitizeFilename(filename: string): string {
   return (
     filename
@@ -572,4 +577,3 @@ function sanitizeFilename(filename: string): string {
       .trim()
   );
 }
-

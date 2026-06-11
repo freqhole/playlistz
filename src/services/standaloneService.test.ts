@@ -1,20 +1,73 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockSong } from "../utils/mockData.js";
 
-// Mock dependencies using factory pattern
+// mock dependencies using factory pattern
 vi.mock("./indexedDBService.js", () => ({
-  setupDB: vi.fn(),
-  mutateAndNotify: vi.fn(),
+  saveSetting: vi.fn().mockResolvedValue(undefined),
+  loadSetting: vi.fn().mockResolvedValue(null),
   DB_NAME: "musicPlaylistDB",
   PLAYLISTS_STORE: "playlists",
   SONGS_STORE: "songs",
+}));
+
+vi.mock("./automergeRepo.js", () => ({
+  createPlaylistDoc: vi.fn().mockReturnValue({
+    docId: "automerge:test123",
+    handle: {
+      change: vi.fn(),
+      doc: vi.fn().mockReturnValue({}),
+    },
+  }),
+  findPlaylistDoc: vi.fn().mockReturnValue({
+    change: vi.fn(),
+    doc: vi.fn().mockReturnValue({}),
+  }),
+}));
+
+vi.mock("./docIndexService.js", () => ({
+  addDocIndexEntry: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./playlistDocService.js", () => ({
+  docToPlaylist: vi.fn().mockReturnValue({
+    id: "automerge:test123",
+    title: "test",
+    songIds: [],
+    createdAt: 0,
+    updatedAt: 0,
+  }),
+  setSongCoverImage: vi.fn().mockResolvedValue(undefined),
+  setPlaylistCoverImage: vi.fn().mockResolvedValue(undefined),
+  getSongsForPlaylist: vi.fn().mockResolvedValue([]),
+  getSongById: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("freqhole-api-client/playlistz", () => ({
+  emptyPlaylistDoc: vi.fn().mockReturnValue({}),
+  upsertSong: vi.fn(),
+  setMetadata: vi.fn(),
+  parsePlaylistDoc: vi.fn().mockReturnValue({
+    title: "",
+    order: [],
+    songs: {},
+    images: [],
+    description: "",
+  }),
+}));
+
+vi.mock("freqhole-api-client/storage", () => ({
+  getBlobMetadata: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("./streamingAudioService.js", () => ({
+  downloadSongIfNeeded: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("./songReactivity.js", () => ({
   triggerSongUpdateWithOptions: vi.fn(),
 }));
 
-// Import after mocks are set up
+// import after mocks are set up
 import {
   standaloneLoadingProgress,
   setStandaloneLoadingProgress,
@@ -23,10 +76,17 @@ import {
   loadStandaloneSongAudioData,
   songNeedsAudioData,
   clearStandaloneLoadingProgress,
+  registerStandalonePath,
+  clearStandaloneRegistry,
 } from "./standaloneService.js";
-import { setupDB, mutateAndNotify } from "./indexedDBService.js";
+import { loadSetting, saveSetting } from "./indexedDBService.js";
+import { createPlaylistDoc, findPlaylistDoc } from "./automergeRepo.js";
+import { addDocIndexEntry } from "./docIndexService.js";
+import { getSongsForPlaylist, getSongById } from "./playlistDocService.js";
+import { getBlobMetadata } from "freqhole-api-client/storage";
+import { downloadSongIfNeeded } from "./streamingAudioService.js";
 
-// Mock solid-js
+// mock solid-js
 vi.mock("solid-js", () => {
   let currentProgress: any = null;
 
@@ -40,41 +100,39 @@ vi.mock("solid-js", () => {
   };
 });
 
-// Mock global objects
+// mock global objects
 global.fetch = vi.fn();
 
 describe("Standalone Service", () => {
-  let mockDB: any;
-  let mockTransaction: any;
-  let mockStore: any;
-
   beforeEach(() => {
     vi.clearAllMocks();
+    clearStandaloneRegistry();
 
-    mockStore = {
-      get: vi.fn(),
-      put: vi.fn(),
-      getAll: vi.fn(),
-      delete: vi.fn(),
-    };
+    // default: no existing setting (first boot)
+    vi.mocked(loadSetting).mockResolvedValue(null);
+    vi.mocked(saveSetting).mockResolvedValue(undefined);
+    vi.mocked(getSongsForPlaylist).mockResolvedValue([]);
+    vi.mocked(getSongById).mockResolvedValue(null);
+    vi.mocked(getBlobMetadata).mockResolvedValue(null);
+    vi.mocked(downloadSongIfNeeded).mockResolvedValue(true);
+    vi.mocked(createPlaylistDoc).mockReturnValue({
+      docId: "automerge:test123",
+      handle: { change: vi.fn(), doc: vi.fn().mockReturnValue({}) },
+    } as any);
+    vi.mocked(findPlaylistDoc).mockReturnValue({
+      change: vi.fn(),
+      doc: vi.fn().mockReturnValue({}),
+    } as any);
+    vi.mocked(addDocIndexEntry).mockResolvedValue(undefined);
 
-    mockTransaction = {
-      objectStore: vi.fn().mockReturnValue(mockStore),
-      done: Promise.resolve(),
-    };
-
-    mockDB = {
-      transaction: vi.fn().mockReturnValue(mockTransaction),
-      get: vi.fn(),
-      put: vi.fn(),
-      getAll: vi.fn(),
-    };
-
-    vi.mocked(setupDB).mockResolvedValue(mockDB);
-    vi.mocked(mutateAndNotify).mockResolvedValue(undefined);
-
-    // Reset progress
+    // reset progress
     setStandaloneLoadingProgress(null);
+
+    // default window location to https
+    Object.defineProperty(window, "location", {
+      value: { protocol: "https:", origin: "https://localhost:3000" },
+      writable: true,
+    });
   });
 
   afterEach(() => {
@@ -142,7 +200,6 @@ describe("Standalone Service", () => {
           id: "standalone-playlist",
           title: "Standalone Playlist",
           description: "A test playlist",
-          songCount: 2,
           rev: 1,
         },
         songs: [
@@ -175,26 +232,68 @@ describe("Standalone Service", () => {
       };
     });
 
-    it("should initialize standalone playlist successfully", async () => {
+    it("should initialize standalone playlist successfully on first boot", async () => {
+      // first boot: no existing setting
+      vi.mocked(loadSetting).mockResolvedValue(null);
+
       await initializeStandalonePlaylist(mockPlaylistData, mockCallbacks);
 
-      expect(setupDB).toHaveBeenCalled();
+      expect(loadSetting).toHaveBeenCalledWith("standalone:standalone-playlist");
+      expect(createPlaylistDoc).toHaveBeenCalled();
+      expect(addDocIndexEntry).toHaveBeenCalled();
+      expect(saveSetting).toHaveBeenCalledWith(
+        "standalone:standalone-playlist",
+        expect.objectContaining({ rev: 1, docId: "automerge:test123" })
+      );
+      expect(mockCallbacks.setSelectedPlaylist).toHaveBeenCalled();
+      expect(mockCallbacks.setPlaylistSongs).toHaveBeenCalled();
+    });
+
+    it("should use existing doc when rev is unchanged", async () => {
+      vi.mocked(loadSetting).mockResolvedValue({
+        rev: 1,
+        docId: "automerge:existing",
+      });
+
+      await initializeStandalonePlaylist(mockPlaylistData, mockCallbacks);
+
+      expect(createPlaylistDoc).not.toHaveBeenCalled();
+      expect(saveSetting).not.toHaveBeenCalled();
+      expect(mockCallbacks.setSelectedPlaylist).toHaveBeenCalled();
+      expect(mockCallbacks.setPlaylistSongs).toHaveBeenCalled();
+    });
+
+    it("should update existing doc when rev increases", async () => {
+      vi.mocked(loadSetting).mockResolvedValue({
+        rev: 0,
+        docId: "automerge:existing",
+      });
+
+      await initializeStandalonePlaylist(mockPlaylistData, mockCallbacks);
+
+      expect(createPlaylistDoc).not.toHaveBeenCalled();
+      expect(saveSetting).toHaveBeenCalledWith(
+        "standalone:standalone-playlist",
+        expect.objectContaining({ rev: 1, docId: "automerge:existing" })
+      );
       expect(mockCallbacks.setSelectedPlaylist).toHaveBeenCalled();
       expect(mockCallbacks.setPlaylistSongs).toHaveBeenCalled();
     });
 
     it("should handle database errors gracefully", async () => {
-      vi.mocked(setupDB).mockRejectedValue(new Error("Database setup failed"));
+      vi.mocked(loadSetting).mockRejectedValue(
+        new Error("Database setup failed")
+      );
 
       await initializeStandalonePlaylist(mockPlaylistData, mockCallbacks);
 
       expect(mockCallbacks.setError).toHaveBeenCalledWith(
-        expect.stringContaining("Failed to load")
+        expect.stringContaining("failed to load")
       );
     });
 
     it("should handle invalid playlist data", async () => {
-      const invalidData = {} as any; // empty object instead of null
+      const invalidData = {} as any;
 
       await initializeStandalonePlaylist(invalidData, mockCallbacks);
 
@@ -204,12 +303,22 @@ describe("Standalone Service", () => {
     it("should handle missing callbacks gracefully", async () => {
       const partialCallbacks = {
         setSelectedPlaylist: vi.fn(),
-        // Missing other callbacks
+        // missing other callbacks
       };
 
       await expect(
         initializeStandalonePlaylist(mockPlaylistData, partialCallbacks as any)
       ).rejects.toThrow("callbacks.setError is not a function");
+    });
+
+    it("should populate songs with standaloneFilePath", async () => {
+      vi.mocked(loadSetting).mockResolvedValue(null);
+
+      await initializeStandalonePlaylist(mockPlaylistData, mockCallbacks);
+
+      const calledSongs = mockCallbacks.setPlaylistSongs.mock.calls[0][0];
+      expect(calledSongs[0].standaloneFilePath).toBe("data/song1.mp3");
+      expect(calledSongs[1].standaloneFilePath).toBe("data/song2.mp3");
     });
   });
 
@@ -221,6 +330,8 @@ describe("Standalone Service", () => {
         setSidebarCollapsed: vi.fn(),
         setError: vi.fn(),
       };
+
+      vi.mocked(loadSetting).mockResolvedValue(null);
 
       const entry = (id: string) => ({
         playlist: {
@@ -256,130 +367,94 @@ describe("Standalone Service", () => {
 
   describe("loadStandaloneSongAudioData", () => {
     beforeEach(() => {
-      global.fetch = vi.fn();
+      clearStandaloneRegistry();
     });
 
-    it("should load audio data for song successfully", async () => {
-      const songId = "test-song";
-      const mockSong = {
-        id: songId,
-        title: "Test Song",
-        originalFilename: "test.mp3",
-        standaloneFilePath: "data/test.mp3",
-      };
+    it("should return true for file:// protocol", async () => {
+      Object.defineProperty(window, "location", {
+        value: { protocol: "file:" },
+        writable: true,
+      });
 
-      mockDB.get.mockResolvedValue(mockSong);
+      const result = await loadStandaloneSongAudioData("any-song");
+      expect(result).toBe(true);
+      expect(downloadSongIfNeeded).not.toHaveBeenCalled();
+    });
 
-      const mockAudioData = new ArrayBuffer(2000);
-      vi.mocked(fetch).mockResolvedValue({
-        ok: true,
-        arrayBuffer: vi.fn().mockResolvedValue(mockAudioData),
-      } as any);
+    it("should return false when song has no registered path", async () => {
+      const consoleSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
 
-      const result = await loadStandaloneSongAudioData(songId);
+      const result = await loadStandaloneSongAudioData("unregistered-song");
 
-      expect(setupDB).toHaveBeenCalled();
-      expect(mockDB.get).toHaveBeenCalledWith("songs", songId);
+      expect(result).toBe(false);
+      expect(downloadSongIfNeeded).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+
+    it("should load audio data for registered song successfully", async () => {
+      registerStandalonePath("test-song", "data/test.mp3");
+      vi.mocked(getSongById).mockResolvedValue(
+        createMockSong({ id: "test-song", sha: "abc123" })
+      );
+      vi.mocked(downloadSongIfNeeded).mockResolvedValue(true);
+
+      const result = await loadStandaloneSongAudioData("test-song");
+
+      expect(downloadSongIfNeeded).toHaveBeenCalled();
       expect(result).toBe(true);
     });
 
-    it("should handle song not found", async () => {
-      const songId = "non-existent-song";
-      mockDB.get.mockResolvedValue(undefined);
+    it("should handle fetch errors gracefully", async () => {
+      registerStandalonePath("test-song", "data/test.mp3");
+      vi.mocked(downloadSongIfNeeded).mockRejectedValue(
+        new Error("Network error")
+      );
 
-      const result = await loadStandaloneSongAudioData(songId);
-
-      expect(result).toBe(false);
-    });
-
-    it("should handle audio loading errors", async () => {
-      const songId = "test-song";
-      const mockSong = {
-        id: songId,
-        title: "Test Song",
-        originalFilename: "test.mp3",
-        standaloneFilePath: "data/test.mp3",
-      };
-
-      mockDB.get.mockResolvedValue(mockSong);
-      vi.mocked(fetch).mockRejectedValue(new Error("Network error"));
-
-      const result = await loadStandaloneSongAudioData(songId);
+      const result = await loadStandaloneSongAudioData("test-song");
 
       expect(result).toBe(false);
     });
 
     it("should handle database errors", async () => {
-      const songId = "test-song";
-      vi.mocked(setupDB).mockRejectedValue(new Error("Database error"));
+      registerStandalonePath("test-song", "data/test.mp3");
+      vi.mocked(getSongById).mockRejectedValue(new Error("Database error"));
 
-      const result = await loadStandaloneSongAudioData(songId);
+      const result = await loadStandaloneSongAudioData("test-song");
 
       expect(result).toBe(false);
+    });
+
+    it("should skip loading for file:// protocol without checking path", async () => {
+      Object.defineProperty(window, "location", {
+        value: { protocol: "file:" },
+        writable: true,
+      });
+
+      const result = await loadStandaloneSongAudioData("file-protocol-song");
+
+      expect(result).toBe(true);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("should build minimal song object when getSongById returns null", async () => {
+      registerStandalonePath("orphan-song", "data/orphan.mp3");
+      vi.mocked(getSongById).mockResolvedValue(null);
+      vi.mocked(downloadSongIfNeeded).mockResolvedValue(true);
+
+      const result = await loadStandaloneSongAudioData("orphan-song");
+
+      expect(downloadSongIfNeeded).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "orphan-song" }),
+        "data/orphan.mp3"
+      );
+      expect(result).toBe(true);
     });
   });
 
   describe("songNeedsAudioData", () => {
-    beforeEach(() => {
-      global.fetch = vi.fn();
-    });
-
-    it("should return true for song without audio data", async () => {
-      const mockSong = createMockSong({
-        id: "test-song",
-        title: "test song",
-      });
-
-      mockDB.get.mockResolvedValue(mockSong);
-
-      const result = await songNeedsAudioData(mockSong);
-
-      expect(result).toBe(true);
-    });
-
-    it("should return false for song with audio data", async () => {
-      const mockSong = createMockSong({
-        id: "test-song",
-        title: "test song",
-        audioData: new ArrayBuffer(1024),
-      });
-
-      mockDB.get.mockResolvedValue(mockSong);
-
-      const result = await songNeedsAudioData(mockSong);
-
-      expect(result).toBe(false);
-    });
-
-    it("should return true for song not in database", async () => {
-      const mockSong = createMockSong({
-        id: "non-existent-song",
-        title: "non-existent song",
-      });
-
-      mockDB.get.mockResolvedValue(undefined);
-
-      const result = await songNeedsAudioData(mockSong);
-
-      expect(result).toBe(true);
-    });
-
-    it("should handle database errors gracefully", async () => {
-      const mockSong = createMockSong({
-        id: "test-song",
-        title: "test song",
-      });
-
-      mockDB.get.mockRejectedValue(new Error("database error"));
-
-      const result = await songNeedsAudioData(mockSong);
-
-      expect(result).toBe(true);
-    });
-
-    it("should return false for file protocol", async () => {
-      // Mock window.location.protocol
-      const originalLocation = window.location;
+    it("should return false for file:// protocol", async () => {
       Object.defineProperty(window, "location", {
         value: { protocol: "file:" },
         writable: true,
@@ -387,27 +462,88 @@ describe("Standalone Service", () => {
 
       const mockSong = createMockSong({
         id: "test-song",
-        title: "test song",
-        standaloneFilePath: "file:///path/to/song.mp3",
+        sha: "some-sha",
       });
-
-      mockDB.get.mockResolvedValue(mockSong);
 
       const result = await songNeedsAudioData(mockSong);
 
       expect(result).toBe(false);
+      expect(getBlobMetadata).not.toHaveBeenCalled();
+    });
 
-      // Restore original location
-      Object.defineProperty(window, "location", {
-        value: originalLocation,
-        writable: true,
+    it("should return true for song without sha", async () => {
+      const mockSong = createMockSong({
+        id: "test-song",
+        sha: undefined,
       });
+
+      const result = await songNeedsAudioData(mockSong as any);
+
+      expect(result).toBe(true);
+      expect(getBlobMetadata).not.toHaveBeenCalled();
+    });
+
+    it("should return false for song with blob in store", async () => {
+      vi.mocked(getBlobMetadata).mockResolvedValue({ size: 1000 } as any);
+
+      const mockSong = createMockSong({
+        id: "test-song",
+        sha: "sha-in-store",
+      });
+
+      const result = await songNeedsAudioData(mockSong);
+
+      expect(getBlobMetadata).toHaveBeenCalledWith("sha-in-store");
+      expect(result).toBe(false);
+    });
+
+    it("should return true for song not in blob store", async () => {
+      vi.mocked(getBlobMetadata).mockResolvedValue(null);
+
+      const mockSong = createMockSong({
+        id: "test-song",
+        sha: "missing-sha",
+      });
+
+      const result = await songNeedsAudioData(mockSong);
+
+      expect(getBlobMetadata).toHaveBeenCalledWith("missing-sha");
+      expect(result).toBe(true);
+    });
+
+    it("should return true on blob store error", async () => {
+      vi.mocked(getBlobMetadata).mockRejectedValue(
+        new Error("storage error")
+      );
+
+      const mockSong = createMockSong({
+        id: "test-song",
+        sha: "error-sha",
+      });
+
+      const result = await songNeedsAudioData(mockSong);
+
+      expect(result).toBe(true);
+    });
+
+    it("should use sha256 field as fallback when sha is absent", async () => {
+      vi.mocked(getBlobMetadata).mockResolvedValue(null);
+
+      const mockSong = {
+        ...createMockSong({ id: "test-song" }),
+        sha: undefined,
+        sha256: "fallback-sha",
+      };
+
+      const result = await songNeedsAudioData(mockSong as any);
+
+      expect(getBlobMetadata).toHaveBeenCalledWith("fallback-sha");
+      expect(result).toBe(true);
     });
   });
 
   describe("clearStandaloneLoadingProgress", () => {
     it("should clear loading progress", () => {
-      // Set some progress first
       setStandaloneLoadingProgress({
         current: 5,
         total: 10,
@@ -417,18 +553,15 @@ describe("Standalone Service", () => {
 
       expect(standaloneLoadingProgress()).not.toBeNull();
 
-      // Clear progress
       clearStandaloneLoadingProgress();
 
       expect(standaloneLoadingProgress()).toBeNull();
     });
 
     it("should handle clearing when already null", () => {
-      // Ensure it's already null
       setStandaloneLoadingProgress(null);
       expect(standaloneLoadingProgress()).toBeNull();
 
-      // Should not throw when clearing already null progress
       expect(() => {
         clearStandaloneLoadingProgress();
       }).not.toThrow();
@@ -438,27 +571,41 @@ describe("Standalone Service", () => {
   });
 
   describe("Integration with other services", () => {
-    it("should properly integrate with setupDB", async () => {
-      const songId = "integration-song";
-      const mockSong = {
-        id: songId,
-        title: "Integration Song",
-        originalFilename: "integration.mp3",
-        standaloneFilePath: "data/integration.mp3",
+    it("should properly integrate with doc creation on first boot", async () => {
+      vi.mocked(loadSetting).mockResolvedValue(null);
+
+      const mockCallbacks = {
+        setSelectedPlaylist: vi.fn(),
+        setPlaylistSongs: vi.fn(),
+        setSidebarCollapsed: vi.fn(),
+        setError: vi.fn(),
       };
 
-      mockDB.get.mockResolvedValue(mockSong);
+      const playlistData = {
+        playlist: {
+          id: "integration-pl",
+          title: "integration playlist",
+          description: "test",
+          rev: 0,
+        },
+        songs: [
+          {
+            id: "integration-song",
+            title: "integration song",
+            artist: "artist",
+            album: "album",
+            duration: 180,
+            originalFilename: "integration.mp3",
+            fileSize: 1000000,
+          },
+        ],
+      };
 
-      const mockAudioData = new ArrayBuffer(2000);
-      vi.mocked(fetch).mockResolvedValue({
-        ok: true,
-        arrayBuffer: vi.fn().mockResolvedValue(mockAudioData),
-      } as any);
+      await initializeStandalonePlaylist(playlistData, mockCallbacks);
 
-      const result = await loadStandaloneSongAudioData(songId);
-
-      expect(setupDB).toHaveBeenCalled();
-      expect(result).toBe(true);
+      expect(createPlaylistDoc).toHaveBeenCalled();
+      expect(getSongsForPlaylist).toHaveBeenCalledWith("automerge:test123");
+      expect(mockCallbacks.setSelectedPlaylist).toHaveBeenCalled();
     });
 
     it("should handle progress updates correctly", () => {
@@ -486,7 +633,6 @@ describe("Standalone Service", () => {
   describe("Error Handling and Edge Cases", () => {
     it("should handle malformed playlist data", async () => {
       const malformedData = {
-        // Missing playlist object
         songs: [],
       };
 
@@ -503,68 +649,29 @@ describe("Standalone Service", () => {
     });
 
     it("should handle very large song datasets", async () => {
-      const songId = "large-song";
-      const largeSong = {
-        id: songId,
-        title: "Large Song",
-        originalFilename: "large.mp3",
-        fileSize: 100 * 1024 * 1024, // 100MB
-        standaloneFilePath: "data/large.mp3",
-      };
+      registerStandalonePath("large-song", "data/large.mp3");
+      vi.mocked(downloadSongIfNeeded).mockResolvedValue(true);
 
-      mockDB.get.mockResolvedValue(largeSong);
-
-      const largeAudioData = new ArrayBuffer(100 * 1024 * 1024);
-      vi.mocked(fetch).mockResolvedValue({
-        ok: true,
-        arrayBuffer: vi.fn().mockResolvedValue(largeAudioData),
-      } as any);
-
-      const result = await loadStandaloneSongAudioData(songId);
+      const result = await loadStandaloneSongAudioData("large-song");
 
       expect(result).toBe(true);
     });
 
     it("should handle network timeouts gracefully", async () => {
-      const songId = "timeout-song";
-      const mockSong = {
-        id: songId,
-        title: "Timeout Song",
-        originalFilename: "timeout.mp3",
-        standaloneFilePath: "data/timeout.mp3",
-      };
+      registerStandalonePath("timeout-song", "data/timeout.mp3");
+      vi.mocked(downloadSongIfNeeded).mockRejectedValue(
+        new Error("Network timeout")
+      );
 
-      mockDB.get.mockResolvedValue(mockSong);
-
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Network timeout")), 100);
-      });
-
-      vi.mocked(fetch).mockReturnValue(timeoutPromise as any);
-
-      const result = await loadStandaloneSongAudioData(songId);
+      const result = await loadStandaloneSongAudioData("timeout-song");
 
       expect(result).toBe(false);
     });
 
     it("should handle concurrent song loading", async () => {
       const songIds = ["song1", "song2", "song3"];
-      const mockSongs = songIds.map((id) => ({
-        id,
-        title: `Song ${id}`,
-        originalFilename: `${id}.mp3`,
-        standaloneFilePath: `data/${id}.mp3`,
-      }));
-
-      songIds.forEach((_, index) => {
-        mockDB.get.mockResolvedValueOnce(mockSongs[index]);
-      });
-
-      const mockAudioData = new ArrayBuffer(2000);
-      vi.mocked(fetch).mockResolvedValue({
-        ok: true,
-        arrayBuffer: vi.fn().mockResolvedValue(mockAudioData),
-      } as any);
+      songIds.forEach((id) => registerStandalonePath(id, `data/${id}.mp3`));
+      vi.mocked(downloadSongIfNeeded).mockResolvedValue(true);
 
       const promises = songIds.map((songId) =>
         loadStandaloneSongAudioData(songId)
@@ -572,7 +679,6 @@ describe("Standalone Service", () => {
       const results = await Promise.all(promises);
 
       expect(results.every((result) => result === true)).toBe(true);
-      expect(fetch).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -580,7 +686,6 @@ describe("Standalone Service", () => {
     it("should handle rapid progress updates efficiently", async () => {
       const startTime = performance.now();
 
-      // Simulate rapid progress updates
       for (let i = 0; i < 1000; i++) {
         setStandaloneLoadingProgress({
           current: i,
@@ -593,28 +698,18 @@ describe("Standalone Service", () => {
       const endTime = performance.now();
       const duration = endTime - startTime;
 
-      // Should complete quickly (less than 50ms on most systems)
       expect(duration).toBeLessThan(50);
       expect(standaloneLoadingProgress()?.current).toBe(999);
     });
 
     it("should handle audio data checking efficiently", async () => {
+      vi.mocked(getBlobMetadata).mockResolvedValue(null);
+
       const startTime = performance.now();
 
-      // Test multiple songs
       const songs = Array.from({ length: 100 }, (_, i) =>
-        createMockSong({
-          id: `song${i}`,
-          title: `song ${i}`,
-        })
+        createMockSong({ id: `song${i}`, title: `song ${i}`, sha: `sha-${i}` })
       );
-
-      // Mock some songs with audio data, some without
-      for (let i = 0; i < 100; i++) {
-        const songWithAudio =
-          i % 2 === 0 ? { audioData: new ArrayBuffer(1000) } : {};
-        mockDB.get.mockResolvedValueOnce({ ...songs[i], ...songWithAudio });
-      }
 
       const promises = songs.map((song) => songNeedsAudioData(song));
       await Promise.all(promises);
@@ -622,7 +717,6 @@ describe("Standalone Service", () => {
       const endTime = performance.now();
       const duration = endTime - startTime;
 
-      // Should complete efficiently
       expect(duration).toBeLessThan(200);
     });
   });
@@ -630,29 +724,14 @@ describe("Standalone Service", () => {
   describe("Advanced Playlist Scenarios", () => {
     describe("initializeStandalonePlaylist with existing data", () => {
       it("should handle playlist revision updates", async () => {
-        const existingPlaylist = {
-          id: "existing-playlist",
-          title: "Existing Playlist",
-          rev: 1,
-          songIds: ["existing-song"],
-        };
-
-        mockDB.get.mockResolvedValueOnce(existingPlaylist);
-        mockDB.getAll.mockResolvedValue([
-          {
-            id: "existing-song",
-            title: "Existing Song",
-            playlistId: "existing-playlist",
-            sha: "old-sha",
-          },
-        ]);
+        vi.mocked(loadSetting).mockResolvedValue({ rev: 1, docId: "automerge:old" });
 
         const playlistData = {
           playlist: {
             id: "existing-playlist",
             title: "updated playlist",
             description: "test description",
-            rev: 2, // Higher revision
+            rev: 2,
           },
           songs: [
             {
@@ -661,7 +740,7 @@ describe("Standalone Service", () => {
               artist: "test artist",
               album: "test album",
               duration: 180,
-              sha: "new-sha", // Different SHA
+              sha: "new-sha",
               originalFilename: "updated.mp3",
               fileSize: 1024,
             },
@@ -679,33 +758,20 @@ describe("Standalone Service", () => {
 
         expect(mockCallbacks.setSelectedPlaylist).toHaveBeenCalled();
         expect(mockCallbacks.setPlaylistSongs).toHaveBeenCalled();
-        expect(mutateAndNotify).toHaveBeenCalled();
+        expect(saveSetting).toHaveBeenCalledWith(
+          "standalone:existing-playlist",
+          expect.objectContaining({ rev: 2, docId: "automerge:old" })
+        );
       });
 
       it("should skip update when revision is same", async () => {
-        const existingPlaylist = {
-          id: "same-rev-playlist",
-          title: "Same Rev Playlist",
-          rev: 1,
-          songIds: ["song1"],
-        };
-
-        mockDB.get.mockResolvedValueOnce(existingPlaylist);
-        mockDB.getAll.mockResolvedValue([
-          {
-            id: "song1",
-            title: "Song One",
-            playlistId: "same-rev-playlist",
-            sha: "same-sha",
-          },
-        ]);
+        vi.mocked(loadSetting).mockResolvedValue({ rev: 1, docId: "automerge:same" });
 
         const playlistData = {
           playlist: {
             id: "same-rev-playlist",
             title: "same rev playlist",
-            description: "test description",
-            rev: 1, // Same revision
+            rev: 1,
           },
           songs: [
             {
@@ -730,13 +796,14 @@ describe("Standalone Service", () => {
 
         await initializeStandalonePlaylist(playlistData, mockCallbacks);
 
+        expect(createPlaylistDoc).not.toHaveBeenCalled();
+        expect(saveSetting).not.toHaveBeenCalled();
         expect(mockCallbacks.setSelectedPlaylist).toHaveBeenCalled();
         expect(mockCallbacks.setPlaylistSongs).toHaveBeenCalled();
-        // Should use existing data without processing
       });
 
       it("should create new playlist when none exists", async () => {
-        mockDB.get.mockResolvedValueOnce(undefined); // No existing playlist
+        vi.mocked(loadSetting).mockResolvedValue(null);
 
         const playlistData = {
           playlist: {
@@ -768,137 +835,53 @@ describe("Standalone Service", () => {
 
         await initializeStandalonePlaylist(playlistData, mockCallbacks);
 
+        expect(createPlaylistDoc).toHaveBeenCalled();
         expect(mockCallbacks.setSelectedPlaylist).toHaveBeenCalled();
         expect(mockCallbacks.setPlaylistSongs).toHaveBeenCalled();
-        expect(mutateAndNotify).toHaveBeenCalled();
       });
     });
 
     describe("loadStandaloneSongAudioData edge cases", () => {
-      it("should skip loading for file protocol", async () => {
-        const originalLocation = window.location;
+      it("should skip loading for file:// protocol", async () => {
         Object.defineProperty(window, "location", {
           value: { protocol: "file:" },
           writable: true,
         });
 
-        const songId = "file-protocol-song";
-        const mockSong = {
-          id: songId,
-          title: "File Protocol Song",
-          standaloneFilePath: "data/file-song.mp3",
-        };
-
-        mockDB.get.mockResolvedValue(mockSong);
-
-        const result = await loadStandaloneSongAudioData(songId);
+        const result = await loadStandaloneSongAudioData("file-protocol-song");
 
         expect(result).toBe(true);
         expect(fetch).not.toHaveBeenCalled();
-
-        // Restore original location
-        Object.defineProperty(window, "location", {
-          value: originalLocation,
-          writable: true,
-        });
       });
 
-      it("should return false when song has no standalone file path", async () => {
-        const songId = "no-path-song";
-        const mockSong = {
-          id: songId,
-          title: "No Path Song",
-          standaloneFilePath: undefined,
-        };
-
-        mockDB.get.mockResolvedValue(mockSong);
-
+      it("should return false when song has no registered standalone path", async () => {
         const consoleSpy = vi
           .spyOn(console, "error")
           .mockImplementation(() => {});
 
-        const result = await loadStandaloneSongAudioData(songId);
+        const result = await loadStandaloneSongAudioData("no-path-song");
 
         expect(result).toBe(false);
-        expect(consoleSpy).toHaveBeenCalledWith(
-          `Song ${songId} has no standalone file path`
-        );
-
         consoleSpy.mockRestore();
-      });
-
-      it("should return true when song already has audio data", async () => {
-        const songId = "has-audio-song";
-        const mockSong = {
-          id: songId,
-          title: "Has Audio Song",
-          audioData: new ArrayBuffer(5000),
-        };
-
-        mockDB.get.mockResolvedValue(mockSong);
-
-        const result = await loadStandaloneSongAudioData(songId);
-
-        expect(result).toBe(true);
-        expect(fetch).not.toHaveBeenCalled();
-      });
-
-      it("should handle fetch response without arrayBuffer method", async () => {
-        const songId = "invalid-response-song";
-        const mockSong = {
-          id: songId,
-          title: "Invalid Response Song",
-          standaloneFilePath: "data/invalid.mp3",
-        };
-
-        mockDB.get.mockResolvedValue(mockSong);
-
-        // Mock fetch to return response without arrayBuffer method
-        vi.mocked(fetch).mockResolvedValue({
-          ok: true,
-          arrayBuffer: undefined,
-        } as any);
-
-        const result = await loadStandaloneSongAudioData(songId);
-
-        expect(result).toBe(false);
       });
     });
 
     describe("songNeedsAudioData advanced scenarios", () => {
-      it("should handle songs with zero-length audio data", async () => {
-        const mockSong = createMockSong({ id: "zero-audio-song" });
+      it("should return true for song with zero-length sha", async () => {
+        vi.mocked(getBlobMetadata).mockResolvedValue(null);
 
-        mockDB.get.mockResolvedValue({
-          id: "zero-audio-song",
-          audioData: new ArrayBuffer(0), // Zero length
-        });
+        const mockSong = createMockSong({ id: "zero-sha-song", sha: "" });
 
-        const result = await songNeedsAudioData(mockSong);
+        // empty string is falsy -> treated as no sha
+        const result = await songNeedsAudioData(mockSong as any);
 
         expect(result).toBe(true);
       });
 
-      it("should handle songs with null audio data", async () => {
-        const mockSong = createMockSong({ id: "empty-audio-song" });
+      it("should return false when blob metadata exists", async () => {
+        vi.mocked(getBlobMetadata).mockResolvedValue({ size: 5000 } as any);
 
-        mockDB.get.mockResolvedValue({
-          id: "null-audio-song",
-          audioData: null,
-        });
-
-        const result = await songNeedsAudioData(mockSong);
-
-        expect(result).toBe(true);
-      });
-
-      it("should handle songs with valid audio data", async () => {
-        const mockSong = createMockSong({ id: "invalid-song" });
-
-        mockDB.get.mockResolvedValue({
-          id: "valid-audio-song",
-          audioData: new ArrayBuffer(5000),
-        });
+        const mockSong = createMockSong({ id: "valid-audio-song", sha: "valid-sha" });
 
         const result = await songNeedsAudioData(mockSong);
 
@@ -908,21 +891,15 @@ describe("Standalone Service", () => {
   });
 
   describe("Background Image Loading", () => {
-    it("should handle background image loading after playlist initialization", async () => {
-      // Mock setTimeout to capture the callback
-      const originalSetTimeout = global.setTimeout;
-      const timeoutCallbacks: Array<() => void> = [];
+    it("should schedule image loading after playlist initialization", async () => {
+      vi.mocked(loadSetting).mockResolvedValue(null);
 
-      global.setTimeout = vi.fn((callback: () => void, delay: number) => {
-        timeoutCallbacks.push(callback);
-        return originalSetTimeout(callback, delay);
-      }) as any;
+      const setTimeoutSpy = vi.spyOn(global, "setTimeout");
 
       const playlistData = {
         playlist: {
           id: "image-playlist",
           title: "image playlist",
-          description: "test description",
           imageExtension: ".jpg",
           imageMimeType: "image/jpeg",
         },
@@ -949,15 +926,10 @@ describe("Standalone Service", () => {
         setError: vi.fn(),
       };
 
-      mockDB.get.mockResolvedValue(undefined); // New playlist
-
       await initializeStandalonePlaylist(playlistData, mockCallbacks);
 
-      // Verify that image loading was scheduled
-      expect(setTimeout).toHaveBeenCalled();
-
-      // Restore setTimeout
-      global.setTimeout = originalSetTimeout;
+      expect(setTimeoutSpy).toHaveBeenCalled();
+      setTimeoutSpy.mockRestore();
     });
   });
 
@@ -1012,6 +984,8 @@ describe("Standalone Service", () => {
   describe("Memory and Performance", () => {
     it("should handle large song collections efficiently", async () => {
       const largeSongCount = 1000;
+      vi.mocked(loadSetting).mockResolvedValue(null);
+
       const playlistData = {
         playlist: {
           id: "large-playlist",
@@ -1037,8 +1011,6 @@ describe("Standalone Service", () => {
         setError: vi.fn(),
       };
 
-      mockDB.get.mockResolvedValue(undefined); // New playlist
-
       const startTime = performance.now();
 
       await initializeStandalonePlaylist(playlistData, mockCallbacks);
@@ -1046,7 +1018,6 @@ describe("Standalone Service", () => {
       const endTime = performance.now();
       const duration = endTime - startTime;
 
-      // Should handle large collections efficiently
       expect(duration).toBeLessThan(1000);
       expect(mockCallbacks.setPlaylistSongs).toHaveBeenCalled();
     });

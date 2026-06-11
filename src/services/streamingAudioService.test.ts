@@ -1,33 +1,31 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+// tests for the streaming audio service (blob-store backed).
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Song } from "../types/playlist.js";
 
-// Mock dependencies
-vi.mock("./indexedDBService.js", () => ({
-  setupDB: vi.fn(),
-  mutateAndNotify: vi.fn(),
-  SONGS_STORE: "songs",
-  DB_NAME: "musicPlaylistDB",
+// mock the shared blob store
+vi.mock("freqhole-api-client/storage", () => ({
+  storeBlob: vi.fn(),
+  getBlobMetadata: vi.fn(),
 }));
 
-// Mock fetch globally
+// mock fetch globally
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-// Import the streaming audio service after mocks
 import {
   streamAudioWithCaching,
   downloadAndCacheAudio,
   downloadSongIfNeeded,
   isSongDownloading,
 } from "./streamingAudioService.js";
-import { setupDB, mutateAndNotify } from "./indexedDBService.js";
+import { storeBlob, getBlobMetadata } from "freqhole-api-client/storage";
 
-describe("Streaming Audio Service Tests", () => {
-  const mockSong: Song = {
+function makeSong(overrides: Partial<Song> = {}): Song {
+  return {
     id: "test-song-1",
-    title: "Test Song",
-    artist: "Test Artist",
-    album: "Test Album",
+    title: "test song",
+    artist: "test artist",
+    album: "test album",
     duration: 180,
     position: 0,
     mimeType: "audio/mpeg",
@@ -35,625 +33,243 @@ describe("Streaming Audio Service Tests", () => {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     playlistId: "test-playlist",
+    ...overrides,
   };
+}
 
-  const mockDB = {
-    get: vi.fn(),
-    put: vi.fn(),
+// build a mock fetch response streaming the given chunks
+function makeStreamResponse(
+  chunks: Uint8Array[],
+  headers: Record<string, string | null> = {}
+) {
+  let i = 0;
+  return {
+    ok: true,
+    headers: {
+      get: vi.fn((name: string) => headers[name] ?? null),
+    },
+    body: {
+      getReader: vi.fn(() => ({
+        read: vi.fn(async () => {
+          if (i < chunks.length) {
+            return { done: false, value: chunks[i++] };
+          }
+          return { done: true, value: undefined };
+        }),
+      })),
+    },
   };
+}
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(setupDB).mockResolvedValue(mockDB as any);
-    vi.mocked(mutateAndNotify).mockResolvedValue(undefined);
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getBlobMetadata).mockResolvedValue(null);
+  vi.mocked(storeBlob).mockResolvedValue("mock-sha256");
+});
+
+describe("streamAudioWithCaching", () => {
+  it("returns the streaming url immediately and a download promise", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamResponse([new Uint8Array([1, 2, 3])], {
+        "content-length": "3",
+        "content-type": "audio/mpeg",
+      })
+    );
+
+    const result = await streamAudioWithCaching(
+      makeSong(),
+      "https://example.com/audio.mp3"
+    );
+
+    expect(result.blobUrl).toBe("https://example.com/audio.mp3");
+    await expect(result.downloadPromise).resolves.toBe(true);
+    expect(storeBlob).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("downloadAndCacheAudio", () => {
+  it("downloads and stores audio in the blob store", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamResponse([new Uint8Array([1, 2]), new Uint8Array([3, 4])], {
+        "content-length": "4",
+        "content-type": "audio/mpeg",
+      })
+    );
+
+    const result = await downloadAndCacheAudio(
+      makeSong(),
+      "https://example.com/audio.mp3"
+    );
+
+    expect(result).toBe(true);
+    expect(storeBlob).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(storeBlob).mock.calls[0]![1]).toBe("audio/mpeg");
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  it("returns true without fetching when the sha is already in the blob store", async () => {
+    vi.mocked(getBlobMetadata).mockResolvedValue({
+      blob_id: "abc",
+      storage_type: "opfs",
+      storage_path: "/blobs/abc",
+      mime_type: "audio/mpeg",
+      file_size: 4,
+      created_at: Date.now(),
+    });
+
+    const result = await downloadAndCacheAudio(
+      makeSong({ sha: "abc" }),
+      "https://example.com/audio.mp3"
+    );
+
+    expect(result).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(storeBlob).not.toHaveBeenCalled();
   });
 
-  describe("streamAudioWithCaching", () => {
-    it("should return streaming URL and start background download", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-      const onProgress = vi.fn();
+  it("reports progress when content-length is present", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamResponse([new Uint8Array([1, 2]), new Uint8Array([3, 4])], {
+        "content-length": "4",
+      })
+    );
+    const onProgress = vi.fn();
 
-      // Mock successful fetch for background download
-      const mockResponse = {
-        ok: true,
-        headers: {
-          get: vi.fn((header) => {
-            if (header === "content-length") return "1024";
-            if (header === "content-type") return "audio/mpeg";
-            return null;
-          }),
-        },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null); // No existing cached data
+    await downloadAndCacheAudio(
+      makeSong(),
+      "https://example.com/audio.mp3",
+      onProgress
+    );
 
-      const result = await streamAudioWithCaching(
-        mockSong,
-        filePath,
-        onProgress
-      );
-
-      expect(result.blobUrl).toBe(filePath);
-      expect(result.downloadPromise).toBeInstanceOf(Promise);
-
-      // Wait for background download to complete
-      const downloadSuccess = await result.downloadPromise;
-      expect(downloadSuccess).toBe(true);
-      expect(onProgress).toHaveBeenCalled();
-    });
-
-    it("should handle streaming errors gracefully", async () => {
-      const filePath = "https://freqhole.net/invalid.mp3";
-
-      // Mock fetch to throw error
-      mockFetch.mockRejectedValue(new Error("Network error"));
-      mockDB.get.mockResolvedValue(null);
-
-      const result = await streamAudioWithCaching(mockSong, filePath);
-      expect(result.blobUrl).toBe(filePath);
-
-      // The download promise should resolve to false on error
-      const downloadResult = await result.downloadPromise;
-      expect(downloadResult).toBe(false);
-    });
-
-    it("should work without progress callback", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-
-      const mockResponse = {
-        ok: true,
-        headers: {
-          get: vi.fn((header) => {
-            if (header === "content-length") return "1024";
-            if (header === "content-type") return "audio/mpeg";
-            return null;
-          }),
-        },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null);
-
-      const result = await streamAudioWithCaching(mockSong, filePath);
-
-      expect(result.blobUrl).toBe(filePath);
-      expect(result.downloadPromise).toBeInstanceOf(Promise);
+    expect(onProgress).toHaveBeenCalledWith({
+      loaded: 4,
+      total: 4,
+      percentage: 100,
     });
   });
 
-  describe("downloadAndCacheAudio", () => {
-    it("should download and cache audio successfully", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-      const onProgress = vi.fn();
+  it("handles a missing content-length header (no progress callbacks)", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamResponse([new Uint8Array([1, 2, 3])], {})
+    );
+    const onProgress = vi.fn();
 
-      const mockResponse = {
-        ok: true,
-        headers: {
-          get: vi.fn((header) => {
-            if (header === "content-length") return "8";
-            if (header === "content-type") return "audio/mpeg";
-            return null;
-          }),
-        },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([5, 6, 7, 8]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
+    const result = await downloadAndCacheAudio(
+      makeSong(),
+      "https://example.com/audio.mp3",
+      onProgress
+    );
 
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null); // No existing data
-
-      const result = await downloadAndCacheAudio(
-        mockSong,
-        filePath,
-        onProgress
-      );
-
-      expect(result).toBe(true);
-      expect(mockFetch).toHaveBeenCalledWith(filePath);
-      expect(mutateAndNotify).toHaveBeenCalledWith({
-        dbName: "musicPlaylistDB",
-        storeName: "songs",
-        key: mockSong.id,
-        updateFn: expect.any(Function),
-      });
-      expect(onProgress).toHaveBeenCalledWith({
-        loaded: 4,
-        total: 8,
-        percentage: 50,
-      });
-      expect(onProgress).toHaveBeenCalledWith({
-        loaded: 8,
-        total: 8,
-        percentage: 100,
-      });
-    });
-
-    it("should return true if already cached", async () => {
-      const filePath = "https://example.com/audio.mp3";
-
-      // Mock existing cached data
-      mockDB.get.mockResolvedValue({
-        ...mockSong,
-        audioData: new ArrayBuffer(1024),
-      });
-
-      const result = await downloadAndCacheAudio(mockSong, filePath);
-
-      expect(result).toBe(true);
-      expect(mockFetch).not.toHaveBeenCalled();
-      expect(mutateAndNotify).not.toHaveBeenCalled();
-    });
-
-    it("should handle HTTP error responses", async () => {
-      const filePath = "https://freqhole.net/notfound.mp3";
-
-      mockFetch.mockResolvedValue({
-        ok: false,
-        status: 404,
-        statusText: "Not Found",
-      });
-      mockDB.get.mockResolvedValue(null);
-
-      const result = await downloadAndCacheAudio(mockSong, filePath);
-
-      expect(result).toBe(false);
-      expect(mutateAndNotify).not.toHaveBeenCalled();
-    });
-
-    it("should handle missing response body", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-
-      mockFetch.mockResolvedValue({
-        ok: true,
-        headers: { get: vi.fn(() => "1024") },
-        body: null,
-      });
-      mockDB.get.mockResolvedValue(null);
-
-      const result = await downloadAndCacheAudio(mockSong, filePath);
-
-      expect(result).toBe(false);
-    });
-
-    it("should handle missing content-length header", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-      const onProgress = vi.fn();
-
-      const mockResponse = {
-        ok: true,
-        headers: {
-          get: vi.fn((header) => {
-            if (header === "content-length") return null; // No content-length
-            if (header === "content-type") return "audio/mpeg";
-            return null;
-          }),
-        },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
-
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null);
-
-      const result = await downloadAndCacheAudio(
-        mockSong,
-        filePath,
-        onProgress
-      );
-
-      expect(result).toBe(true);
-      // Progress callback should not be called when total is 0
-      expect(onProgress).not.toHaveBeenCalled();
-    });
-
-    it("should use fallback MIME type when not provided", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-
-      const mockResponse = {
-        ok: true,
-        headers: {
-          get: vi.fn(() => null), // No content-type header
-        },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
-
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null);
-
-      const result = await downloadAndCacheAudio(mockSong, filePath);
-
-      expect(result).toBe(true);
-      expect(mutateAndNotify).toHaveBeenCalledWith(
-        expect.objectContaining({
-          updateFn: expect.any(Function),
-        })
-      );
-    });
-
-    it("should handle database errors gracefully", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-
-      mockDB.get.mockRejectedValue(new Error("Database error"));
-
-      const result = await downloadAndCacheAudio(mockSong, filePath);
-
-      expect(result).toBe(false);
-    });
-
-    it("should handle storage errors gracefully", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-
-      const mockResponse = {
-        ok: true,
-        headers: { get: vi.fn(() => "1024") },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
-
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null);
-      vi.mocked(mutateAndNotify).mockRejectedValue(new Error("Storage full"));
-
-      const result = await downloadAndCacheAudio(mockSong, filePath);
-
-      expect(result).toBe(false);
-    });
+    expect(result).toBe(true);
+    expect(onProgress).not.toHaveBeenCalled();
   });
 
-  describe("downloadSongIfNeeded", () => {
-    it("should download song if not cached and not downloading", async () => {
-      const filePath = "https://example.com/audio.mp3";
+  it("falls back to the response content-type when the song has no mime type", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamResponse([new Uint8Array([1])], {
+        "content-type": "audio/ogg",
+      })
+    );
 
-      const mockResponse = {
-        ok: true,
-        headers: { get: vi.fn(() => "1024") },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
+    await downloadAndCacheAudio(
+      makeSong({ mimeType: "" }),
+      "https://example.com/audio.ogg"
+    );
 
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null);
-
-      const result = await downloadSongIfNeeded(mockSong, filePath);
-
-      expect(result).toBe(true);
-      expect(isSongDownloading(mockSong.id)).toBe(false); // Should be cleaned up
-    });
-
-    it("should return existing download promise if already downloading", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-
-      const mockResponse = {
-        ok: true,
-        headers: {
-          get: vi.fn((header) => {
-            if (header === "content-length") return "1024";
-            if (header === "content-type") return "audio/mpeg";
-            return null;
-          }),
-        },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
-
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null);
-
-      // Start first download
-      const promise1 = downloadSongIfNeeded(mockSong, filePath);
-
-      // Start second download immediately (should get same promise)
-      const promise2 = downloadSongIfNeeded(mockSong, filePath);
-
-      // Both should resolve to true
-      const result1 = await promise1;
-      const result2 = await promise2;
-
-      expect(result1).toBe(true);
-      expect(result2).toBe(true);
-      // Note: In test environment, deduplication might not work perfectly due to timing
-      // The important thing is that both calls succeed
-    });
-
-    it("should return true if already cached", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-
-      mockDB.get.mockResolvedValue({
-        ...mockSong,
-        audioData: new ArrayBuffer(1024),
-      });
-
-      const result = await downloadSongIfNeeded(mockSong, filePath);
-
-      expect(result).toBe(true);
-      expect(mockFetch).not.toHaveBeenCalled();
-      expect(isSongDownloading(mockSong.id)).toBe(false);
-    });
-
-    it("should handle cache check errors and proceed with download", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-
-      const mockResponse = {
-        ok: true,
-        headers: { get: vi.fn(() => "1024") },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
-
-      mockFetch.mockResolvedValue(mockResponse);
-      // First call to check cache fails, second call for actual download succeeds
-      mockDB.get
-        .mockRejectedValueOnce(new Error("Cache check failed"))
-        .mockResolvedValue(null);
-
-      const result = await downloadSongIfNeeded(mockSong, filePath);
-
-      expect(result).toBe(true);
-      expect(mockFetch).toHaveBeenCalled();
-    });
-
-    it("should handle progress callback", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
-      const onProgress = vi.fn();
-
-      const mockResponse = {
-        ok: true,
-        headers: {
-          get: vi.fn((header) => {
-            if (header === "content-length") return "8";
-            return null;
-          }),
-        },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([5, 6, 7, 8]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
-
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null);
-
-      const result = await downloadSongIfNeeded(mockSong, filePath, onProgress);
-
-      expect(result).toBe(true);
-      expect(onProgress).toHaveBeenCalledWith({
-        loaded: 4,
-        total: 8,
-        percentage: 50,
-      });
-    });
+    expect(vi.mocked(storeBlob).mock.calls[0]![1]).toBe("audio/ogg");
   });
 
-  describe("isSongDownloading", () => {
-    it("should return false for non-downloading song", () => {
-      expect(isSongDownloading("non-existent-song")).toBe(false);
-    });
+  it("returns false when the fetch fails", async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 404, statusText: "nope" });
 
-    it("should return true for downloading song", () => {
-      // Test the basic functionality without async complications
-      expect(isSongDownloading("non-existent")).toBe(false);
+    const result = await downloadAndCacheAudio(
+      makeSong(),
+      "https://example.com/missing.mp3"
+    );
 
-      // This test verifies that the tracking mechanism exists
-      // More complex timing tests would require actual implementation details
-      expect(typeof isSongDownloading).toBe("function");
-    });
+    expect(result).toBe(false);
+  });
+});
+
+describe("downloadSongIfNeeded", () => {
+  it("downloads when not cached", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamResponse([new Uint8Array([1, 2, 3])], {})
+    );
+
+    const result = await downloadSongIfNeeded(
+      makeSong(),
+      "https://example.com/audio.mp3"
+    );
+
+    expect(result).toBe(true);
+    expect(mockFetch).toHaveBeenCalled();
   });
 
-  describe("Edge Cases", () => {
-    it("should handle empty audio data correctly", async () => {
-      const filePath = "https://freqhole.net/empty.mp3";
-
-      const mockResponse = {
-        ok: true,
-        headers: { get: vi.fn(() => "0") },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi.fn().mockResolvedValueOnce({
-              done: true,
-              value: undefined,
-            }),
-          })),
-        },
-      };
-
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null);
-
-      const result = await downloadAndCacheAudio(mockSong, filePath);
-
-      expect(result).toBe(true);
-      expect(mutateAndNotify).toHaveBeenCalled();
+  it("returns true without downloading when the sha is cached", async () => {
+    vi.mocked(getBlobMetadata).mockResolvedValue({
+      blob_id: "cached",
+      storage_type: "opfs",
+      storage_path: "/blobs/cached",
+      mime_type: "audio/mpeg",
+      file_size: 1,
+      created_at: Date.now(),
     });
 
-    it("should handle cached song with empty audio data", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
+    const result = await downloadSongIfNeeded(
+      makeSong({ sha256: "cached" }),
+      "https://example.com/audio.mp3"
+    );
 
-      // Mock existing song with empty audio data
-      mockDB.get.mockResolvedValue({
-        ...mockSong,
-        audioData: new ArrayBuffer(0), // Empty buffer
-      });
+    expect(result).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 
-      const mockResponse = {
-        ok: true,
-        headers: { get: vi.fn(() => "1024") },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: new Uint8Array([1, 2, 3, 4]),
-              })
-              .mockResolvedValueOnce({
-                done: true,
-                value: undefined,
-              }),
-          })),
-        },
-      };
+  it("proceeds with download when the cache check throws", async () => {
+    vi.mocked(getBlobMetadata).mockRejectedValue(new Error("idb broke"));
+    mockFetch.mockResolvedValue(
+      makeStreamResponse([new Uint8Array([1])], {})
+    );
 
-      mockFetch.mockResolvedValue(mockResponse);
+    const result = await downloadSongIfNeeded(
+      makeSong({ sha: "whatever" }),
+      "https://example.com/audio.mp3"
+    );
 
-      const result = await downloadAndCacheAudio(mockSong, filePath);
+    expect(result).toBe(true);
+    expect(mockFetch).toHaveBeenCalled();
+  });
 
-      expect(result).toBe(true);
-      expect(mockFetch).toHaveBeenCalled(); // Should re-download
+  it("dedupes concurrent downloads for the same song", async () => {
+    let resolveRead: (() => void) | undefined;
+    const gate = new Promise<void>((r) => (resolveRead = r));
+    mockFetch.mockImplementation(async () => {
+      await gate;
+      return makeStreamResponse([new Uint8Array([1])], {});
     });
 
-    it("should handle reader errors gracefully", async () => {
-      const filePath = "https://freqhole.net/audio.mp3";
+    const song = makeSong();
+    const p1 = downloadSongIfNeeded(song, "https://example.com/a.mp3");
+    const p2 = downloadSongIfNeeded(song, "https://example.com/a.mp3");
 
-      const mockResponse = {
-        ok: true,
-        headers: { get: vi.fn(() => "1024") },
-        body: {
-          getReader: vi.fn(() => ({
-            read: vi.fn().mockRejectedValue(new Error("Read error")),
-          })),
-        },
-      };
+    expect(isSongDownloading(song.id)).toBe(true);
+    resolveRead?.();
 
-      mockFetch.mockResolvedValue(mockResponse);
-      mockDB.get.mockResolvedValue(null);
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1).toBe(true);
+    expect(r2).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
 
-      const result = await downloadAndCacheAudio(mockSong, filePath);
+  it("clears the active download tracker when finished", async () => {
+    mockFetch.mockResolvedValue(
+      makeStreamResponse([new Uint8Array([1])], {})
+    );
 
-      expect(result).toBe(false);
-    });
+    const song = makeSong();
+    await downloadSongIfNeeded(song, "https://example.com/a.mp3");
+    // allow the .finally cleanup microtask to run
+    await Promise.resolve();
+
+    expect(isSongDownloading(song.id)).toBe(false);
   });
 });
