@@ -208,6 +208,19 @@ export function getIdentity(): P2PIdentity | null {
   return currentIdentity;
 }
 
+/**
+ * check whether an identity is already persisted (without creating one).
+ * used to auto-resume p2p on boot only for users who have enabled it.
+ */
+export async function hasExistingIdentity(): Promise<boolean> {
+  try {
+    const existing = await resolveIdentity(getLocalStore());
+    return existing !== null;
+  } catch {
+    return false;
+  }
+}
+
 /** returns true if this tab holds the iroh node leadership lock. */
 export function isLeader(): boolean {
   return leaderState;

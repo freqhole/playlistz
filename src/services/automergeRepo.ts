@@ -63,12 +63,14 @@ async function sharePolicy(
 }
 
 let _repo: Repo | null = null;
+let _irohAdapter: IrohNetworkAdapter | null = null;
 
 function buildRepo(): Repo {
   console.log("[trace] buildRepo: constructing adapters");
   const storage = new IndexedDBStorageAdapter("freqhole-automerge");
   const broadcastAdapter = new BroadcastChannelNetworkAdapter();
   const irohAdapter = new IrohNetworkAdapter(getAdapterOptions());
+  _irohAdapter = irohAdapter;
 
   console.log("[trace] buildRepo: constructing Repo");
   const repo = new Repo({
@@ -87,6 +89,16 @@ export function getRepo(): Repo {
     _repo = buildRepo();
   }
   return _repo;
+}
+
+// returns the iroh network adapter wired into the repo. constructing the
+// repo if needed. used by sharing/blob services for addPeer, alpn handlers
+// and connection state.
+export function getIrohAdapter(): IrohNetworkAdapter {
+  if (!_irohAdapter) {
+    getRepo();
+  }
+  return _irohAdapter!;
 }
 
 // attach a change listener that keeps the peer cache current for a handle.
@@ -175,6 +187,7 @@ export async function flushDoc(docId: AutomergeUrl): Promise<void> {
 // reset all singleton state. for use in tests only.
 export function _resetRepoForTests(): void {
   _repo = null;
+  _irohAdapter = null;
   docPeerCache.clear();
   watchedDocs.clear();
 }

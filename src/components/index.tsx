@@ -106,6 +106,46 @@ function PlaylistzInner() {
     });
   };
 
+  // open a #share/ link once the app has initialized. the shared playlist
+  // appears in the sidebar via the docIndex live query; select it when found
+  let shareFragmentHandled = false;
+  createEffect(() => {
+    if (!isInitialized() || shareFragmentHandled) return;
+    if (!window.location.hash.startsWith("#share/")) return;
+    shareFragmentHandled = true;
+    void (async () => {
+      try {
+        const { handleShareFragment } = await import(
+          "../services/sharingService.js"
+        );
+        const docId = await handleShareFragment();
+        if (docId) {
+          const found = playlists().find((p) => p.id === docId);
+          if (found) selectPlaylist(found);
+        }
+      } catch (err) {
+        console.warn("share link open failed:", err);
+      }
+    })();
+  });
+
+  // resume p2p on boot for users who have already enabled it
+  let sharingResumed = false;
+  createEffect(() => {
+    if (!isInitialized() || sharingResumed) return;
+    sharingResumed = true;
+    void (async () => {
+      try {
+        const { resumeSharingIfEnabled } = await import(
+          "../services/sharingService.js"
+        );
+        await resumeSharingIfEnabled();
+      } catch (err) {
+        console.warn("p2p resume failed:", err);
+      }
+    })();
+  });
+
   return (
     <div
       class={`relative bg-black text-white ${isMobile() ? "min-h-screen" : "h-screen overflow-hidden"}`}
@@ -190,7 +230,7 @@ function PlaylistzInner() {
       {/* sidebar toggle button - only shown in edit mode or when there are no playlists */}
       <Show when={showSidebarToggle()}>
         <div
-          class={`fixed top-0 inset-0 bg-black bg-opacity-80 flex items-center justify-center z-10 transition-all duration-300 ease-in-out w-10 h-10 ${sidebarCollapsed() ? "left-0" : isMobile() ? "left-[calc(100vw-40px)]" : "left-72"}`}
+          class={`fixed top-0 inset-0 bg-black bg-opacity-80 flex items-center justify-center z-10 transition-all duration-300 ease-in-out w-10 h-10 ${sidebarCollapsed() ? "left-0" : isMobile() ? "left-[calc(100vw-40px)]" : "left-80"}`}
         >
           <button
             onClick={() => toggleSidebar()}

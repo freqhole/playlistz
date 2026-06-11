@@ -95,6 +95,7 @@ export interface AccessGrantRecord {
   nodeId: string; // the granted peer's iroh node id (keyPath)
   name: string;
   grantedAt: number;
+  docIds?: string[]; // docs this grant covers; undefined = all listed playlists
 }
 
 // database schema definition - v1 contains only non-doc state

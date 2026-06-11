@@ -5,6 +5,7 @@ import { createSignal } from "solid-js";
 import type { Song, Playlist, AudioState } from "../types/playlist.js";
 import { loadAllPlaybackPositions, savePlaybackPosition, deletePlaybackPosition, saveLastPlayed, loadLastPlayed } from "./indexedDBService.js";
 import { getBlobObjectURL } from "freqhole-api-client/storage";
+import { fetchSongBlob, prefetchUpcoming } from "./blobTransferService.js";
 import { getSongsForPlaylist } from "./playlistDocService.js";
 import {
   streamAudioWithCaching,
@@ -672,8 +673,40 @@ export async function playSong(song: Song, skipResume = false): Promise<void> {
       } else {
         // try to load audio from the blob store (sha256-keyed opfs)
         let cachedURL: string | null = null;
-        if (song.sha ?? song.sha256) {
-          cachedURL = await getBlobObjectURL((song.sha ?? song.sha256)!);
+        const sha = song.sha ?? song.sha256;
+        if (sha) {
+          cachedURL = await getBlobObjectURL(sha);
+        }
+        if (!cachedURL && sha && song.playlistId && !song.standaloneFilePath) {
+          // blob not local - try fetching from the playlist's p2p peers
+          setCachingSongIds(
+            (prev) => new Set(Array.from(prev).concat([song.id]))
+          );
+          try {
+            const fetched = await fetchSongBlob(song, (p) => {
+              setDownloadProgress((prev) => {
+                const newMap = new Map(prev);
+                newMap.set(song.id, Math.round(p.fraction * 100));
+                return newMap;
+              });
+            });
+            if (fetched) {
+              cachedURL = await getBlobObjectURL(sha);
+            }
+          } catch (err) {
+            console.warn("p2p audio fetch failed:", err);
+          } finally {
+            setDownloadProgress((prev) => {
+              const newMap = new Map(prev);
+              newMap.delete(song.id);
+              return newMap;
+            });
+            setCachingSongIds((prev) => {
+              const newSet = new Set(prev);
+              newSet.delete(song.id);
+              return newSet;
+            });
+          }
         }
         if (cachedURL) {
           audioURL = cachedURL;
@@ -805,6 +838,12 @@ export async function playSong(song: Song, skipResume = false): Promise<void> {
       newSet.delete(song.id);
       return newSet;
     });
+
+    // prefetch upcoming songs from p2p peers (~30 min of playback)
+    const playingPl = currentPlaylist();
+    if (playingPl) {
+      prefetchUpcoming(playingPl, song.id);
+    }
 
     // media session will be updated by loadedmetadata event
   } catch (error) {

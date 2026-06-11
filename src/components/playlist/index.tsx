@@ -18,6 +18,11 @@ import {
 } from "../../context/PlaylistzContext.js";
 import { getImageUrlForContext } from "../../services/imageService.js";
 import { audioState } from "../../services/audioService.js";
+import { buildShareLink } from "../../services/sharingService.js";
+import {
+  savePlaylistOffline,
+  type OfflineProgress,
+} from "../../services/blobTransferService.js";
 import { AudioPlayer } from "../AudioPlayer.js";
 import { SongRow } from "../SongRow.js";
 import { PlaylistEditPanel } from "../PlaylistEditPanel.js";
@@ -58,6 +63,43 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   // create a wrapper that passes the playlist context
   const handlePlaySongWithPlaylist = async (song: Song) => {
     await handlePlaySong(song, props.playlist());
+  };
+
+  // p2p share link: copies a #share/ url to the clipboard
+  const [shareState, setShareState] = createSignal<
+    "idle" | "building" | "copied" | "error"
+  >("idle");
+  const handleSharePlaylist = async () => {
+    if (shareState() === "building") return;
+    setShareState("building");
+    try {
+      const { url } = await buildShareLink(
+        props.playlist().id,
+        props.playlist().title
+      );
+      await navigator.clipboard.writeText(url);
+      setShareState("copied");
+      setTimeout(() => setShareState("idle"), 2000);
+    } catch (err) {
+      console.warn("share link failed:", err);
+      setShareState("error");
+      setTimeout(() => setShareState("idle"), 2000);
+    }
+  };
+
+  // p2p save offline: fetch all missing blobs from the doc's peers
+  const [p2pSaveProgress, setP2pSaveProgress] =
+    createSignal<OfflineProgress | null>(null);
+  const handleP2pSaveOffline = async () => {
+    if (p2pSaveProgress()) return;
+    setP2pSaveProgress({ done: 0, total: 0, currentTitle: "", fraction: 0 });
+    try {
+      await savePlaylistOffline(props.playlist(), (p) => setP2pSaveProgress(p));
+    } catch (err) {
+      console.warn("p2p save offline failed:", err);
+    } finally {
+      setP2pSaveProgress(null);
+    }
   };
 
   const { isMobile } = uiState;
@@ -413,6 +455,81 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                       </Show>
                     </button>
                   </Show>
+                </Show>
+
+                {/* share playlist (p2p) button */}
+                <button
+                  onClick={() => void handleSharePlaylist()}
+                  disabled={shareState() === "building"}
+                  class={`p-2 hover:text-magenta-400 hover:bg-gray-700 transition-colors bg-black bg-opacity-80 disabled:opacity-50 ${shareState() === "copied" ? "text-magenta-400" : "text-gray-400"}`}
+                  title={
+                    shareState() === "copied"
+                      ? "share link copied!"
+                      : shareState() === "error"
+                        ? "could not create share link"
+                        : "copy p2p share link"
+                  }
+                >
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                    />
+                  </svg>
+                </button>
+
+                {/* p2p save offline button (fetch missing blobs from peers) */}
+                <Show when={!window.STANDALONE_MODE}>
+                  <button
+                    onClick={() => void handleP2pSaveOffline()}
+                    disabled={p2pSaveProgress() !== null}
+                    class="p-2 text-gray-400 hover:text-magenta-400 hover:bg-gray-700 transition-colors bg-black bg-opacity-80 disabled:opacity-50"
+                    title={
+                      p2pSaveProgress()
+                        ? `fetching ${p2pSaveProgress()!.currentTitle} (${p2pSaveProgress()!.done}/${p2pSaveProgress()!.total})`
+                        : "save offline (fetch from peerz)"
+                    }
+                  >
+                    <Show
+                      when={!p2pSaveProgress()}
+                      fallback={
+                        <svg
+                          class="w-4 h-4 animate-spin"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                          />
+                        </svg>
+                      }
+                    >
+                      <svg
+                        class="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+                        />
+                      </svg>
+                    </Show>
+                  </button>
                 </Show>
 
                 {/* edit playlist button - toggles edit panel */}
