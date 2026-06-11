@@ -64,7 +64,6 @@ function generateIndexHtml() {
   <meta name="theme-color" content="#000000">
 </head>
 <body>
-  <script src="playlistz.js"></script>
   <script src="freqhole-playlistz.js"></script>
   <freqhole-playlistz></freqhole-playlistz>
 </body>
@@ -119,6 +118,11 @@ async function buildStandalone() {
         tailwindcss(),
         {
           name: "build-freqhole-playlistz",
+          // must run after vite-plugin-top-level-await (which is enforce:
+          // "post") so top-level awaits from the automerge wasm init are
+          // already transformed away before we convert the chunk to iife.
+          // post plugins run in array order, and this one comes last.
+          enforce: "post",
           async generateBundle(_, bundle) {
             const jsChunk = Object.values(bundle).find(
               (file) => file.type === "chunk" && typeof file.code === "string"
@@ -134,6 +138,19 @@ async function buildStandalone() {
             if (!jsChunk) {
               console.error("no js chunk found in bundle");
               return;
+            }
+
+            // inline wasm assets as data: uris so the single-file bundle
+            // works from file:// (no separate .wasm fetch needed). the
+            // wasm init helpers in the bundle handle data: urls natively.
+            for (const [fileName, file] of Object.entries(bundle)) {
+              if (file.type === "asset" && fileName.endsWith(".wasm")) {
+                const b64 = Buffer.from(file.source).toString("base64");
+                const dataUri = `data:application/wasm;base64,${b64}`;
+                jsChunk.code = jsChunk.code.split(`/${fileName}`).join(dataUri);
+                delete bundle[fileName];
+                console.log(`inlined: ${fileName} (${(b64.length / 1024 / 1024).toFixed(1)} mb base64)`);
+              }
             }
 
             // inline css: minify it first via esbuild, then embed as a string injector

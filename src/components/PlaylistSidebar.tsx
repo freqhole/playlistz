@@ -3,6 +3,7 @@ import { createSignal, onMount, For, Show } from "solid-js";
 
 import { createRelativeTimeSignal } from "../utils/timeUtils.js";
 import { getImageUrlForContext } from "../services/imageService.js";
+import { audioState } from "../services/audioService.js";
 import {
   getStorageInfo,
   persistentStorageGranted,
@@ -204,6 +205,9 @@ export function PlaylistSidebar() {
                 {(playlist) => {
                   const isSelected = () =>
                     selectedPlaylist()?.id === playlist.id;
+                  const isPlaying = () =>
+                    audioState.isPlaying() &&
+                    audioState.currentPlaylist()?.id === playlist.id;
                   const relativeTime = createRelativeTimeSignal(
                     playlist.updatedAt
                   );
@@ -225,7 +229,22 @@ export function PlaylistSidebar() {
                     >
                       <div class="flex items-start gap-3">
                         {/* playlist thumbnail */}
-                        <div class="flex-shrink-0 w-12 h-12 overflow-hidden bg-transparent">
+                        <div class="relative flex-shrink-0 w-12 h-12 overflow-hidden bg-transparent">
+                          {/* play icon overlay when this playlist is playing */}
+                          <Show when={isPlaying()}>
+                            <div
+                              class="absolute inset-0 z-10 flex items-center justify-center bg-black/40"
+                              title="playing"
+                            >
+                              <svg
+                                class="w-6 h-6 text-magenta-400 drop-shadow"
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path d="M6.3 4.06a1 1 0 011.02.04l7 4.5a1 1 0 010 1.7l-7 4.5A1 1 0 016 14V5a1 1 0 01.3-.94z" />
+                              </svg>
+                            </div>
+                          </Show>
                           <Show
                             when={playlist.imageType}
                             fallback={

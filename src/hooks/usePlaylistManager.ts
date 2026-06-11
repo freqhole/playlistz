@@ -18,7 +18,7 @@ import {
   deleteSong,
   reorderSongsInDoc,
   getSongsForPlaylist,
-  docToPlaylist,
+  docToPlaylistAsync,
 } from "../services/playlistDocService.js";
 import { findPlaylistDoc } from "../services/automergeRepo.js";
 import { parsePlaylistDoc } from "freqhole-api-client/playlistz";
@@ -100,7 +100,7 @@ export function usePlaylistManager() {
             );
             const raw = handle.doc();
             const doc = parsePlaylistDoc(raw ?? {});
-            return docToPlaylist(entry.docId, doc);
+            return await docToPlaylistAsync(entry.docId, doc);
           } catch {
             // doc not yet available - use entry metadata as placeholder
             return {
@@ -288,7 +288,7 @@ export function usePlaylistManager() {
           try {
             const raw = handle.doc();
             const doc = parsePlaylistDoc(raw ?? {});
-            const updated = docToPlaylist(playlistId, doc);
+            const updated = await docToPlaylistAsync(playlistId, doc);
 
             setPlaylists((prev) =>
               prev.map((p) => (p.id === playlistId ? updated : p))

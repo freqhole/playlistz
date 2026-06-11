@@ -163,6 +163,15 @@ export async function deletePlaylistDoc(docId: AutomergeUrl): Promise<void> {
   repo.delete(docId);
 }
 
+// flush a doc's pending changes to indexeddb. the repo debounces storage
+// writes, so without this a reload (or tab close) shortly after a mutation
+// can lose data.
+export async function flushDoc(docId: AutomergeUrl): Promise<void> {
+  const repo = getRepo();
+  const { documentId } = parseAutomergeUrl(docId);
+  await repo.flush([documentId]);
+}
+
 // reset all singleton state. for use in tests only.
 export function _resetRepoForTests(): void {
   _repo = null;

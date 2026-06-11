@@ -12,6 +12,8 @@
     "test": "vitest --run --config config/vitest.config.ts",
     "test:watch": "vitest --config config/vitest.config.ts",
     "test:coverage": "vitest --coverage --run --config config/vitest.config.ts",
+    "test:e2e": "playwright test --config config/playwright.config.ts",
+    "test:e2e:headed": "playwright test --config config/playwright.config.ts --headed",
     "lint": "eslint",
     "lint:fix": "eslint 'src/**/*.{ts,tsx}' --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx}'",
@@ -45,6 +47,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.34.0",
+    "@playwright/test": "^1.60.0",
     "@solidjs/testing-library": "^0.8.10",
     "@tailwindcss/vite": "^4.1.11",
     "@types/jsdom": "^21.1.7",

@@ -7,6 +7,7 @@ import {
   createPlaylistDoc,
   findPlaylistDoc,
   deletePlaylistDoc,
+  flushDoc,
 } from "./automergeRepo.js";
 import {
   parsePlaylistDoc,
@@ -23,10 +24,12 @@ import {
 import {
   storeBlob,
   getBlobObjectURL,
+  getBlobMetadata,
 } from "freqhole-api-client/storage";
 import {
   addDocIndexEntry,
   removeDocIndexEntry,
+  getAllDocIndexEntries,
 } from "./docIndexService.js";
 import { calculateSHA256 } from "../utils/hashUtils.js";
 import { triggerSpecificSongUpdate } from "./songReactivity.js";
@@ -55,6 +58,11 @@ function registerDocSongs(docId: string, doc: PlaylistDoc): void {
       songRegistry.delete(id);
     }
   }
+}
+
+// clear the registry. for use in tests only (simulates a fresh page load).
+export function _clearSongRegistryForTests(): void {
+  songRegistry.clear();
 }
 
 // derive a file extension from a mime type
@@ -102,7 +110,8 @@ export function docToPlaylist(docId: string, doc: PlaylistDoc): Playlist {
     thumbnailData: undefined,
     imageType: undefined,
     // primary image sha for display (callers can load via getSongImageObjectURL)
-    _primaryImageSha: doc.images.find((i) => i.isPrimary)?.blobId,
+    _primaryImageSha: (doc.images.find((i) => i.isPrimary) ?? doc.images[0])
+      ?.blobId,
     bgFilterEnabled: doc.bgFilterEnabled,
     bgFilterBlur: doc.bgFilterBlur,
     bgFilterContrast: doc.bgFilterContrast,
@@ -135,18 +144,54 @@ export function songEntryToSong(
     // timestamp fields not in SongEntry; derive from playlist's lastModified
     createdAt: 0,
     updatedAt: 0,
-    // image fields: populated on-demand via getSongImageObjectURL or getSongById
+    // image fields hydrated async via hydrateSongImage (blob store)
     imageData: undefined,
     thumbnailData: undefined,
-    imageType:
-      entry.images.length > 0
-        ? entry.images.find((i) => i.isPrimary)?.blobType
-          ? undefined
-          : undefined
-        : undefined,
+    imageType: undefined,
     // carry image refs so callers can load from blob store
     images: entry.images,
   };
+}
+
+// hydrate a song view with its primary image from the blob store:
+// sets imageFilePath (object url) and imageType so display components
+// (getImageUrlForContext) can render it.
+async function hydrateSongImage(song: Song): Promise<Song> {
+  const primary =
+    song.images?.find((i) => i.isPrimary) ?? song.images?.[0];
+  if (!primary) return song;
+  try {
+    const url = await getBlobObjectURL(primary.blobId);
+    if (!url) return song;
+    const meta = await getBlobMetadata(primary.blobId);
+    song.imageFilePath = url;
+    song.imageType = meta?.mime_type ?? "image/jpeg";
+  } catch {
+    // blob missing - leave image fields unset
+  }
+  return song;
+}
+
+// async variant of docToPlaylist that hydrates the playlist cover image
+// from the blob store (imageFilePath + imageType).
+export async function docToPlaylistAsync(
+  docId: string,
+  doc: PlaylistDoc
+): Promise<Playlist> {
+  const playlist = docToPlaylist(docId, doc);
+  if (playlist._primaryImageSha) {
+    try {
+      const url = await getBlobObjectURL(playlist._primaryImageSha);
+      if (url) {
+        playlist.imageFilePath = url;
+        const meta = await getBlobMetadata(playlist._primaryImageSha);
+        playlist.imageType = meta?.mime_type ?? "image/jpeg";
+      }
+    } catch {
+      // blob missing - leave image fields unset
+    }
+  }
+  return playlist;
 }
 
 // --- read helpers ---
@@ -159,21 +204,41 @@ export async function getSongsForPlaylist(docId: string): Promise<Song[]> {
   if (!raw) return [];
   const doc = parsePlaylistDoc(raw);
   registerDocSongs(docId, doc);
-  return doc.order
+  const songs = doc.order
     .map((id, i) => {
       const entry = doc.songs[id];
       if (!entry) return null;
       return songEntryToSong(entry, docId, i);
     })
     .filter((s): s is Song => s !== null);
+  return Promise.all(songs.map(hydrateSongImage));
 }
 
 // get a single song by id using the in-memory registry.
-// falls back to null if the song is not in any currently-tracked doc.
+// on a registry miss (e.g. right after a page reload, before any playlist's
+// songs have been fetched), rebuilds the registry from the docIndex.
 export async function getSongById(songId: string): Promise<Song | null> {
-  const reg = songRegistry.get(songId);
+  let reg = songRegistry.get(songId);
+
+  if (!reg) {
+    // rebuild from known docs until we find the song
+    const entries = await getAllDocIndexEntries();
+    for (const entry of entries) {
+      try {
+        const handle = await findPlaylistDoc(entry.docId as AutomergeUrl);
+        const raw = handle.doc();
+        if (!raw) continue;
+        registerDocSongs(entry.docId, parsePlaylistDoc(raw));
+      } catch {
+        continue;
+      }
+      reg = songRegistry.get(songId);
+      if (reg) break;
+    }
+  }
+
   if (!reg) return null;
-  return songEntryToSong(reg.entry, reg.docId, reg.index);
+  return hydrateSongImage(songEntryToSong(reg.entry, reg.docId, reg.index));
 }
 
 // get an object url for a song's primary audio blob (sha256 key).
@@ -236,6 +301,7 @@ export async function createPlaylist(fields: {
   console.log("[trace] createPlaylist: handle.doc() returned", raw != null);
   const doc = parsePlaylistDoc(raw ?? {});
   console.log("[trace] createPlaylist: parsed, returning");
+  await flushDoc(docId);
   return docToPlaylist(docId, doc);
 }
 
@@ -259,6 +325,7 @@ export async function updatePlaylist(
   const { rev: _rev, ...metadataFields } = toPlain(fields);
   console.log("[trace] updatePlaylist: calling handle.change (setMetadata)");
   handle.change((doc) => setMetadata(doc, metadataFields));
+  await flushDoc(docId as AutomergeUrl);
   // update docIndex title if title changed
   if (fields.title !== undefined) {
     console.log("[trace] updatePlaylist: title changed, updating docIndex");
@@ -328,6 +395,7 @@ export async function addSongToPlaylist(
 
   const handle = await findPlaylistDoc(docId as AutomergeUrl);
   handle.change((doc) => upsertSong(doc, toPlain(entry)));
+  await flushDoc(docId as AutomergeUrl);
 
   // update registry
   const raw = handle.doc();
@@ -384,6 +452,7 @@ export async function updateSongInDoc(
       existing.images.push(toPlain(newImageRef));
     }
   });
+  await flushDoc(docId as AutomergeUrl);
 
   // refresh registry
   const raw = handle.doc();
@@ -401,6 +470,7 @@ export async function deleteSong(
 ): Promise<void> {
   const handle = await findPlaylistDoc(docId as AutomergeUrl);
   handle.change((doc) => removeSong(doc, songId));
+  await flushDoc(docId as AutomergeUrl);
   songRegistry.delete(songId);
   triggerSpecificSongUpdate(songId);
 }
@@ -417,6 +487,7 @@ export async function reorderSongsInDoc(
     if (songId === undefined) return;
     reorderSongsMutation(doc, songId, toIndex);
   });
+  await flushDoc(docId as AutomergeUrl);
 
   // refresh registry with updated order
   const raw = handle.doc();
@@ -438,6 +509,7 @@ export async function setPlaylistCoverImage(
   handle.change((doc) => {
     addImage(doc, { blobId: sha256, isPrimary: true, blobType: "original" });
   });
+  await flushDoc(docId as AutomergeUrl);
 }
 
 // remove all playlist-level cover images from the doc.
@@ -447,6 +519,7 @@ export async function clearPlaylistCoverImage(docId: string): Promise<void> {
   handle.change((doc) => {
     doc.images.splice(0, doc.images.length);
   });
+  await flushDoc(docId as AutomergeUrl);
 }
 
 // add or update a song's cover image.
@@ -467,6 +540,7 @@ export async function setSongCoverImage(
       { songId }
     );
   });
+  await flushDoc(docId as AutomergeUrl);
 
   triggerSpecificSongUpdate(songId);
 }

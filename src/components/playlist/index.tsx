@@ -4,6 +4,7 @@ import {
   For,
   createSignal,
   createEffect,
+  createMemo,
   on,
   onCleanup,
   onMount,
@@ -63,8 +64,14 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   const { openImageModal } = imageModal;
 
-  // true when any edit panel is open
-  const isEditing = () => editingSong() !== null || editingPlaylist();
+  // true when any edit panel is open. the memo is critical: editingSong()
+  // changes identity while a panel is open (default-song effect, panel
+  // navigation), but effects keyed on isEditing must only re-run when the
+  // boolean actually flips - otherwise their cleanups cancel the pending
+  // rowsGone timeout and the panel never mounts
+  const isEditing = createMemo(
+    () => editingSong() !== null || editingPlaylist()
+  );
 
   // index of the song being edited (for directional row animation)
   const editingSongIndex = () => {
@@ -158,12 +165,16 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   // hidden rows don't flash back in between panels
   createEffect(
     on(isEditing, (editing, prevEditing) => {
+      console.log("[trace] rowsGone effect", { editing, prevEditing });
       if (editing && !prevEditing) {
         setRowsGone(false);
         // collapse layout and show panel after the first few rows have started
         // exiting - remaining row animations complete behind the panel
         const totalMs = rowExitDelayMs(2) + FLYOUT_MS;
-        const t = setTimeout(() => setRowsGone(true), totalMs);
+        const t = setTimeout(() => {
+          console.log("[trace] rowsGone -> true");
+          setRowsGone(true);
+        }, totalMs);
         onCleanup(() => clearTimeout(t));
       } else if (!editing) {
         setRowsGone(false);
@@ -215,7 +226,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   // panel slides in immediately after rows have collapsed (panel only mounts when rowsGone())
   const panelEntryStyle = () =>
-    ({ animation: "slideDown 350ms ease both" }) as const;
+    ({ animation: "slideDown 150ms ease both" }) as const;
 
   return (
     <div
@@ -406,9 +417,17 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
                 {/* edit playlist button - toggles edit panel */}
                 <button
-                  onClick={() =>
-                    editingPlaylist() ? handleCloseEdit() : handleEditPlaylist()
-                  }
+                  onClick={() => {
+                    console.log(
+                      "[trace] edit button click, editingPlaylist =",
+                      editingPlaylist(),
+                      "rowsGone =",
+                      rowsGone()
+                    );
+                    editingPlaylist()
+                      ? handleCloseEdit()
+                      : handleEditPlaylist();
+                  }}
                   class={`p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black bg-opacity-80 ${editingPlaylist() ? "text-magenta-400" : "text-gray-400"}`}
                   title={
                     editingPlaylist() ? "close edit panel" : "edit playlist"
