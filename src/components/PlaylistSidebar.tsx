@@ -3,17 +3,13 @@ import { createSignal, onMount, For, Show } from "solid-js";
 
 import { createRelativeTimeSignal } from "../utils/timeUtils.js";
 import { getImageUrlForContext } from "../services/imageService.js";
-import { audioState } from "../services/audioService.js";
+import { audioState, playPlaylist } from "../services/audioService.js";
 import {
   getStorageInfo,
   persistentStorageGranted,
 } from "../services/offlineService.js";
 import type { Playlist } from "../types/playlist.js";
-import { SharePanel } from "./SharePanel.js";
-import {
-  initSharingState,
-  pendingKnockCount,
-} from "../services/sharingState.js";
+import { initSharingState } from "../services/sharingState.js";
 import {
   usePlaylistzManager,
   usePlaylistzUI,
@@ -22,7 +18,6 @@ import {
 export function PlaylistSidebar() {
   const [isCreating, setIsCreating] = createSignal(false);
   const [searchQuery, setSearchQuery] = createSignal("");
-  const [showSharePanel, setShowSharePanel] = createSignal(false);
   const [storageInfo, setStorageInfo] = createSignal<{
     quota?: number;
     usage?: number;
@@ -113,34 +108,8 @@ export function PlaylistSidebar() {
           >
             playlist<span class="text-magenta-500">z</span>
           </h1>
-          {/* mr-6 keeps the share icon clear of the fixed sidebar toggle
-              button that sits at the sidebar's top-right corner */}
-          <div class="flex items-center gap-2 mr-6">
-            <button
-              onClick={() => setShowSharePanel(true)}
-              title="open share panel"
-              class="relative text-gray-400 hover:text-magenta-400 transition-colors"
-            >
-              <svg
-                class="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                />
-              </svg>
-              <Show when={pendingKnockCount() > 0}>
-                <span class="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-magenta-500 text-white text-[9px] leading-[14px] text-center font-bold">
-                  {pendingKnockCount()}
-                </span>
-              </Show>
-            </button>
-          </div>
+          {/* placeholder to keep spacing consistent - share button moved to playlist header */}
+          <div class="mr-6" />
         </div>
 
         {/* search only if more than 10 playlistz */}
@@ -253,6 +222,12 @@ export function PlaylistSidebar() {
                         if (isMobile()) {
                           setSidebarCollapsed(true);
                         }
+                      }}
+                      onDblClick={(e) => {
+                        e.stopPropagation();
+                        selectPlaylist(playlist);
+                        if (isMobile()) setSidebarCollapsed(true);
+                        void playPlaylist(playlist);
                       }}
                       class={`w-full text-left p-4 transition-all duration-500 group ${
                         isSelected()
@@ -453,12 +428,6 @@ export function PlaylistSidebar() {
           </Show>
         </div>
       </div>
-
-      <SharePanel
-        isOpen={showSharePanel()}
-        onClose={() => setShowSharePanel(false)}
-        playlists={playlists()}
-      />
     </div>
   );
 }

@@ -18,7 +18,11 @@ import {
 } from "../../context/PlaylistzContext.js";
 import { getImageUrlForContext } from "../../services/imageService.js";
 import { audioState } from "../../services/audioService.js";
-import { initSharingState, sharingReady } from "../../services/sharingState.js";
+import {
+  initSharingState,
+  sharingReady,
+  pendingKnockCount,
+} from "../../services/sharingState.js";
 import {
   savePlaylistOffline,
   playlistHasMissingBlobs,
@@ -28,6 +32,7 @@ import { AudioPlayer } from "../AudioPlayer.js";
 import { SongRow } from "../SongRow.js";
 import { PlaylistEditPanel } from "../PlaylistEditPanel.js";
 import { SongEditPanel } from "../SongEditPanel.js";
+import { PlaylistSharePanel } from "../PlaylistSharePanel.js";
 
 export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const playlistManager = usePlaylistzManager();
@@ -38,6 +43,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   onMount(() => initSharingState());
 
   const {
+    playlists,
     playlistSongs,
     isDownloading,
     isCaching,
@@ -101,13 +107,19 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   const { openImageModal } = imageModal;
 
-  // true when any edit panel is open. the memo is critical: editingSong()
-  // changes identity while a panel is open (default-song effect, panel
-  // navigation), but effects keyed on isEditing must only re-run when the
-  // boolean actually flips - otherwise their cleanups cancel the pending
-  // rowsGone timeout and the panel never mounts
+  // share panel state - declared before isEditing so the memo can reference it
+  const [showingShare, setShowingShare] = createSignal(false);
+  const [sharePage, setSharePage] = createSignal(0);
+  const SHARE_TOTAL_PAGES = 1; // more pages will be added in the future
+
+  const closeShare = () => {
+    setShowingShare(false);
+    setSharePage(0);
+  };
+
+  // true when any edit panel or the share panel is open.
   const isEditing = createMemo(
-    () => editingSong() !== null || editingPlaylist()
+    () => editingSong() !== null || editingPlaylist() || showingShare()
   );
 
   // index of the song being edited (for directional row animation)
@@ -186,11 +198,15 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   onCleanup(() => setBackgroundOverride(null));
 
-  // escape key closes the edit panels
+  // escape key closes the edit panels or share panel
   onMount(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isEditing()) {
-        handleCloseEdit();
+      if (e.key === "Escape") {
+        if (showingShare()) {
+          closeShare();
+          return;
+        }
+        if (isEditing()) handleCloseEdit();
       }
     };
     document.addEventListener("keydown", onKeyDown);
@@ -242,11 +258,12 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     return {};
   };
 
-  // header collapses completely (out of layout) when editing a song.
+  // header collapses completely (out of layout) when editing a song or when
+  // the share panel is open (the share panel has its own header bar).
   // stays visible in playlist edit mode (where the song panel is secondary).
   // overflow:hidden only applied while collapsing so it doesn't clip mobile content.
   const headerStyle = () =>
-    editingSong() && !editingPlaylist()
+    (editingSong() && !editingPlaylist()) || showingShare()
       ? {
           transition: "max-height 350ms ease, opacity 300ms ease",
           "max-height": "0px",
@@ -265,35 +282,41 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const panelEntryStyle = () =>
     ({ animation: "slideDown 150ms ease both" }) as const;
 
+  // height of the mobile sticky controls bar - active song rows stick just
+  // below it instead of hiding underneath
+  let stickyBarRef: HTMLDivElement | undefined;
+  const [stickyBarHeight, setStickyBarHeight] = createSignal(0);
+  createEffect(() => {
+    if (!isMobile()) {
+      setStickyBarHeight(0);
+      return;
+    }
+    const el = stickyBarRef;
+    if (!el) return;
+    setStickyBarHeight(el.offsetHeight);
+    const ro = new ResizeObserver(() => setStickyBarHeight(el.offsetHeight));
+    ro.observe(el);
+    onCleanup(() => ro.disconnect());
+  });
+
   return (
     <div
-      class={`flex-1 flex flex-col overflow-x-hidden ${isMobile() ? "p-2" : "h-full p-6"}`}
+      class={`flex-1 flex flex-col min-h-0 [overflow-x:clip] ${isMobile() ? "p-2" : "p-6"}`}
     >
-      {/* playlist header - animates up/out when editing a specific song */}
-      <div
-        style={headerStyle()}
-        class={`flex items-center justify-between ${isMobile() ? "p-2 flex-col" : "p-6"}`}
-      >
-        {/* playlist cover image for mobile - hidden in edit mode (edit panel has its own) */}
-        <div class={`${isMobile() && !isEditing() ? "" : "hidden"}`}>
-          <button
-            onClick={() => {
-              openImageModal(props.playlist(), playlistSongs(), 0);
-            }}
-            class="w-full h-full overflow-hidden hover:bg-gray-900 flex items-center justify-center transition-colors group"
-            title="view playlist images"
-          >
+      {/* share panel header bar - replaces the regular header when the share
+          panel is open. shows the playlist thumbnail, title, page nav, and close. */}
+      <Show when={showingShare()}>
+        <div
+          style={panelEntryStyle()}
+          class={`flex items-center gap-3 ${isMobile() ? "p-2" : "px-6 py-4"}`}
+        >
+          {/* playlist thumbnail */}
+          <div class="w-10 h-10 flex-shrink-0 overflow-hidden">
             <Show
               when={props.playlist().imageType}
               fallback={
-                <div class="text-center">
-                  <svg
-                    width="100"
-                    height="100"
-                    viewBox="0 0 100 100"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
+                <div class="w-full h-full flex items-center justify-center">
+                  <svg width="32" height="32" viewBox="0 0 100 100" fill="none">
                     <path
                       d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
                       fill="#FF00FF"
@@ -305,69 +328,232 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               {(() => {
                 const imageUrl = getImageUrlForContext(
                   props.playlist(),
-                  "modal"
+                  "thumbnail"
                 );
-                return (
-                  <>
-                    {imageUrl ? (
-                      <img
-                        src={imageUrl}
-                        alt="playlist cover"
-                        class="w-full h-full object-cover"
+                return imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt=""
+                    class="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div class="w-full h-full flex items-center justify-center">
+                    <svg
+                      width="32"
+                      height="32"
+                      viewBox="0 0 100 100"
+                      fill="none"
+                    >
+                      <path
+                        d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
+                        fill="#FF00FF"
                       />
-                    ) : (
-                      <div class="text-center">
-                        <svg
-                          width="100"
-                          height="100"
-                          viewBox="0 0 100 100"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
-                            fill="#FF00FF"
-                          />
-                        </svg>
-                      </div>
-                    )}
-                  </>
+                    </svg>
+                  </div>
                 );
               })()}
             </Show>
+          </div>
+
+          {/* "sharez" label + playlist title */}
+          <div class="flex-1 min-w-0">
+            <div class="text-[10px] text-gray-500 uppercase tracking-widest">
+              sharez
+            </div>
+            <div class="text-sm font-bold text-white truncate">
+              {props.playlist().title}
+            </div>
+          </div>
+
+          {/* page navigation - < > buttons (disabled until more pages exist) */}
+          <button
+            onClick={() => setSharePage((p) => Math.max(0, p - 1))}
+            disabled={sharePage() === 0}
+            class="p-1 text-gray-500 disabled:opacity-30 hover:text-white transition-colors"
+            title="previous"
+          >
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+          <span class="text-xs text-gray-600 tabular-nums">
+            {sharePage() + 1}/{SHARE_TOTAL_PAGES}
+          </span>
+          <button
+            onClick={() =>
+              setSharePage((p) => Math.min(SHARE_TOTAL_PAGES - 1, p + 1))
+            }
+            disabled={sharePage() === SHARE_TOTAL_PAGES - 1}
+            class="p-1 text-gray-500 disabled:opacity-30 hover:text-white transition-colors"
+            title="next"
+          >
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </button>
+
+          {/* close button */}
+          <button
+            onClick={closeShare}
+            title="close share panel"
+            class="p-1 text-gray-400 hover:text-white transition-colors ml-1"
+          >
+            <svg
+              class="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
           </button>
         </div>
+      </Show>
 
-        <div class="flex items-center gap-4 w-full">
-          <div class="flex-1">
-            <div class={`bg-black bg-opacity-80`}>
-              <input
-                type="text"
-                value={props.playlist().title}
-                onInput={(e) => {
-                  handlePlaylistUpdate({
-                    title: e.currentTarget.value,
-                  });
+      {(() => {
+        // playlist header - animates up/out when editing a specific song or
+        // when the share panel is open. on mobile it renders inside the
+        // scroll container (below) so the cover image + title scroll away,
+        // while the player controls bar stays sticky at the top
+        const headerSection = () => (
+          <div
+            style={headerStyle()}
+            class={`flex items-center justify-between ${isMobile() ? "p-2 flex-col" : "p-6"}`}
+          >
+            {/* playlist cover image for mobile - hidden in edit mode (edit panel has its own) */}
+            <div class={`${isMobile() && !isEditing() ? "" : "hidden"}`}>
+              <button
+                onClick={() => {
+                  openImageModal(props.playlist(), playlistSongs(), 0);
                 }}
-                class="text-3xl font-bold text-white bg-transparent border-none outline-none focus:bg-gray-800 px-2 py-1 rounded w-full"
-                placeholder="playlist title"
-              />
-            </div>
-            <div class={`bg-black bg-opacity-80`}>
-              <input
-                type="text"
-                value={props.playlist().description || ""}
-                placeholder="add description..."
-                onInput={(e) => {
-                  handlePlaylistUpdate({
-                    description: e.currentTarget.value,
-                  });
-                }}
-                class="text-white bg-transparent border-none focus:bg-gray-800 px-2 py-1 rounded w-full"
-              />
+                class="w-full h-full overflow-hidden hover:bg-gray-900 flex items-center justify-center transition-colors group"
+                title="view playlist images"
+              >
+                <Show
+                  when={props.playlist().imageType}
+                  fallback={
+                    <div class="text-center">
+                      <svg
+                        width="100"
+                        height="100"
+                        viewBox="0 0 100 100"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
+                          fill="#FF00FF"
+                        />
+                      </svg>
+                    </div>
+                  }
+                >
+                  {(() => {
+                    const imageUrl = getImageUrlForContext(
+                      props.playlist(),
+                      "modal"
+                    );
+                    return (
+                      <>
+                        {imageUrl ? (
+                          <img
+                            src={imageUrl}
+                            alt="playlist cover"
+                            class="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div class="text-center">
+                            <svg
+                              width="100"
+                              height="100"
+                              viewBox="0 0 100 100"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
+                                fill="#FF00FF"
+                              />
+                            </svg>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </Show>
+              </button>
             </div>
 
-            {/* 2x2 grid layout with AudioPlayer spanning left side */}
+            <div class="flex items-center gap-4 w-full">
+              <div class="flex-1">
+                <div class={`bg-black bg-opacity-80`}>
+                  <input
+                    type="text"
+                    value={props.playlist().title}
+                    onInput={(e) => {
+                      handlePlaylistUpdate({
+                        title: e.currentTarget.value,
+                      });
+                    }}
+                    class="text-3xl font-bold text-white bg-transparent border-none outline-none focus:bg-gray-800 px-2 py-1 rounded w-full"
+                    placeholder="playlist title"
+                  />
+                </div>
+                <div class={`bg-black bg-opacity-80`}>
+                  <input
+                    type="text"
+                    value={props.playlist().description || ""}
+                    placeholder="add description..."
+                    onInput={(e) => {
+                      handlePlaylistUpdate({
+                        description: e.currentTarget.value,
+                      });
+                    }}
+                    class="text-white bg-transparent border-none focus:bg-gray-800 px-2 py-1 rounded w-full"
+                  />
+                </div>
+
+                {/* player + action buttons grid - inline here on desktop, a
+                sticky bar inside the scroll container on mobile */}
+                <Show when={!isMobile()}>{playerControls()}</Show>
+              </div>
+            </div>
+
+            {/* playlist cover image (desktop) */}
+            {coverImage()}
+          </div>
+        );
+
+        // hoisted function declarations so headerSection (above) and the
+        // mobile sticky bar (below) can both render these
+        function playerControls() {
+          // 2x2 grid layout with AudioPlayer spanning left side
+          return (
             <div
               class="grid gap-3"
               style={{
@@ -423,6 +609,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                       "rowsGone =",
                       rowsGone()
                     );
+                    if (showingShare()) closeShare();
                     editingPlaylist()
                       ? handleCloseEdit()
                       : handleEditPlaylist();
@@ -445,6 +632,39 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                       d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
                     />
                   </svg>
+                </button>
+
+                {/* share playlist button */}
+                <button
+                  onClick={() => {
+                    if (showingShare()) {
+                      closeShare();
+                    } else {
+                      if (editingPlaylist()) handleCloseEdit();
+                      setShowingShare(true);
+                    }
+                  }}
+                  class={`relative p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black bg-opacity-80 border ${showingShare() ? "text-magenta-400 border-magenta-500" : "text-gray-400 border-transparent"}`}
+                  title="share playlist"
+                >
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                    />
+                  </svg>
+                  <Show when={pendingKnockCount() > 0}>
+                    <span class="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-magenta-500 text-white text-[9px] leading-[14px] text-center font-bold">
+                      {pendingKnockCount()}
+                    </span>
+                  </Show>
                 </button>
 
                 {/* save offline button */}
@@ -584,204 +804,251 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 </Show>
               </div>
             </div>
-          </div>
-        </div>
+          );
+        }
 
-        {/* playlist cover image */}
-        <div class={`${isMobile() ? "hidden" : "ml-4"}`}>
-          <button
-            onClick={() => {
-              openImageModal(props.playlist(), playlistSongs(), 0);
-            }}
-            class="w-39 h-39 overflow-hidden hover:bg-gray-900 flex items-center justify-center transition-colors group"
-            style={{
-              filter: (() => {
-                const p = props.playlist();
-                if (p.coverFilterEnabled === false) return "none";
-                const blur = p.coverFilterBlur ?? 3;
-                return `blur(${blur}px) contrast(3) brightness(0.4)`;
-              })(),
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.filter = "none")}
-            onMouseLeave={(e) => {
-              const p = props.playlist();
-              if (p.coverFilterEnabled === false) {
-                e.currentTarget.style.filter = "none";
-              } else {
-                const blur = p.coverFilterBlur ?? 3;
-                e.currentTarget.style.filter = `blur(${blur}px) contrast(3) brightness(0.4)`;
-              }
-            }}
-            title="view playlist imagez"
-          >
-            <Show
-              when={props.playlist().imageType}
-              fallback={
-                <div class="text-center">
-                  <svg
-                    width="100"
-                    height="100"
-                    viewBox="0 0 100 100"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
-                      fill="#FF00FF"
-                    />
-                  </svg>
-                </div>
-              }
-            >
-              {(() => {
-                const imageUrl = getImageUrlForContext(
-                  props.playlist(),
-                  "modal"
-                );
-                return (
-                  <>
-                    {imageUrl ? (
-                      <img
-                        src={imageUrl}
-                        alt="playlist cover"
-                        class="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div class="text-center">
-                        <svg
-                          width="100"
-                          height="100"
-                          viewBox="0 0 100 100"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
-                            fill="#FF00FF"
+        // desktop cover image (right side of the header)
+        function coverImage() {
+          return (
+            <div class={`${isMobile() ? "hidden" : "ml-4"}`}>
+              <button
+                onClick={() => {
+                  openImageModal(props.playlist(), playlistSongs(), 0);
+                }}
+                class="w-39 h-39 overflow-hidden hover:bg-gray-900 flex items-center justify-center transition-colors group"
+                style={{
+                  filter: (() => {
+                    const p = props.playlist();
+                    if (p.coverFilterEnabled === false) return "none";
+                    const blur = p.coverFilterBlur ?? 3;
+                    return `blur(${blur}px) contrast(3) brightness(0.4)`;
+                  })(),
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.filter = "none")}
+                onMouseLeave={(e) => {
+                  const p = props.playlist();
+                  if (p.coverFilterEnabled === false) {
+                    e.currentTarget.style.filter = "none";
+                  } else {
+                    const blur = p.coverFilterBlur ?? 3;
+                    e.currentTarget.style.filter = `blur(${blur}px) contrast(3) brightness(0.4)`;
+                  }
+                }}
+                title="view playlist imagez"
+              >
+                <Show
+                  when={props.playlist().imageType}
+                  fallback={
+                    <div class="text-center">
+                      <svg
+                        width="100"
+                        height="100"
+                        viewBox="0 0 100 100"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
+                          fill="#FF00FF"
+                        />
+                      </svg>
+                    </div>
+                  }
+                >
+                  {(() => {
+                    const imageUrl = getImageUrlForContext(
+                      props.playlist(),
+                      "modal"
+                    );
+                    return (
+                      <>
+                        {imageUrl ? (
+                          <img
+                            src={imageUrl}
+                            alt="playlist cover"
+                            class="w-full h-full object-cover"
                           />
-                        </svg>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </Show>
-          </button>
-        </div>
-      </div>
+                        ) : (
+                          <div class="text-center">
+                            <svg
+                              width="100"
+                              height="100"
+                              viewBox="0 0 100 100"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
+                                fill="#FF00FF"
+                              />
+                            </svg>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </Show>
+              </button>
+            </div>
+          );
+        }
 
-      {/* songz list and edit panels */}
-      <div
-        ref={scrollContainerRef}
-        class={`${isMobile() ? "flex-1" : "flex-1 overflow-y-auto"}`}
-      >
-        {/* inline playlist edit panel - only renders once rows have animated out.
+        return (
+          <>
+            <Show when={!isMobile()}>{headerSection()}</Show>
+
+            {/* songz list and edit panels. on mobile the playlist header scrolls
+          away with the content while the player controls bar stays sticky */}
+            <div
+              ref={scrollContainerRef}
+              class="flex-1 overflow-y-auto min-h-0"
+            >
+              <Show when={isMobile()}>
+                {headerSection()}
+                <div
+                  ref={stickyBarRef}
+                  style={headerStyle()}
+                  class="sticky top-0 z-[110] bg-black py-1"
+                >
+                  {playerControls()}
+                </div>
+              </Show>
+              {/* inline share panel - renders once rows have animated out.
+            keyed on playlist id so it remounts when switching playlists */}
+              <Show
+                when={showingShare() && rowsGone() ? props.playlist().id : null}
+                keyed
+              >
+                <div style={panelEntryStyle()}>
+                  <PlaylistSharePanel
+                    playlist={props.playlist}
+                    playlists={playlists()}
+                    onClose={closeShare}
+                  />
+                </div>
+              </Show>
+
+              {/* inline playlist edit panel - only renders once rows have animated out.
             keyed on playlist id so the form remounts with fresh data when
             switching playlists via the sidebar */}
-        <Show
-          when={editingPlaylist() && rowsGone() ? props.playlist().id : null}
-          keyed
-        >
-          <div
-            style={panelEntryStyle()}
-            class={isMobile() ? "p-2" : "px-6 pt-2 pb-4"}
-          >
-            <PlaylistEditPanel
-              playlist={props.playlist()}
-              playlistSongs={playlistSongs()}
-              onClose={handleCloseEdit}
-              onSave={(updated) => playlistManager.selectPlaylist(updated)}
-            />
-          </div>
-        </Show>
+              <Show
+                when={
+                  editingPlaylist() && rowsGone() ? props.playlist().id : null
+                }
+                keyed
+              >
+                <div
+                  style={panelEntryStyle()}
+                  class={isMobile() ? "p-2" : "px-6 pt-2 pb-4"}
+                >
+                  <PlaylistEditPanel
+                    playlist={props.playlist()}
+                    playlistSongs={playlistSongs()}
+                    onClose={handleCloseEdit}
+                    onSave={(updated) =>
+                      playlistManager.selectPlaylist(updated)
+                    }
+                  />
+                </div>
+              </Show>
 
-        {/* inline song edit panel - only renders once rows have animated out.
+              {/* inline song edit panel - only renders once rows have animated out.
             keyed on song id so the form remounts when navigating between songs */}
-        <Show
-          when={editingSong() && rowsGone() ? editingSong()!.id : null}
-          keyed
-        >
-          <div
-            style={panelEntryStyle()}
-            class={isMobile() ? "" : "px-6 pt-2 pb-4"}
-          >
-            <SongEditPanel
-              song={editingSong()!}
-              index={editingSongIndex()}
-              onClose={handleCloseEdit}
-              onSave={handleSongSaved}
-              prevSong={songAtOffset(-1)}
-              nextSong={songAtOffset(1)}
-              onNavigate={handleEditSong}
-            />
-          </div>
-        </Show>
+              <Show
+                when={editingSong() && rowsGone() ? editingSong()!.id : null}
+                keyed
+              >
+                <div
+                  style={panelEntryStyle()}
+                  class={isMobile() ? "" : "px-6 pt-2 pb-4"}
+                >
+                  <SongEditPanel
+                    song={editingSong()!}
+                    index={editingSongIndex()}
+                    onClose={handleCloseEdit}
+                    onSave={handleSongSaved}
+                    prevSong={songAtOffset(-1)}
+                    nextSong={songAtOffset(1)}
+                    onNavigate={handleEditSong}
+                  />
+                </div>
+              </Show>
 
-        {/* rows container - no overflow:hidden here; scroll container clips instead.
+              {/* rows container - no overflow:hidden here; scroll container clips instead.
             fully removed from layout once rows are gone so leftover padding +
             space-y margins don't add phantom height below the edit panel */}
-        <div
-          class={`${isMobile() ? "space-y-1" : "p-6 space-y-2"}`}
-          style={rowsGone() ? { display: "none" } : {}}
-        >
-          {/* empty playlist message - hidden during edit mode */}
-          <Show
-            when={
-              !isEditing() &&
-              (!props.playlist().songIds ||
-                props.playlist().songIds.length === 0)
-            }
-          >
-            <div class="text-center py-16">
-              <div class="text-gray-400 text-xl mb-4">no songz yet</div>
-              <p class="text-gray-400 mb-4">
-                drag and drop audio filez (or a .zip file!) here to add them to
-                this playlist
-              </p>
-              <div class="text-xs text-gray-500 space-y-1">
-                <div>playlist id: {props.playlist().id}</div>
-                <div>supported formatz: mp3, wav, flac, aiff, ogg, mp4</div>
-              </div>
-            </div>
-          </Show>
-
-          {/* animated song rows: outer wrapper collapses height after animation,
-              inner wrapper runs the CSS keyframe flyout/flyin animation */}
-          <For each={props.playlist().songIds}>
-            {(songId, index) => {
-              const isBeingEdited = () => editingSong()?.id === songId;
-              // sticky has to live on this outer wrapper: the row itself is
-              // boxed in by the animation wrappers, so position: sticky on it
-              // can't escape and never actually sticks
-              const isActiveRow = () =>
-                audioState.selectedSongId() === songId ||
-                (audioState.currentSong()?.id === songId &&
-                  audioState.isPlaying());
-              return (
-                <Show when={!isBeingEdited()}>
-                  <div
-                    style={rowOuterStyle()}
-                    class={isActiveRow() ? "sticky top-0 bottom-0 z-100" : ""}
-                  >
-                    <div style={rowInnerStyle(index())}>
-                      <SongRow
-                        songId={songId}
-                        index={index()}
-                        showRemoveButton={true}
-                        onRemove={handleRemoveSong}
-                        onPlay={handlePlaySongWithPlaylist}
-                        onPause={handlePauseSong}
-                        onEdit={handleEditSong}
-                        onReorder={handleReorderSongs}
-                      />
+              <div
+                class={`${isMobile() ? "space-y-1" : "p-6 space-y-2"}`}
+                style={rowsGone() ? { display: "none" } : {}}
+              >
+                {/* empty playlist message - hidden during edit mode */}
+                <Show
+                  when={
+                    !isEditing() &&
+                    (!props.playlist().songIds ||
+                      props.playlist().songIds.length === 0)
+                  }
+                >
+                  <div class="text-center py-16">
+                    <div class="text-gray-400 text-xl mb-4">no songz yet</div>
+                    <p class="text-gray-400 mb-4">
+                      drag and drop audio filez (or a .zip file!) here to add
+                      them to this playlist
+                    </p>
+                    <div class="text-xs text-gray-500 space-y-1">
+                      <div>playlist id: {props.playlist().id}</div>
+                      <div>
+                        supported formatz: mp3, wav, flac, aiff, ogg, mp4
+                      </div>
                     </div>
                   </div>
                 </Show>
-              );
-            }}
-          </For>
-        </div>
-      </div>
+
+                {/* animated song rows: outer wrapper collapses height after animation,
+              inner wrapper runs the CSS keyframe flyout/flyin animation */}
+                <For each={props.playlist().songIds}>
+                  {(songId, index) => {
+                    const isBeingEdited = () => editingSong()?.id === songId;
+                    // sticky has to live on this outer wrapper: the row itself is
+                    // boxed in by the animation wrappers, so position: sticky on it
+                    // can't escape and never actually sticks
+                    const isActiveRow = () =>
+                      audioState.selectedSongId() === songId ||
+                      (audioState.currentSong()?.id === songId &&
+                        audioState.isPlaying());
+                    return (
+                      <Show when={!isBeingEdited()}>
+                        <div
+                          style={{
+                            ...rowOuterStyle(),
+                            ...(isActiveRow()
+                              ? { top: `${stickyBarHeight()}px` }
+                              : {}),
+                          }}
+                          class={isActiveRow() ? "sticky bottom-0 z-100" : ""}
+                        >
+                          <div style={rowInnerStyle(index())}>
+                            <SongRow
+                              songId={songId}
+                              index={index()}
+                              showRemoveButton={true}
+                              onRemove={handleRemoveSong}
+                              onPlay={handlePlaySongWithPlaylist}
+                              onPause={handlePauseSong}
+                              onEdit={handleEditSong}
+                              onReorder={handleReorderSongs}
+                            />
+                          </div>
+                        </div>
+                      </Show>
+                    );
+                  }}
+                </For>
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }

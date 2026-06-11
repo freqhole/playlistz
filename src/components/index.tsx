@@ -148,7 +148,7 @@ function PlaylistzInner() {
 
   return (
     <div
-      class={`relative bg-black text-white ${isMobile() ? "min-h-screen" : "h-screen overflow-hidden"}`}
+      class="relative bg-black text-white h-screen overflow-hidden"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -193,10 +193,7 @@ function PlaylistzInner() {
         }
       >
         {/* main content wrapper with sidebar layout */}
-        <div
-          class={`relative flex ${isMobile() ? "min-h-screen" : "h-full"}`}
-          style={{ "z-index": "2" }}
-        >
+        <div class="relative flex h-full" style={{ "z-index": "2" }}>
           {/* left side nav */}
           <div
             class={`transition-all duration-300 ease-out ${isMobile() ? "" : "overflow-hidden"} ${
@@ -218,7 +215,7 @@ function PlaylistzInner() {
 
           {/* main playlist content */}
           <div
-            class={`${isMobile() && !sidebarCollapsed() ? "hidden" : "flex-1"} flex flex-col ${isMobile() ? "" : "h-full"}`}
+            class={`${isMobile() && !sidebarCollapsed() ? "hidden" : "flex-1"} flex flex-col min-h-0`}
           >
             <Show when={selectedPlaylist()}>
               {(playlist) => <PlaylistContainer playlist={playlist} />}
