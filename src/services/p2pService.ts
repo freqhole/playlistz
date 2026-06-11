@@ -71,6 +71,20 @@ let leaderState = false;
 let started = false;
 let cancelLeadership: (() => void) | null = null;
 
+// leadership phase: "unknown" until the lock request settles, then
+// "leader" / "waiting" / "unsupported". used by waitForNode to short-circuit
+// in tabs that will never hold the node
+let leadershipPhase: "unknown" | "leader" | "waiting" | "unsupported" =
+  "unknown";
+
+// resolved when the local node comes up (or definitively won't)
+const nodeWaiters = new Set<(node: MiddenStreamNode | null) => void>();
+
+function flushNodeWaiters(node: MiddenStreamNode | null): void {
+  for (const resolve of nodeWaiters) resolve(node);
+  nodeWaiters.clear();
+}
+
 const identityListeners = new Set<(identity: P2PIdentity | null) => void>();
 const leadershipListeners = new Set<(isLeader: boolean) => void>();
 
@@ -157,10 +171,15 @@ export async function startP2P(): Promise<void> {
   cancelLeadership = acquireNodeLeadership({
     onAcquired: async () => {
       leaderState = true;
+      leadershipPhase = "leader";
       notifyLeadershipListeners();
 
       const node = await bootMidden(identityAtStart.secret_key);
       if (node) {
+        // expose the node BEFORE notifying listeners - the iroh adapter's
+        // identity listener calls getNode() and would otherwise throw
+        currentNode = node;
+
         // update node_id from the real iroh public key
         const realNodeId = node.node_id();
         if (realNodeId !== identityAtStart.node_id) {
@@ -170,12 +189,21 @@ export async function startP2P(): Promise<void> {
           } catch {
             // non-fatal: node_id update will be retried on next boot
           }
-          notifyIdentityListeners();
         }
-        currentNode = node;
+        // always notify: listeners subscribed before leadership was acquired
+        // need to learn the node is now available
+        notifyIdentityListeners();
       }
+      flushNodeWaiters(node);
     },
     onStateChange: (state) => {
+      if (state === "waiting") {
+        leadershipPhase = "waiting";
+        // another tab holds the node - local waiters resolve null
+        flushNodeWaiters(null);
+      } else if (state === "unsupported") {
+        leadershipPhase = "unsupported";
+      }
       if (state !== "leader" && leaderState) {
         leaderState = false;
         notifyLeadershipListeners();
@@ -201,6 +229,32 @@ export function stopP2P(): void {
 /** get the running midden node, or null if not leader or not yet started. */
 export function getNode(): MiddenStreamNode | null {
   return currentNode;
+}
+
+/**
+ * wait for the local midden node to come up after startP2P.
+ * resolves with the node once booted, or null when this tab is not the
+ * leader (another tab holds the node), p2p was never started, or the
+ * timeout elapses.
+ */
+export function waitForNode(
+  timeoutMs = 30000
+): Promise<MiddenStreamNode | null> {
+  if (currentNode) return Promise.resolve(currentNode);
+  if (!started || leadershipPhase === "waiting") {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      nodeWaiters.delete(waiter);
+      resolve(null);
+    }, timeoutMs);
+    const waiter = (node: MiddenStreamNode | null) => {
+      clearTimeout(timer);
+      resolve(node);
+    };
+    nodeWaiters.add(waiter);
+  });
 }
 
 /** get the current resolved identity, or null if not yet resolved. */
@@ -281,8 +335,10 @@ export function _resetForTests(): void {
   currentIdentity = null;
   currentNode = null;
   leaderState = false;
+  leadershipPhase = "unknown";
   cancelLeadership = null;
   _localStore = null;
   identityListeners.clear();
   leadershipListeners.clear();
+  nodeWaiters.clear();
 }

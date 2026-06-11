@@ -36,6 +36,7 @@ const { docs, adapter, p2p, blobs } = vi.hoisted(() => {
       return () => {};
     }),
     hasExistingIdentity: vi.fn(async () => false),
+    waitForNode: vi.fn(async (): Promise<unknown> => null),
   };
   const blobs = {
     serveBlobRequest: vi.fn(async () => {}),
@@ -45,6 +46,7 @@ const { docs, adapter, p2p, blobs } = vi.hoisted(() => {
 
 vi.mock("./automergeRepo.js", () => ({
   getIrohAdapter: () => adapter,
+  authorizePeerForDoc: vi.fn(),
   findPlaylistDoc: vi.fn(async (docId: string) => {
     const doc = docs.get(docId);
     if (!doc) throw new Error(`doc not found: ${docId}`);
@@ -63,6 +65,7 @@ vi.mock("./p2pService.js", () => ({
   isLeader: p2p.isLeader,
   onLeadershipChange: p2p.onLeadershipChange,
   hasExistingIdentity: p2p.hasExistingIdentity,
+  waitForNode: p2p.waitForNode,
 }));
 
 vi.mock("./blobTransferService.js", () => ({

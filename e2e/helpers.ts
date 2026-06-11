@@ -12,6 +12,15 @@ import type { Page } from "@playwright/test";
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
+// --- timestamped logging ---
+
+// log with a wall-clock timestamp so slow steps and stalls are visible
+// in test output (e.g. "[12:34:56] [e2e] peer a: p2p node online")
+export function logTs(message: string): void {
+  const now = new Date().toTimeString().slice(0, 8);
+  console.log(`[${now}] ${message}`);
+}
+
 // --- synthetic audio ---
 
 // build a valid mono 16-bit PCM WAV file with a sine tone.

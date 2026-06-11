@@ -149,6 +149,21 @@ export function createPlaylistDoc(initial?: Partial<PlaylistDoc>): {
   return { docId: handle.url, handle };
 }
 
+// pre-authorize a peer for a doc we don't have yet. seeds the peer cache
+// so sharePolicy lets us request the doc from (and sync it with) that peer
+// before the doc has arrived locally. without this, opening a share link
+// dead-ends: the policy only trusts peers recorded in the doc, but the doc
+// can't arrive until the policy trusts the peer.
+export function authorizePeerForDoc(docId: AutomergeUrl, nodeId: string): void {
+  const { documentId } = parseAutomergeUrl(docId);
+  const entry = docPeerCache.get(documentId) ?? {
+    peers: new Set<string>(),
+    acl: new Set<string>(),
+  };
+  entry.peers.add(nodeId);
+  docPeerCache.set(documentId, entry);
+}
+
 // find an existing playlist doc by its AutomergeUrl, waiting for the handle
 // to reach a ready (or terminal) state before returning.
 let _findCalls = 0;

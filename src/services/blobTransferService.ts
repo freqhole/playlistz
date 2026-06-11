@@ -339,6 +339,55 @@ export async function savePlaylistOffline(
   onProgress?: (p: OfflineProgress) => void
 ): Promise<number> {
   const docId = playlist.id;
+  const missing = await collectMissingBlobs(playlist);
+
+  let fetched = 0;
+  for (let i = 0; i < missing.length; i++) {
+    const item = missing[i]!;
+    onProgress?.({
+      done: i,
+      total: missing.length,
+      currentTitle: item.title,
+      fraction: missing.length === 0 ? 1 : i / missing.length,
+    });
+    const result = await fetchBlobForDoc(docId, item.sha, item.mime, (p) => {
+      onProgress?.({
+        done: i,
+        total: missing.length,
+        currentTitle: item.title,
+        fraction: (i + p.fraction) / missing.length,
+      });
+    });
+    if (result) fetched++;
+  }
+
+  onProgress?.({
+    done: missing.length,
+    total: missing.length,
+    currentTitle: "",
+    fraction: 1,
+  });
+  return fetched;
+}
+
+/**
+ * true when any blob the playlist references (audio or images) is not
+ * yet in the local blob store. used to hide "save offline" once a
+ * playlist is fully cached.
+ */
+export async function playlistHasMissingBlobs(
+  playlist: Playlist
+): Promise<boolean> {
+  const missing = await collectMissingBlobs(playlist);
+  return missing.length > 0;
+}
+
+// gather every blob a playlist references (song audio, song images,
+// playlist covers), deduped, and return the subset missing locally
+async function collectMissingBlobs(
+  playlist: Playlist
+): Promise<{ sha: string; mime: string; title: string }[]> {
+  const docId = playlist.id;
   const wanted: { sha: string; mime: string; title: string }[] = [];
 
   const songs = await getSongsForPlaylist(docId).catch(() => [] as Song[]);
@@ -389,34 +438,7 @@ export async function savePlaylistOffline(
       missing.push(item);
     }
   }
-
-  let fetched = 0;
-  for (let i = 0; i < missing.length; i++) {
-    const item = missing[i]!;
-    onProgress?.({
-      done: i,
-      total: missing.length,
-      currentTitle: item.title,
-      fraction: missing.length === 0 ? 1 : i / missing.length,
-    });
-    const result = await fetchBlobForDoc(docId, item.sha, item.mime, (p) => {
-      onProgress?.({
-        done: i,
-        total: missing.length,
-        currentTitle: item.title,
-        fraction: (i + p.fraction) / missing.length,
-      });
-    });
-    if (result) fetched++;
-  }
-
-  onProgress?.({
-    done: missing.length,
-    total: missing.length,
-    currentTitle: "",
-    fraction: 1,
-  });
-  return fetched;
+  return missing;
 }
 
 /** reset module state. for use in tests only. */

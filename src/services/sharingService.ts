@@ -23,11 +23,12 @@ import {
   type SharePayloadV1,
 } from "freqhole-api-client/playlistz";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { getIrohAdapter, findPlaylistDoc, flushDoc } from "./automergeRepo.js";
+import { getIrohAdapter, findPlaylistDoc, flushDoc, authorizePeerForDoc } from "./automergeRepo.js";
 import {
   startP2P,
   getIdentity,
   getNode,
+  waitForNode,
   onLeadershipChange,
   hasExistingIdentity,
 } from "./p2pService.js";
@@ -116,6 +117,11 @@ export async function ensureSharingReady(): Promise<void> {
       }
     });
   }
+
+  // startP2P resolves before the midden node finishes booting - wait so
+  // callers (buildShareLink, openShareLink) can dial immediately. resolves
+  // null fast in non-leader tabs, where the node lives elsewhere.
+  await waitForNode();
 }
 
 /**
@@ -207,23 +213,47 @@ export async function openShareLink(input: string): Promise<string> {
   const identity = getIdentity();
   const adapter = getIrohAdapter();
 
-  // dial the sharing peer first so repo.find can fetch the doc
-  try {
-    await adapter.addPeer(payload.n);
-  } catch (err) {
-    console.warn("[sharing] could not connect to sharing peer:", err);
-    // continue anyway - the doc may already be local or another peer has it
+  // pre-authorize the sharing peer for this doc. sharePolicy only trusts
+  // peers recorded in the doc, but we don't have the doc yet - without
+  // this seed, repo.find would never request it from the peer
+  authorizePeerForDoc(payload.d as AutomergeUrl, payload.n);
+
+  // dial the sharing peer first so repo.find can fetch the doc. discovery
+  // records (pkarr/dns) can lag for a freshly-booted peer, so retry the
+  // dial a few times before giving up
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await adapter.addPeer(payload.n);
+      break;
+    } catch (err) {
+      if (attempt >= 5) {
+        console.warn("[sharing] could not connect to sharing peer:", err);
+        // continue anyway - the doc may already be local or another peer has it
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
   }
 
   const handle = await findPlaylistDoc(payload.d as AutomergeUrl);
   const doc = handle.doc();
 
-  // record ourselves in the doc's peers map so the owner's sharePolicy
-  // announces this doc to us on future connections
+  // record ourselves AND the sharing peer in the doc's peers map. ourselves
+  // so the owner's sharePolicy announces this doc to us on reconnect; the
+  // sharer so our own policy keeps trusting them after the cache is rebuilt
+  // from the doc (and so reconnectKnownPeers can redial them after reload)
   const myNodeId = identity?.node_id;
-  if (myNodeId && doc && !(myNodeId in (doc.peers ?? {}))) {
-    handle.change((d) => addPeerToDoc(d, myNodeId));
-    await flushDoc(payload.d as AutomergeUrl);
+  if (doc) {
+    const peers = doc.peers ?? {};
+    const missingSelf = !!myNodeId && !(myNodeId in peers);
+    const missingSharer = !(payload.n in peers);
+    if (missingSelf || missingSharer) {
+      handle.change((d) => {
+        if (missingSelf && myNodeId) addPeerToDoc(d, myNodeId);
+        if (missingSharer) addPeerToDoc(d, payload.n);
+      });
+      await flushDoc(payload.d as AutomergeUrl);
+    }
   }
 
   // index the playlist for the sidebar

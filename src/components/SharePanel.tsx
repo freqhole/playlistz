@@ -289,15 +289,18 @@ export function SharePanel(props: SharePanelProps) {
               }
             >
               <div class="text-sm space-y-2">
-                <div class="flex items-center gap-2">
+                <div
+                  class="flex items-center gap-2"
+                  title={
+                    leader()
+                      ? "this tab runs the p2p node"
+                      : "another tab holds the p2p node"
+                  }
+                >
                   <span
                     class={`inline-block w-2 h-2 rounded-full ${leader() ? "bg-green-500" : "bg-yellow-500"}`}
                   />
-                  <span class="text-gray-300">
-                    {leader()
-                      ? "this tab runs the p2p node"
-                      : "another tab holds the p2p node"}
-                  </span>
+                  <span class="text-gray-300">online</span>
                 </div>
                 <Show when={nodeId()}>
                   <div class="flex items-center gap-2">
@@ -369,7 +372,7 @@ export function SharePanel(props: SharePanelProps) {
             <label class="block text-sm text-gray-400 mb-1">
               open a share link
             </label>
-            <div class="flex gap-2">
+            <div class="flex flex-col gap-2">
               <input
                 type="text"
                 value={pasteValue()}
@@ -378,14 +381,16 @@ export function SharePanel(props: SharePanelProps) {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void handleOpenLink();
                 }}
-                class="flex-1 bg-black text-white px-3 py-2 text-sm border border-magenta-200 focus:border-magenta-500 focus:outline-none"
+                class="w-full bg-black text-white px-3 py-2 text-sm border border-magenta-200 focus:border-magenta-500 focus:outline-none"
               />
-              <button
-                onClick={() => void handleOpenLink()}
-                class="px-4 py-2 bg-magenta-500 hover:bg-magenta-600 text-white text-sm"
-              >
-                open
-              </button>
+              <div class="flex gap-2">
+                <button
+                  onClick={() => void handleOpenLink()}
+                  class="flex-1 px-4 py-2 bg-magenta-500 hover:bg-magenta-600 text-white text-sm"
+                >
+                  open
+                </button>
+              </div>
             </div>
             <Show when={pasteStatus()}>
               <div class="mt-1 text-xs text-magenta-400">{pasteStatus()}</div>
@@ -397,27 +402,29 @@ export function SharePanel(props: SharePanelProps) {
             <label class="block text-sm text-gray-400 mb-1">
               browse a peer's playlistz
             </label>
-            <div class="flex gap-2">
+            <div class="flex flex-col gap-2">
               <input
                 type="text"
                 value={browseNodeId()}
                 placeholder="peer node id..."
                 onInput={(e) => setBrowseNodeId(e.currentTarget.value)}
-                class="flex-1 bg-black text-white px-3 py-2 text-sm border border-magenta-200 focus:border-magenta-500 focus:outline-none"
+                class="w-full bg-black text-white px-3 py-2 text-sm border border-magenta-200 focus:border-magenta-500 focus:outline-none"
               />
-              <button
-                onClick={() => void handleBrowsePeer()}
-                class="px-3 py-2 border border-magenta-500 text-magenta-400 hover:bg-magenta-500/20 text-sm"
-              >
-                browse
-              </button>
-              <button
-                onClick={() => void handleKnock()}
-                class="px-3 py-2 border border-gray-600 text-gray-300 hover:bg-gray-800 text-sm"
-                title="ask this peer for access"
-              >
-                knock
-              </button>
+              <div class="flex gap-2">
+                <button
+                  onClick={() => void handleBrowsePeer()}
+                  class="flex-1 px-3 py-2 border border-magenta-500 text-magenta-400 hover:bg-magenta-500/20 text-sm"
+                >
+                  browse
+                </button>
+                <button
+                  onClick={() => void handleKnock()}
+                  class="flex-1 px-3 py-2 border border-gray-600 text-gray-300 hover:bg-gray-800 text-sm"
+                  title="ask this peer for access"
+                >
+                  knock
+                </button>
+              </div>
             </div>
             <Show when={browseStatus()}>
               <div class="mt-1 text-xs text-magenta-400">{browseStatus()}</div>

@@ -18,9 +18,10 @@ import {
 } from "../../context/PlaylistzContext.js";
 import { getImageUrlForContext } from "../../services/imageService.js";
 import { audioState } from "../../services/audioService.js";
-import { buildShareLink } from "../../services/sharingService.js";
+import { initSharingState, sharingReady } from "../../services/sharingState.js";
 import {
   savePlaylistOffline,
+  playlistHasMissingBlobs,
   type OfflineProgress,
 } from "../../services/blobTransferService.js";
 import { AudioPlayer } from "../AudioPlayer.js";
@@ -34,9 +35,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const uiState = usePlaylistzUI();
   const imageModal = usePlaylistzImageModal();
 
+  onMount(() => initSharingState());
+
   const {
     playlistSongs,
-    setShowDeleteConfirm,
     isDownloading,
     isCaching,
     allSongsCached,
@@ -65,36 +67,29 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     await handlePlaySong(song, props.playlist());
   };
 
-  // p2p share link: copies a #share/ url to the clipboard
-  const [shareState, setShareState] = createSignal<
-    "idle" | "building" | "copied" | "error"
-  >("idle");
-  const handleSharePlaylist = async () => {
-    if (shareState() === "building") return;
-    setShareState("building");
-    try {
-      const { url } = await buildShareLink(
-        props.playlist().id,
-        props.playlist().title
-      );
-      await navigator.clipboard.writeText(url);
-      setShareState("copied");
-      setTimeout(() => setShareState("idle"), 2000);
-    } catch (err) {
-      console.warn("share link failed:", err);
-      setShareState("error");
-      setTimeout(() => setShareState("idle"), 2000);
-    }
-  };
-
   // p2p save offline: fetch all missing blobs from the doc's peers
   const [p2pSaveProgress, setP2pSaveProgress] =
     createSignal<OfflineProgress | null>(null);
+  // hide the save-offline button once every referenced blob is local
+  const [p2pHasMissing, setP2pHasMissing] = createSignal(false);
+  createEffect(
+    on(
+      () => [props.playlist().id, playlistSongs().length] as const,
+      () => {
+        void playlistHasMissingBlobs(props.playlist())
+          .then(setP2pHasMissing)
+          .catch(() => setP2pHasMissing(false));
+      }
+    )
+  );
   const handleP2pSaveOffline = async () => {
     if (p2pSaveProgress()) return;
     setP2pSaveProgress({ done: 0, total: 0, currentTitle: "", fraction: 0 });
     try {
       await savePlaylistOffline(props.playlist(), (p) => setP2pSaveProgress(p));
+      setP2pHasMissing(
+        await playlistHasMissingBlobs(props.playlist()).catch(() => false)
+      );
     } catch (err) {
       console.warn("p2p save offline failed:", err);
     } finally {
@@ -419,6 +414,39 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 class="flex items-center justify-end gap-2"
                 style={{ "grid-area": "buttons" }}
               >
+                {/* edit playlist button - toggles edit panel */}
+                <button
+                  onClick={() => {
+                    console.log(
+                      "[trace] edit button click, editingPlaylist =",
+                      editingPlaylist(),
+                      "rowsGone =",
+                      rowsGone()
+                    );
+                    editingPlaylist()
+                      ? handleCloseEdit()
+                      : handleEditPlaylist();
+                  }}
+                  class={`p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black bg-opacity-80 border ${editingPlaylist() ? "text-magenta-400 border-magenta-500" : "text-gray-400 border-transparent"}`}
+                  title={
+                    editingPlaylist() ? "close edit panel" : "edit playlist"
+                  }
+                >
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                    />
+                  </svg>
+                </button>
+
                 {/* save offline button */}
                 <Show
                   when={
@@ -457,36 +485,16 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   </Show>
                 </Show>
 
-                {/* share playlist (p2p) button */}
-                <button
-                  onClick={() => void handleSharePlaylist()}
-                  disabled={shareState() === "building"}
-                  class={`p-2 hover:text-magenta-400 hover:bg-gray-700 transition-colors bg-black bg-opacity-80 disabled:opacity-50 ${shareState() === "copied" ? "text-magenta-400" : "text-gray-400"}`}
-                  title={
-                    shareState() === "copied"
-                      ? "share link copied!"
-                      : shareState() === "error"
-                        ? "could not create share link"
-                        : "copy p2p share link"
+                {/* share playlist (p2p) moved to the edit panel's share
+                    column - no header share button */}
+
+                {/* p2p save offline button (fetch missing blobs from peers);
+                    hidden once everything is already cached locally */}
+                <Show
+                  when={
+                    !window.STANDALONE_MODE && sharingReady() && p2pHasMissing()
                   }
                 >
-                  <svg
-                    class="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                    />
-                  </svg>
-                </button>
-
-                {/* p2p save offline button (fetch missing blobs from peers) */}
-                <Show when={!window.STANDALONE_MODE}>
                   <button
                     onClick={() => void handleP2pSaveOffline()}
                     disabled={p2pSaveProgress() !== null}
@@ -532,39 +540,6 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   </button>
                 </Show>
 
-                {/* edit playlist button - toggles edit panel */}
-                <button
-                  onClick={() => {
-                    console.log(
-                      "[trace] edit button click, editingPlaylist =",
-                      editingPlaylist(),
-                      "rowsGone =",
-                      rowsGone()
-                    );
-                    editingPlaylist()
-                      ? handleCloseEdit()
-                      : handleEditPlaylist();
-                  }}
-                  class={`p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black bg-opacity-80 ${editingPlaylist() ? "text-magenta-400" : "text-gray-400"}`}
-                  title={
-                    editingPlaylist() ? "close edit panel" : "edit playlist"
-                  }
-                >
-                  <svg
-                    class="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                    />
-                  </svg>
-                </button>
-
                 {/* download playlist .zip button */}
                 <Show when={window.location.protocol !== "file:"}>
                   <button
@@ -607,27 +582,6 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     </Show>
                   </button>
                 </Show>
-
-                {/* delete playlist button */}
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  class="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 transition-colors bg-black bg-opacity-80"
-                  title="delete playlist"
-                >
-                  <svg
-                    class="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
-                </button>
               </div>
             </div>
           </div>

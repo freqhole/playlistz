@@ -1,5 +1,5 @@
 /* @jsxImportSource solid-js */
-import { createSignal, Show, onMount } from "solid-js";
+import { createSignal, createEffect, Show, onMount } from "solid-js";
 import {
   updatePlaylist,
   deletePlaylist,
@@ -11,6 +11,15 @@ import {
   validateImageFile,
   createImageUrlFromData,
 } from "../services/imageService.js";
+import {
+  buildShareLink,
+  ensureSharingReady,
+} from "../services/sharingService.js";
+import {
+  initSharingState,
+  sharingReady,
+  pendingKnockCount,
+} from "../services/sharingState.js";
 import { downloadPlaylistAsZip } from "../services/playlistDownloadService.js";
 import { usePlaylistzManager } from "../context/PlaylistzContext.js";
 import type { Playlist, Song } from "../types/playlist.js";
@@ -34,7 +43,47 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
   const [isDownloading, setIsDownloading] = createSignal(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = createSignal(false);
 
+  // p2p share column state
+  const [enablingP2p, setEnablingP2p] = createSignal(false);
+  const [shareUrl, setShareUrl] = createSignal<string | null>(null);
+  const [shareCopied, setShareCopied] = createSignal(false);
+
+  // build the share link once the endpoint is ready
+  createEffect(() => {
+    if (!sharingReady() || shareUrl()) return;
+    void buildShareLink(props.playlist.id, props.playlist.title)
+      .then(({ url }) => setShareUrl(url))
+      .catch((err) => console.warn("share link failed:", err));
+  });
+
+  const handleEnableSharing = async () => {
+    if (enablingP2p()) return;
+    setEnablingP2p(true);
+    try {
+      await ensureSharingReady();
+    } catch (err) {
+      setError("could not start p2p sharing");
+      console.warn("enable sharing failed:", err);
+    } finally {
+      setEnablingP2p(false);
+    }
+  };
+
+  const handleCopyShareUrl = async () => {
+    const url = shareUrl();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch (err) {
+      console.warn("clipboard write failed:", err);
+    }
+  };
+
   onMount(() => {
+    initSharingState();
+
     if (props.playlist.imageData && props.playlist.imageType) {
       const displayData =
         props.playlist.thumbnailData || props.playlist.imageData;
@@ -228,8 +277,10 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
     <div class="bg-black/40 overflow-hidden">
       {/* on sm+: form controls left (clamped to 500px), image right.
           justify-between pushes the columns apart so spare width sits in the
-          middle. order utilities keep the image on top for the mobile column */}
-      <div class="p-4 border-none grid grid-cols-1 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] sm:justify-between gap-6">
+          middle. order utilities keep the image on top for the mobile column.
+          on lg+ a third share column appears on the right; below lg the share
+          section spans the full width under the other two columns */}
+      <div class="p-4 border-none grid grid-cols-1 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] lg:grid-cols-[minmax(0,440px)_min(30%,22rem)_minmax(0,1fr)] sm:justify-between gap-6">
         {/* image + upload buttons */}
         <div class="flex flex-col gap-3 sm:order-2">
           {/* image sizes naturally at its own aspect ratio (no gray bars);
@@ -583,6 +634,60 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           <Show when={error()}>
             <div class="bg-red-900/30 border border-red-500 p-3">
               <div class="text-red-400 text-sm">{error()}</div>
+            </div>
+          </Show>
+        </div>
+
+        {/* p2p share column */}
+        <div class="flex flex-col gap-3 sm:order-3 sm:col-span-2 lg:col-span-1">
+          <label class="text-sm font-medium text-gray-300">
+            share<span class="text-magenta-500">z</span>
+          </label>
+          <Show
+            when={sharingReady()}
+            fallback={
+              <div class="space-y-2">
+                <p class="text-xs text-gray-500">
+                  share this playlist directly with other people over p2p. no
+                  server involved - your browser syncs with theirs.
+                </p>
+                <button
+                  onClick={() => void handleEnableSharing()}
+                  disabled={enablingP2p()}
+                  class="w-full px-3 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white text-sm font-medium transition-colors"
+                >
+                  {enablingP2p()
+                    ? "starting p2p node..."
+                    : "enable p2p sharing"}
+                </button>
+              </div>
+            }
+          >
+            <div class="space-y-2">
+              <p class="text-xs text-gray-500">
+                anyone with this link can open and sync this playlist:
+              </p>
+              <input
+                type="text"
+                readonly
+                value={shareUrl() ?? "building share link..."}
+                onClick={(e) => e.currentTarget.select()}
+                class="w-full bg-black text-magenta-400 px-3 py-2 text-xs border border-magenta-200 focus:border-magenta-500 focus:outline-none truncate"
+              />
+              <button
+                onClick={() => void handleCopyShareUrl()}
+                disabled={!shareUrl()}
+                class="w-full px-3 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:bg-gray-700 text-white text-sm font-medium transition-colors"
+              >
+                {shareCopied() ? "copied!" : "copy share link"}
+              </button>
+              <Show when={pendingKnockCount() > 0}>
+                <p class="text-xs text-magenta-400">
+                  {pendingKnockCount()} pending knock request
+                  {pendingKnockCount() === 1 ? "" : "z"} - open the share panel
+                  in the sidebar to respond
+                </p>
+              </Show>
             </div>
           </Show>
         </div>

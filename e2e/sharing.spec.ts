@@ -1,10 +1,15 @@
 // e2e: the share panel UI. covers opening the panel, settings
-// persistence, and share-link paste validation. actual p2p transfer
-// needs two browser contexts + relay connectivity, so it lives behind
-// the PLAYLISTZ_E2E_P2P env var (off by default).
+// persistence, share-link paste validation, and a real two-browser
+// p2p transfer over the iroh relay (slow; skip with
+// PLAYLISTZ_E2E_SKIP_P2P=1 when offline or in a hurry).
 
 import { test, expect } from "@playwright/test";
-import { resetAppState, createPlaylistViaUI, waitForApp } from "./helpers.js";
+import {
+  resetAppState,
+  createPlaylistViaUI,
+  waitForApp,
+  logTs,
+} from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
   await resetAppState(page);
@@ -68,62 +73,105 @@ test("pasting an invalid share link shows an error", async ({ page }) => {
   });
 });
 
-test("copy p2p share link button is present on a playlist", async ({
+test("playlist header has no share button (sharing lives in edit panel)", async ({
   page,
 }) => {
   await createPlaylistViaUI(page);
-  await expect(page.getByTitle("copy p2p share link")).toBeVisible();
+  await expect(
+    page.locator("input[placeholder='playlist title']")
+  ).toBeVisible();
+  await expect(page.getByTitle("copy p2p share link")).toHaveCount(0);
 });
 
-// real two-peer sharing test: requires relay connectivity, so it only
-// runs when explicitly requested via PLAYLISTZ_E2E_P2P=1
+// real two-peer sharing test over the iroh relay. slow (node boot takes
+// 1-2 min per peer) but it exercises the full share-link flow end to end.
+// set PLAYLISTZ_E2E_SKIP_P2P=1 to skip (e.g. offline or in a hurry).
 test("two browsers share a playlist over p2p", async ({ browser }) => {
-  test.skip(!process.env.PLAYLISTZ_E2E_P2P, "set PLAYLISTZ_E2E_P2P=1 to run");
-  test.setTimeout(120_000);
+  test.skip(
+    !!process.env.PLAYLISTZ_E2E_SKIP_P2P,
+    "skipped via PLAYLISTZ_E2E_SKIP_P2P"
+  );
+  test.setTimeout(480_000);
 
   const ctxA = await browser.newContext();
   const ctxB = await browser.newContext();
   const pageA = await ctxA.newPage();
   const pageB = await ctxB.newPage();
 
+  // surface browser console output (timestamped) so stalls are diagnosable
+  const forward = (tag: string) => (msg: import("@playwright/test").ConsoleMessage) => {
+    logTs(`[${tag}] ${msg.text()}`);
+  };
+  pageA.on("console", forward("peerA"));
+  pageB.on("console", forward("peerB"));
+  pageA.on("pageerror", (err) => logTs(`[peerA pageerror] ${err}`));
+  pageB.on("pageerror", (err) => logTs(`[peerB pageerror] ${err}`));
+
   try {
-    // peer a: create a playlist and enable p2p
-    await resetAppState(pageA);
-    await createPlaylistViaUI(pageA);
-    const title = pageA.locator("input[placeholder='playlist title']");
-    await title.fill("shared doom");
-    await title.blur();
-    await pageA.waitForTimeout(500);
+    // boot both peers' p2p nodes in parallel - each takes ~1-2 min to
+    // come online (relay handshake), so doing them sequentially is slow
+    const setupA = async () => {
+      // peer a: create a playlist and enable p2p
+      await resetAppState(pageA);
+      await createPlaylistViaUI(pageA);
+      const title = pageA.locator("input[placeholder='playlist title']");
+      await title.fill("shared doom");
+      await title.blur();
+      await pageA.waitForTimeout(500);
 
-    await pageA.getByTitle("open share panel").click();
-    await pageA.getByText("enable p2p sharing").click();
-    await expect(
-      pageA.getByText("this tab runs the p2p node")
-    ).toBeVisible({ timeout: 30_000 });
-    await pageA.getByTitle("close share panel").click();
+      // peer a: open the edit panel and enable p2p from the share column
+      // (the sidebar auto-collapses once a playlist is selected, so the
+      // sidebar share panel is off-screen here)
+      logTs("[e2e] peer a: enabling p2p from the edit panel...");
+      await pageA.getByTitle("edit playlist").click();
+      await pageA.getByText("enable p2p sharing").click();
 
-    // peer a: copy the share link (read it from the clipboard)
-    await ctxA.grantPermissions(["clipboard-read", "clipboard-write"]);
-    await pageA.getByTitle("copy p2p share link").click();
-    await expect(pageA.getByTitle("share link copied!")).toBeVisible({
-      timeout: 15_000,
-    });
-    const shareUrl = await pageA.evaluate(() =>
-      navigator.clipboard.readText()
-    );
+      // once the node is up the share column shows the link + copy button
+      const copyBtn = pageA.getByRole("button", { name: "copy share link" });
+      await expect(copyBtn).toBeEnabled({ timeout: 180_000 });
+      logTs("[e2e] peer a: p2p node online");
+    };
+
+    const setupB = async () => {
+      // peer b: pre-boot the p2p node from the share panel so opening
+      // the link later doesn't have to wait for node startup
+      await resetAppState(pageB);
+      await pageB.getByTitle("open share panel").click();
+      logTs("[e2e] peer b: enabling p2p from the share panel...");
+      await pageB.getByText("enable p2p sharing").click();
+      await expect(pageB.getByText("online")).toBeVisible({
+        timeout: 180_000,
+      });
+      logTs("[e2e] peer b: p2p node online");
+    };
+
+    await Promise.all([setupA(), setupB()]);
+
+    // read the share url straight from the readonly input (no clipboard)
+    const shareUrl = await pageA
+      .locator("input[readonly]")
+      .first()
+      .inputValue();
     expect(shareUrl).toContain("#share/");
+    logTs(`[e2e] peer a: share url: ${shareUrl.slice(0, 60)}...`);
 
     // peer b: paste the link into the share panel
-    await resetAppState(pageB);
-    await pageB.getByTitle("open share panel").click();
     await pageB
       .locator("input[placeholder='paste share link or token...']")
       .fill(shareUrl);
     await pageB.getByRole("button", { name: "open", exact: true }).click();
+    logTs("[e2e] peer b: opening share link...");
     await expect(pageB.getByText("playlist added!")).toBeVisible({
-      timeout: 60_000,
+      timeout: 120_000,
     });
-    await pageB.getByTitle("close share panel").click();
+    logTs("[e2e] peer b: playlist added");
+
+    // the synced playlist auto-selects, which collapses the sidebar and can
+    // unmount the share panel - only close it if it's still on screen
+    const closeBtn = pageB.getByTitle("close share panel");
+    if (await closeBtn.isVisible().catch(() => false)) {
+      await closeBtn.click({ timeout: 5_000 }).catch(() => {});
+    }
 
     // peer b: the shared playlist shows up in the sidebar
     await expect(pageB.getByText("shared doom").first()).toBeVisible({
