@@ -1,9 +1,10 @@
 import { defineConfig } from "vitest/config";
 import solid from "vite-plugin-solid";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
-  // @ts-expect-error - vite-plugin-solid types don't perfectly match vitest config
-  plugins: [solid()],
+  plugins: [wasm(), topLevelAwait(), solid()],
   test: {
     globals: true,
     environment: "jsdom",

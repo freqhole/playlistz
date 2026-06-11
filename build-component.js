@@ -3,6 +3,8 @@
 import { build } from "vite";
 import solid from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 import { transform, build as esbuild } from "esbuild";
 import fs from "fs";
 import path from "path";
@@ -108,6 +110,8 @@ async function buildStandalone() {
     await build({
       configFile: false,
       plugins: [
+        wasm(),
+        topLevelAwait(),
         solid({
           typescript: true,
           jsx: "preserve",
@@ -219,6 +223,10 @@ async function buildStandalone() {
             assetFileNames: "playlistz.[ext]",
             inlineDynamicImports: true,
           },
+          // midden (wasm) cannot be inlined into a single-file standalone bundle.
+          // the dynamic import in p2pService catches the failure and degrades
+          // gracefully - the app works without p2p when running standalone.
+          external: ["midden"],
         },
       },
     });

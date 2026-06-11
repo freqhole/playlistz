@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -28,7 +30,7 @@ function serveDistAssets() {
 }
 
 export default defineConfig({
-  plugins: [solid(), tailwindcss(), serveDistAssets()],
+  plugins: [wasm(), topLevelAwait(), solid(), tailwindcss(), serveDistAssets()],
   server: {
     port: 3000,
     host: true,

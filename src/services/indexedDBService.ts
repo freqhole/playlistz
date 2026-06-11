@@ -48,12 +48,15 @@ function createSignal<T>(initial: T): Signal<T> {
 
 // database configuration
 export const DB_NAME = "musicPlaylistDB";
-export const DB_VERSION = 6;
+export const DB_VERSION = 7;
 export const PLAYLISTS_STORE = "playlists";
 export const SONGS_STORE = "songs";
 export const PLAYBACK_POSITIONS_STORE = "playbackPositions";
 export const LAST_PLAYED_STORE = "lastPlayed";
 export const SETTINGS_STORE = "settings";
+export const DOC_INDEX_STORE = "docIndex";
+export const KNOCKS_STORE = "knocks";
+export const ACCESS_GRANTS_STORE = "accessGrants";
 
 // record shape stored per-song in the playbackPositions store
 export interface PlaybackPositionRecord {
@@ -73,6 +76,34 @@ export interface SettingRecord {
   key: string;
   value: unknown;
   updatedAt: number;
+}
+
+// automerge doc index entry: maps an AutomergeUrl to display metadata.
+// used to list known playlists in the sidebar without loading every doc.
+export interface DocIndexEntry {
+  docId: string; // AutomergeUrl, e.g. "automerge:abc123..."
+  title: string;
+  addedAt: number; // unix ms timestamp
+  source: "local" | "shared" | "freqhole";
+}
+
+// inbound or outbound knock request record for the knock inbox/outbox ui.
+export interface KnockRecord {
+  id: string; // uuid
+  nodeId: string; // requester (inbound) or responder (outbound) iroh node id
+  direction: "inbound" | "outbound";
+  name: string;
+  message: string;
+  status: "pending" | "accepted" | "rejected";
+  createdAt: number;
+  processedAt?: number;
+}
+
+// access grant written when an inbound knock is accepted.
+export interface AccessGrantRecord {
+  nodeId: string; // the granted peer's iroh node id (keyPath)
+  name: string;
+  grantedAt: number;
 }
 
 // database schema definition
@@ -97,6 +128,18 @@ interface PlaylistDB extends DBSchema {
   settings: {
     key: string;
     value: SettingRecord;
+  };
+  docIndex: {
+    key: string; // docId (AutomergeUrl)
+    value: DocIndexEntry;
+  };
+  knocks: {
+    key: string; // id
+    value: KnockRecord;
+  };
+  accessGrants: {
+    key: string; // nodeId
+    value: AccessGrantRecord;
   };
 }
 
@@ -146,6 +189,21 @@ export async function setupDB(): Promise<IDBPDatabase<PlaylistDB>> {
       if (oldVersion < 6) {
         if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
           db.createObjectStore(SETTINGS_STORE, { keyPath: "key" });
+        }
+      }
+
+      // v7: add automerge doc layer stores.
+      // playlistz has no deployed users - old stores can simply be absent.
+      // no data migration is ever needed for these stores.
+      if (oldVersion < 7) {
+        if (!db.objectStoreNames.contains(DOC_INDEX_STORE)) {
+          db.createObjectStore(DOC_INDEX_STORE, { keyPath: "docId" });
+        }
+        if (!db.objectStoreNames.contains(KNOCKS_STORE)) {
+          db.createObjectStore(KNOCKS_STORE, { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains(ACCESS_GRANTS_STORE)) {
+          db.createObjectStore(ACCESS_GRANTS_STORE, { keyPath: "nodeId" });
         }
       }
     },
