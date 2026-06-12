@@ -34,6 +34,7 @@ import {
 import { calculateSHA256 } from "../utils/hashUtils.js";
 import { triggerSpecificSongUpdate } from "./songReactivity.js";
 import { fetchBlobForDoc } from "./blobTransferService.js";
+import { log } from "../utils/log.js";
 import type { Playlist, Song } from "../types/playlist.js";
 import type { DocIndexEntry } from "./indexedDBService.js";
 
@@ -229,9 +230,9 @@ export async function getSongsFromHandle(
   handle: Awaited<ReturnType<typeof findPlaylistDoc>>
 ): Promise<Song[]> {
   const raw = handle.doc();
-  if (!raw) { console.warn("[getSongsFromHandle] handle.doc() returned null"); return []; }
+  if (!raw) { log.warn("playlist.doc", "getSongsFromHandle: handle.doc() returned null"); return []; }
   const doc = parsePlaylistDoc(raw);
-  console.log("[getSongsFromHandle] doc.order.length=", doc.order.length, "songs keys:", Object.keys(doc.songs).length);
+  log.trace("playlist.doc", "getSongsFromHandle order=", String(doc.order.length), "songs=", String(Object.keys(doc.songs).length));
   registerDocSongs(docId, doc);
   const songs = doc.order
     .map((id, i) => {
@@ -320,14 +321,13 @@ export async function createPlaylist(fields: {
   title?: string;
   description?: string;
 }): Promise<Playlist> {
-  console.log("[trace] createPlaylist: creating doc");
+  log.trace("playlist.doc", "createPlaylist", fields.title ?? "(untitled)");
   const { docId, handle } = createPlaylistDoc(
     emptyPlaylistDoc({
       title: fields.title ?? "new playlist",
       description: fields.description ?? "",
     })
   );
-  console.log("[trace] createPlaylist: doc created", docId);
 
   const entry: DocIndexEntry = {
     docId,
@@ -336,12 +336,9 @@ export async function createPlaylist(fields: {
     source: "local",
   };
   await addDocIndexEntry(entry);
-  console.log("[trace] createPlaylist: docIndex entry added");
 
   const raw = handle.doc();
-  console.log("[trace] createPlaylist: handle.doc() returned", raw != null);
   const doc = parsePlaylistDoc(raw ?? {});
-  console.log("[trace] createPlaylist: parsed, returning");
   await flushDoc(docId);
   return docToPlaylist(docId, doc);
 }
@@ -361,15 +358,14 @@ export async function updatePlaylist(
     coverFilterBlur?: number;
   }
 ): Promise<void> {
-  console.log("[trace] updatePlaylist", docId, JSON.stringify(fields));
+  log.trace("playlist.doc", "updatePlaylist", docId);
   const handle = await findPlaylistDoc(docId as AutomergeUrl);
   const { rev: _rev, ...metadataFields } = toPlain(fields);
-  console.log("[trace] updatePlaylist: calling handle.change (setMetadata)");
   handle.change((doc) => setMetadata(doc, metadataFields));
   await flushDoc(docId as AutomergeUrl);
   // update docIndex title if title changed
   if (fields.title !== undefined) {
-    console.log("[trace] updatePlaylist: title changed, updating docIndex");
+    log.trace("playlist.doc", "updatePlaylist: title changed, updating docIndex");
     const existing = await import("./docIndexService.js").then((m) =>
       m.getDocIndexEntry(docId)
     );
@@ -456,7 +452,7 @@ export async function updateSongInDoc(
   songId: string,
   updates: Partial<Pick<Song, "title" | "artist" | "album" | "duration" | "imageData" | "imageType">>
 ): Promise<void> {
-  console.log("[trace] updateSongInDoc", docId, songId);
+  log.trace("playlist.doc", "updateSongInDoc", docId, songId);
   const handle = await findPlaylistDoc(docId as AutomergeUrl);
 
   // store new image if provided

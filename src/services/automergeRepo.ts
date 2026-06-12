@@ -26,6 +26,7 @@ import {
   type PlaylistDoc,
 } from "freqhole-api-client/playlistz";
 import { getAdapterOptions } from "./p2pService.js";
+import { log } from "../utils/log.js";
 
 // per-doc peer registry used by sharePolicy to avoid a round-trip through
 // repo.find(). keyed by DocumentId (the base58 part of the AutomergeUrl).
@@ -53,9 +54,6 @@ async function sharePolicy(
   documentId?: DocumentId
 ): Promise<boolean> {
   _sharePolicyCalls++;
-  if (_sharePolicyCalls % 100 === 1) {
-    console.log("[trace] sharePolicy call #", _sharePolicyCalls, peerId, documentId);
-  }
   if (!documentId) return false;
   const entry = docPeerCache.get(documentId);
   if (!entry) return false;
@@ -66,19 +64,17 @@ let _repo: Repo | null = null;
 let _irohAdapter: IrohNetworkAdapter | null = null;
 
 function buildRepo(): Repo {
-  console.log("[trace] buildRepo: constructing adapters");
+  log.trace("automerge.repo", "buildRepo: constructing");
   const storage = new IndexedDBStorageAdapter("freqhole-automerge");
   const broadcastAdapter = new BroadcastChannelNetworkAdapter();
   const irohAdapter = new IrohNetworkAdapter(getAdapterOptions());
   _irohAdapter = irohAdapter;
 
-  console.log("[trace] buildRepo: constructing Repo");
   const repo = new Repo({
     storage,
     network: [broadcastAdapter, irohAdapter],
     sharePolicy,
   });
-  console.log("[trace] buildRepo: done");
   return repo;
 }
 
@@ -113,7 +109,6 @@ function watchHandle(
   documentId: DocumentId
 ): void {
   _watchHandleCalls++;
-  console.log("[trace] watchHandle call #", _watchHandleCalls, documentId);
   let rawDoc: unknown;
   try {
     rawDoc = handle.doc();
@@ -126,7 +121,7 @@ function watchHandle(
   if (!watchedDocs.has(documentId)) {
     watchedDocs.add(documentId);
     handle.on("change", ({ doc }) => {
-      console.log("[trace] doc change event (watchHandle)", documentId);
+      log.trace("automerge.repo", "doc change event", documentId);
       updateCacheFromDoc(documentId, doc);
     });
   }
@@ -138,12 +133,10 @@ export function createPlaylistDoc(initial?: Partial<PlaylistDoc>): {
   docId: AutomergeUrl;
   handle: DocHandle<PlaylistDoc>;
 } {
-  console.log("[trace] createPlaylistDoc: getRepo");
   const repo = getRepo();
   const seed = emptyPlaylistDoc(initial);
-  console.log("[trace] createPlaylistDoc: repo.create");
   const handle = repo.create<PlaylistDoc>(seed);
-  console.log("[trace] createPlaylistDoc: created", handle.url);
+  log.trace("automerge.repo", "createPlaylistDoc:", handle.url);
   const { documentId } = parseAutomergeUrl(handle.url);
   watchHandle(handle, documentId);
   return { docId: handle.url, handle };
@@ -180,12 +173,12 @@ export async function findPlaylistDoc(
   if (cached) return cached;
 
   _findCalls++;
-  console.log("[trace] findPlaylistDoc call #", _findCalls, docId);
+  log.trace("automerge.repo", "findPlaylistDoc call #", String(_findCalls), docId);
 
   const promise = (async () => {
     const repo = getRepo();
     const handle = await repo.find<PlaylistDoc>(docId);
-    console.log("[trace] findPlaylistDoc: resolved", docId);
+    log.trace("automerge.repo", "findPlaylistDoc resolved", docId);
     const { documentId } = parseAutomergeUrl(handle.url);
     watchHandle(handle, documentId);
     return handle;

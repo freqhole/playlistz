@@ -1,14 +1,19 @@
 // lightweight logger with level + tag filtering.
-// level order: debug < info < warn < error
+// level order: trace < debug < info < warn < error
 //
 // build-time config (vite env vars):
-//   VITE_LOG_LEVEL  - "debug" | "info" | "warn" | "error"  (default: "debug" in dev, "warn" in prod)
+//   VITE_LOG_LEVEL  - "trace" | "debug" | "info" | "warn" | "error"
+//                     default: "debug" in dev, "warn" in prod
 //   VITE_LOG_FILTER - comma-separated tag prefixes, e.g. "p2p,audio"  (default: all tags)
 //
 // runtime override via devtools (no rebuild needed):
-//   localStorage.logLevel = "debug";
-//   localStorage.logFilter = "p2p.transfer,idb";
+//   localStorage.logLevel = "trace";
+//   localStorage.logFilter = "automerge.repo,idb.docindex";
 //   location.reload();
+//
+// trace is off by default even in dev - enable it explicitly when needed.
+// it's useful for detailed call-by-call tracing of services without adding
+// noise to normal debug output.
 //
 // tags use dotted namespaces, e.g. "p2p.transfer", "audio.player", "idb.service".
 // filter prefix matching: "p2p" matches "p2p", "p2p.transfer", "p2p.knock", etc.
@@ -17,10 +22,12 @@
 //   import { log } from "../utils/log.js";
 //   log.warn("share.panel", "could not build share link:", err);
 //   log.debug("playlist.sync", "syncPlaylists #", syncId, "entries:", entries.length);
+//   log.trace("automerge.repo", "findPlaylistDoc call #", n, docId);
 
-type LogLevel = "debug" | "info" | "warn" | "error";
+type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
 const LEVEL_NUM: Record<LogLevel, number> = {
+  trace: -1,
   debug: 0,
   info: 1,
   warn: 2,
@@ -34,6 +41,7 @@ function resolveLevel(): number {
       : null;
   // VITE_LOG_LEVEL is injected at build time; fall back to debug in dev, warn in prod
   const env = import.meta.env.VITE_LOG_LEVEL as LogLevel | undefined;
+  // trace is never on by default - must be explicitly requested
   const raw = override ?? env ?? (import.meta.env.DEV ? "debug" : "warn");
   return LEVEL_NUM[raw as LogLevel] ?? LEVEL_NUM.warn;
 }
@@ -76,6 +84,8 @@ function emit(
 }
 
 export const log = {
+  trace: (tag: string, msg: string, ...args: unknown[]): void =>
+    emit("trace", tag, msg, ...args),
   debug: (tag: string, msg: string, ...args: unknown[]): void =>
     emit("debug", tag, msg, ...args),
   info: (tag: string, msg: string, ...args: unknown[]): void =>

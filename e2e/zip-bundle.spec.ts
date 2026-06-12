@@ -257,11 +257,6 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     // wait for empty state - confirms app is interactive and __processFiles is live
     await page.getByTestId("btn-new-playlist").waitFor();
 
-    // collect browser console output for diagnosis
-    const logs: string[] = [];
-    page.on("console", (msg) => logs.push(`[${msg.type()}] ${msg.text()}`));
-    page.on("pageerror", (err) => logs.push(`[pageerror] ${err.message}`));
-
     // use window.__processFiles (dev hook) instead of DragEvent to avoid
     // browser DataTransfer restrictions on synthesized events
     const result = await page.evaluate(async (zipBase64: string) => {
@@ -270,38 +265,16 @@ test.describe("zip bundle download + standalone roundtrip", () => {
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const file = new File([bytes], "playlist.zip", { type: "application/zip" });
       const hook = (window as typeof window & { __processFiles?: (files: File[]) => Promise<void> }).__processFiles;
-      console.log("[test] __processFiles hook present:", !!hook);
       if (!hook) return "hook-missing";
       try {
         await hook([file]);
-        // check what the dom looks like now
-        const rows = document.querySelectorAll("[data-testid='song-row'], [class*='song']");
-        console.log("[test] dom rows after import:", rows.length);
-        const allText = document.body.innerText.slice(0, 500);
-        console.log("[test] body text sample:", allText);
         return "ok";
       } catch (e) {
-        console.error("[test] __processFiles threw:", e);
         return String(e);
       }
     }, zipBuf.toString("base64"));
 
-    console.log("[zip reimport] __processFiles result:", result);
-    console.log("[zip reimport] browser logs (since resetAppState):", logs.join("\n") || "(none)");
-
-    // give SolidJS one more tick to flush reactive updates to the DOM
-    await page.waitForTimeout(200);
-
-    const domSnapshot = await page.evaluate(() => ({
-      bodyText: document.body.innerText.slice(0, 800),
-      songRows: document.querySelectorAll("[data-testid='song-row']").length,
-      allText: Array.from(document.querySelectorAll("*"))
-        .filter(el => el.childNodes.length === 1 && el.childNodes[0]?.nodeType === 3)
-        .map(el => (el as HTMLElement).innerText?.trim())
-        .filter(t => t && t.includes("song-"))
-        .slice(0, 10),
-    }));
-    console.log("[zip reimport] DOM snapshot:", JSON.stringify(domSnapshot));
+    if (result !== "ok") throw new Error(`__processFiles failed: ${result}`);
 
     // after reimport, songs should be visible
     await expect(page.getByText("song-00")).toBeVisible({ timeout: 15000 });

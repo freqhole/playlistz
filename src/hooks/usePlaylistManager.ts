@@ -6,7 +6,6 @@ import {
   on,
   onMount,
   onCleanup,
-  untrack,
 } from "solid-js";
 import type { Playlist, Song } from "../types/playlist.js";
 import { createDocIndexQuery } from "./createDocIndexQuery.js";
@@ -49,9 +48,18 @@ import type { DocIndexEntry } from "../services/indexedDBService.js";
 
 export function usePlaylistManager() {
   const [playlists, setPlaylists] = createSignal<Playlist[]>([]);
-  const [selectedPlaylist, setSelectedPlaylist] = createSignal<Playlist | null>(
-    null
+  const [selectedPlaylistId, setSelectedPlaylistId] = createSignal<string | null>(null);
+  // derived: always reflects the current version from playlists(), so stale
+  // playlist objects from before songs/edits can never overwrite fresh state.
+  const selectedPlaylist = createMemo(
+    () => playlists().find((p) => p.id === selectedPlaylistId()) ?? null
   );
+  // compat wrapper: also upserts the playlist into playlists() if not present
+  // (needed for standalone mode which sets selection before the docIndex syncs)
+  const setSelectedPlaylist = (p: Playlist | null) => {
+    if (p) setPlaylists((prev) => (prev.some((pl) => pl.id === p.id) ? prev : [...prev, p]));
+    setSelectedPlaylistId(p?.id ?? null);
+  };
   const [playlistSongs, setPlaylistSongs] = createSignal<Song[]>([]);
   const [isInitialized, setIsInitialized] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -120,24 +128,15 @@ export function usePlaylistManager() {
       log.debug("playlist.sync", "syncPlaylists #", String(syncId), "resolved", String(resolved.length));
       setPlaylists(resolved);
 
-      // keep selected playlist in sync
-      const current = selectedPlaylist();
-      if (current) {
-        const updated = resolved.find((p) => p.id === current.id);
-        if (updated) {
-          console.log("[pm.sync] setSelectedPlaylist updated, songIds:", updated.songIds?.length);
-          setSelectedPlaylist(updated);
-        } else if (resolved.length > 0) {
-          console.warn("[pm.sync] current not in resolved, fallback to resolved[0]");
-          setSelectedPlaylist(resolved[0]!);
-        } else {
-          console.warn("[pm.sync] resolved empty - setSelectedPlaylist(null)!");
-          setSelectedPlaylist(null);
+      // update selection id only: selectedPlaylist() will auto-derive from playlists()
+      const currentId = selectedPlaylistId();
+      if (currentId) {
+        const stillExists = resolved.some((p) => p.id === currentId);
+        if (!stillExists) {
+          setSelectedPlaylistId(resolved.length > 0 ? resolved[0]!.id : null);
         }
       } else if (resolved.length > 0) {
-        // nothing selected but playlists exist - auto-select first
-        console.log("[pm.sync] auto-selecting first playlist");
-        setSelectedPlaylist(resolved[0]!);
+        setSelectedPlaylistId(resolved[0]!.id);
       }
     } catch (err) {
       log.error("playlist.sync", "error syncing playlists from doc index:", err);
@@ -147,13 +146,11 @@ export function usePlaylistManager() {
   // update songs when selected playlist changes
   async function loadSongsForSelected(playlist: Playlist | null): Promise<void> {
     if (!playlist) {
-      console.warn("[pm.load] loadSongsForSelected(null) -> setPlaylistSongs([])");
       setPlaylistSongs([]);
       return;
     }
     try {
       const songs = await getSongsForPlaylist(playlist.id);
-      console.log("[pm.load] getSongsForPlaylist returned", songs.length, "for", playlist.id);
       setPlaylistSongs(songs);
     } catch (err) {
       log.error("playlist.songs", "error loading songs for playlist:", err);
@@ -262,14 +259,10 @@ export function usePlaylistManager() {
     void syncPlaylistsFromDocIndex(entries);
   });
 
-  // reactive effect (keyed by playlist id): when the selection changes,
-  // subscribe to the doc handle so any mutation (adding songs, edits,
-  // remote sync) refreshes the songs list and the playlist view object.
-  // the memo is critical: selectedPlaylist() gets a new object identity on
-  // every doc refresh, but the effect must only re-run when the id changes,
-  // otherwise refresh -> setSelectedPlaylist -> effect would loop forever.
-  const selectedPlaylistId = createMemo(() => selectedPlaylist()?.id ?? null);
-
+  // reactive effect (keyed by playlist id): subscribe to the selected playlist's
+  // doc handle so any mutation (adding songs, edits, remote sync) refreshes
+  // the songs list and updates the playlist entry in playlists().
+  // keyed on selectedPlaylistId so the effect only re-runs when the id changes.
   createEffect(
     on(
       selectedPlaylistId,
@@ -281,7 +274,6 @@ export function usePlaylistManager() {
         }
 
         if (!playlistId) {
-          console.warn("[pm.select] effect: playlistId null -> setPlaylistSongs([])");
           setPlaylistSongs([]);
           return;
         }
@@ -302,19 +294,12 @@ export function usePlaylistManager() {
             setPlaylists((prev) =>
               prev.map((p) => (p.id === playlistId ? updated : p))
             );
-            const current = untrack(selectedPlaylist);
-            if (current?.id === playlistId) {
-              setSelectedPlaylist(updated);
-            }
+            // selectedPlaylist() auto-updates from playlists() via memo - no setSelectedPlaylist needed
 
             // use the handle we already have - avoids a redundant repo.find()
             const songs = await getSongsFromHandle(playlistId, handle);
-            console.log("[pm.refresh] #", _refreshCount, "getSongsFromHandle returned", songs.length, "songs, disposed=", disposed, songs.map(s => s.title));
             if (!disposed) {
               setPlaylistSongs(songs);
-              console.log("[pm.refresh] setPlaylistSongs called with", songs.length);
-            } else {
-              console.warn("[pm.refresh] SKIPPED setPlaylistSongs - disposed!");
             }
           } catch (err) {
             log.error("playlist.select", "error refreshing selected playlist doc:", err);
@@ -343,7 +328,6 @@ export function usePlaylistManager() {
         })();
 
         onCleanup(() => {
-          console.warn("[pm.select] onCleanup: disposed=true for", playlistId);
           disposed = true;
         });
       }
@@ -452,7 +436,7 @@ export function usePlaylistManager() {
   };
 
   const selectPlaylist = (playlist: Playlist | null) => {
-    setSelectedPlaylist(playlist);
+    setSelectedPlaylistId(playlist?.id ?? null);
   };
 
   const handlePlaylistUpdate = async (updates: Partial<Playlist>) => {
