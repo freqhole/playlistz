@@ -1,4 +1,3 @@
-
 import { createSignal, onMount, For, Show } from "solid-js";
 
 import { createRelativeTimeSignal } from "../utils/timeUtils.js";
@@ -40,7 +39,7 @@ export function PlaylistSidebar() {
     isInitialized,
   } = playlistManager;
 
-  const { isMobile, setSidebarCollapsed } = uiState;
+  const { isMobile } = uiState;
 
   const filteredPlaylists = () => {
     const query = searchQuery().toLowerCase();

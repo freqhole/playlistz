@@ -7,7 +7,7 @@
 // - title/description text wrapped in tight bg-black spans for legibility
 //   over the transparent/blurred playlist background
 
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, onMount } from "solid-js";
 import {
   createRelativeTimeSignal,
   formatDuration,
@@ -18,10 +18,9 @@ import { downloadPlaylistAsZip } from "../services/playlistDownloadService.js";
 import type { Playlist, Song } from "../types/playlist.js";
 import { usePlaylistzManager } from "../context/PlaylistzContext.js";
 import { MarqueeText } from "./MarqueeText.js";
+import { getSongsForPlaylist } from "../services/playlistDocService.js";
 
 interface Props {
-  // songs for all playlists keyed by playlist id - for total-time display
-  allSongs?: Record<string, Song[]>;
   onClose: () => void;
   // select a different playlist + open edit mode
   onEdit: (p: Playlist) => void;
@@ -34,12 +33,23 @@ export function AllPlaylistsPanel(props: Props) {
     usePlaylistzManager();
 
   const [isCreating, setIsCreating] = createSignal(false);
+  const [allSongs, setAllSongs] = createSignal<Record<string, Song[]>>({});
 
   // exclude the currently selected playlist - it stays in the header above
   const otherPlaylists = () => {
     const sel = selectedPlaylist();
     return sel ? playlists().filter((p) => p.id !== sel.id) : playlists();
   };
+
+  onMount(() => {
+    const visible = otherPlaylists();
+    void Promise.allSettled(
+      visible.map(async (p) => {
+        const songs = await getSongsForPlaylist(p.id);
+        setAllSongs((prev) => ({ ...prev, [p.id]: songs }));
+      })
+    );
+  });
 
   const handleSelect = (p: Playlist) => {
     selectPlaylist(p);
@@ -74,7 +84,7 @@ export function AllPlaylistsPanel(props: Props) {
             {(p) => (
               <PlaylistRow
                 playlist={p}
-                songs={props.allSongs?.[p.id]}
+                songs={allSongs()[p.id]}
                 onSelect={handleSelect}
                 onPlay={handlePlay}
                 onEdit={props.onEdit}

@@ -16,7 +16,6 @@ import {
   addSongToPlaylist,
   deleteSong,
   reorderSongsInDoc,
-  getSongsForPlaylist,
   getSongsFromHandle,
   docToPlaylistAsync,
 } from "../services/playlistDocService.js";
@@ -143,21 +142,6 @@ export function usePlaylistManager() {
     }
   }
 
-  // update songs when selected playlist changes
-  async function loadSongsForSelected(playlist: Playlist | null): Promise<void> {
-    if (!playlist) {
-      setPlaylistSongs([]);
-      return;
-    }
-    try {
-      const songs = await getSongsForPlaylist(playlist.id);
-      setPlaylistSongs(songs);
-    } catch (err) {
-      log.error("playlist.songs", "error loading songs for playlist:", err);
-      setPlaylistSongs([]);
-    }
-  }
-
   const initialize = async () => {
     try {
       setError(null);
@@ -237,12 +221,7 @@ export function usePlaylistManager() {
       for (const audioFile of audioFiles) {
         await addSongToPlaylist(playlistId, audioFile);
       }
-
-      // reload songs for selected playlist if this is it
-      const sel = selectedPlaylist();
-      if (sel && sel.id === playlistId) {
-        await loadSongsForSelected(sel);
-      }
+      // doc-change events from addSongToPlaylist -> flushDoc drive the refresh
 
       return playlistId;
     } catch (err) {
@@ -512,7 +491,7 @@ export function usePlaylistManager() {
       }
 
       await deleteSong(playlist.id, songId);
-      await loadSongsForSelected(playlist);
+      // doc-change event fires from deleteSong -> flushDoc, driving refresh
 
       if (onClose) {
         onClose();
@@ -530,9 +509,7 @@ export function usePlaylistManager() {
     try {
       setError(null);
       await reorderSongsInDoc(playlist.id, oldIndex, newIndex);
-
-      // reload songs to reflect new order
-      await loadSongsForSelected(playlist);
+      // doc-change event fires from reorderSongsInDoc -> flushDoc, driving refresh
 
       // refresh audio queue if this playlist is currently playing
       const currentPlaylist = audioState.currentPlaylist();

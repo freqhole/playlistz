@@ -10,6 +10,10 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts"],
     setupFiles: ["src/test-setup.ts"],
+    // silence app log output during tests - only errors surface
+    env: {
+      VITE_LOG_LEVEL: "error",
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov", "html"],
