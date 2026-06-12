@@ -164,24 +164,40 @@ export function authorizePeerForDoc(docId: AutomergeUrl, nodeId: string): void {
   docPeerCache.set(documentId, entry);
 }
 
+// per-docId promise cache so repeated calls for the same doc share one
+// repo.find() call and one watchHandle setup. the cache holds a promise
+// (not a resolved handle) so concurrent first-callers coalesce correctly.
+const _handleCache = new Map<AutomergeUrl, Promise<DocHandle<PlaylistDoc>>>();
+
 // find an existing playlist doc by its AutomergeUrl, waiting for the handle
 // to reach a ready (or terminal) state before returning.
+// cached: subsequent calls for the same docId return the same promise.
 let _findCalls = 0;
 export async function findPlaylistDoc(
   docId: AutomergeUrl
 ): Promise<DocHandle<PlaylistDoc>> {
+  const cached = _handleCache.get(docId);
+  if (cached) return cached;
+
   _findCalls++;
   console.log("[trace] findPlaylistDoc call #", _findCalls, docId);
-  const repo = getRepo();
-  const handle = await repo.find<PlaylistDoc>(docId);
-  console.log("[trace] findPlaylistDoc: resolved", docId);
-  const { documentId } = parseAutomergeUrl(handle.url);
-  watchHandle(handle, documentId);
-  return handle;
+
+  const promise = (async () => {
+    const repo = getRepo();
+    const handle = await repo.find<PlaylistDoc>(docId);
+    console.log("[trace] findPlaylistDoc: resolved", docId);
+    const { documentId } = parseAutomergeUrl(handle.url);
+    watchHandle(handle, documentId);
+    return handle;
+  })();
+
+  _handleCache.set(docId, promise);
+  return promise;
 }
 
 // tombstone the doc (sets deleted: true) then remove it from local storage.
 export async function deletePlaylistDoc(docId: AutomergeUrl): Promise<void> {
+  _handleCache.delete(docId);
   const repo = getRepo();
   const handle = await repo.find<PlaylistDoc>(docId);
   handle.change((doc) => tombstone(doc));
@@ -205,6 +221,7 @@ export function _resetRepoForTests(): void {
   _irohAdapter = null;
   docPeerCache.clear();
   watchedDocs.clear();
+  _handleCache.clear();
 }
 
 // expose the share policy for unit testing.
