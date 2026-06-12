@@ -113,9 +113,12 @@ test("#share/ fragment is cleared from the url after processing", async ({ page 
   await waitForApp(page);
   await page.waitForTimeout(1000);
 
-  // handleShareFragment calls history.replaceState to clear the fragment
-  const url = page.url();
-  expect(url).not.toContain("#share/");
+  // handleShareFragment calls history.replaceState to clear the fragment.
+  // this is async (depends on p2p initialization), so poll until done.
+  await page.waitForFunction(
+    () => !window.location.hash.startsWith("#share/"),
+    { timeout: 10000 }
+  );
 });
 
 test("invalid #share/ token shows no crash and loads app normally", async ({ page }) => {

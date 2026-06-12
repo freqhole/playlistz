@@ -1,4 +1,3 @@
-
 // inline all-playlists panel. replaces song rows when the hamburger is pressed.
 //
 // - the currently selected playlist is NOT shown (it's in the header above)
@@ -68,7 +67,7 @@ export function AllPlaylistsPanel(props: Props) {
   };
 
   return (
-    <div class="flex flex-col h-full">
+    <div class="flex flex-col h-full" data-testid="all-playlists-panel">
       <div class="flex-1 overflow-y-auto">
         <Show when={otherPlaylists().length > 0}>
           <For each={otherPlaylists()}>

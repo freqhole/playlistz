@@ -215,20 +215,25 @@ export async function openShareLink(input: string): Promise<string> {
   // this seed, repo.find would never request it from the peer
   authorizePeerForDoc(payload.d as AutomergeUrl, payload.n);
 
-  // dial the sharing peer first so repo.find can fetch the doc. discovery
-  // records (pkarr/dns) can lag for a freshly-booted peer, so retry the
-  // dial a few times before giving up
-  for (let attempt = 0; ; attempt++) {
-    try {
-      await adapter.addPeer(payload.n);
-      break;
-    } catch (err) {
-      if (attempt >= 5) {
-        log.warn("p2p.connect", "could not connect to sharing peer:", err);
-        // continue anyway - the doc may already be local or another peer has it
+  // if the doc is already in the local index, skip the peer dial - it's local
+  const alreadyLocal = await getDocIndexEntry(payload.d).catch(() => null);
+
+  if (!alreadyLocal) {
+    // dial the sharing peer first so repo.find can fetch the doc. discovery
+    // records (pkarr/dns) can lag for a freshly-booted peer, so retry the
+    // dial a few times before giving up
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await adapter.addPeer(payload.n);
         break;
+      } catch (err) {
+        if (attempt >= 5) {
+          log.warn("p2p.connect", "could not connect to sharing peer:", err);
+          // continue anyway - the doc may already be local or another peer has it
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
-      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
 

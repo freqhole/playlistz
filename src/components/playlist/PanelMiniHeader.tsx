@@ -1,4 +1,3 @@
-
 // shared mini header used by the all-playlists and share panels.
 // shows thumbnail, a small label ("all playlistz", "sharez", etc.),
 // the playlist title, and a close button.
@@ -50,6 +49,11 @@ export function PanelMiniHeader(props: Props) {
           {props.playlist.description}
         </span>
       </div>
+
+      {/* label */}
+      <span class="text-md text-magenta-400 uppercase tracking-widest px-1 bg-black/80 inline-block w-fit">
+        {props.label}
+      </span>
 
       {/* close button */}
       <button

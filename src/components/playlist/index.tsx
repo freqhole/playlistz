@@ -528,9 +528,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                       ? "text-magenta-400 border-magenta-500"
                       : "text-gray-400 border-transparent"
                   }`}
-                  title={
-                    showAllPlaylists() ? "close all playlists" : "all playlistz"
-                  }
+                  title="all playlistz"
                 >
                   <svg
                     class="w-4 h-4"

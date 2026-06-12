@@ -237,7 +237,7 @@ export async function createPlaylistViaUI(page: Page): Promise<void> {
     await page.getByTitle("all playlistz").first().click();
     await page.getByRole("button", { name: "new playlist" }).first().click();
   }
-  await page.getByTitle("edit playlist").waitFor({ timeout: 5000 });
+  await page.getByTitle("edit playlist").first().waitFor({ timeout: 5000 });
 }
 
 // add n synthetic songs to the selected playlist via drag and drop

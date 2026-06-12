@@ -22,7 +22,7 @@ test("hamburger opens the all-playlists panel", async ({ page }) => {
   // create a second playlist so the panel has something to show
   await page.getByTitle("all playlistz").click();
   await page.getByRole("button", { name: "new playlist" }).first().click();
-  await page.getByTitle("edit playlist").waitFor({ timeout: 5000 });
+  await page.getByTitle("edit playlist").first().waitFor({ timeout: 5000 });
   await page.locator("input[placeholder='playlist title']").fill("beta");
   await page.locator("input[placeholder='playlist title']").blur();
 
@@ -34,7 +34,7 @@ test("hamburger opens the all-playlists panel", async ({ page }) => {
 test("escape closes the all-playlists panel", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTitle("all playlistz").click();
-  await expect(page.getByTitle("close all playlists")).toBeVisible();
+  await expect(page.getByTitle("close all playlists").first()).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTitle("close all playlists")).not.toBeVisible();
 });
@@ -42,7 +42,7 @@ test("escape closes the all-playlists panel", async ({ page }) => {
 test("close button closes the all-playlists panel", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTitle("all playlistz").click();
-  await page.getByTitle("close all playlists").click();
+  await page.getByTitle("close all playlists").first().click();
   await expect(page.getByTitle("close all playlists")).not.toBeVisible();
 });
 
@@ -57,7 +57,7 @@ test("selected playlist is not shown in panel rows", async ({ page }) => {
   // create a second playlist so panel has rows to show
   await page.getByTitle("all playlistz").click();
   await page.getByRole("button", { name: "new playlist" }).first().click();
-  await page.getByTitle("edit playlist").waitFor();
+  await page.getByTitle("edit playlist").first().waitFor();
   await page.locator("input[placeholder='playlist title']").fill("other one");
   await page.locator("input[placeholder='playlist title']").blur();
   await page.waitForTimeout(300);
@@ -87,7 +87,7 @@ test("all other playlists are shown in panel rows", async ({ page }) => {
   for (const name of ["playlist b", "playlist c"]) {
     await page.getByTitle("all playlistz").click();
     await page.getByRole("button", { name: "new playlist" }).first().click();
-    await page.getByTitle("edit playlist").waitFor();
+    await page.getByTitle("edit playlist").first().waitFor();
     await page.locator("input[placeholder='playlist title']").fill(name);
     await page.locator("input[placeholder='playlist title']").blur();
     await page.waitForTimeout(300);
@@ -109,7 +109,7 @@ test("clicking a row selects the playlist and closes the panel", async ({ page }
 
   await page.getByTitle("all playlistz").click();
   await page.getByRole("button", { name: "new playlist" }).first().click();
-  await page.getByTitle("edit playlist").waitFor();
+  await page.getByTitle("edit playlist").first().waitFor();
   await page.locator("input[placeholder='playlist title']").fill("second");
   await page.locator("input[placeholder='playlist title']").blur();
   await page.waitForTimeout(300);
@@ -133,16 +133,19 @@ test("edit button in row opens edit panel for that playlist", async ({ page }) =
   // create a second playlist as the "currently selected" one
   await page.getByTitle("all playlistz").click();
   await page.getByRole("button", { name: "new playlist" }).first().click();
-  await page.getByTitle("edit playlist").waitFor();
+  await page.getByTitle("edit playlist").first().waitFor();
   await page.locator("input[placeholder='playlist title']").fill("currently selected");
   await page.locator("input[placeholder='playlist title']").blur();
   await page.waitForTimeout(300);
 
   // open panel, hover over "edit me" row and click its edit button
   await page.getByTitle("all playlistz").click();
-  const row = page.getByText("edit me").first();
+  // wait for panel rows to appear
+  const panel = page.getByTestId("all-playlists-panel");
+  await panel.waitFor({ timeout: 3000 });
+  const row = panel.getByText("edit me").first();
   await row.hover();
-  await page.getByTitle("edit playlist").first().click();
+  await panel.getByTitle("edit playlist").first().click();
 
   // panel closes, edit panel opens for "edit me"
   await expect(page.getByTitle("close all playlists")).not.toBeVisible({ timeout: 5000 });
@@ -158,15 +161,17 @@ test("share button in row opens share panel for that playlist", async ({ page })
 
   await page.getByTitle("all playlistz").click();
   await page.getByRole("button", { name: "new playlist" }).first().click();
-  await page.getByTitle("edit playlist").waitFor();
+  await page.getByTitle("edit playlist").first().waitFor();
   await page.locator("input[placeholder='playlist title']").fill("currently selected");
   await page.locator("input[placeholder='playlist title']").blur();
   await page.waitForTimeout(300);
 
   await page.getByTitle("all playlistz").click();
-  const row = page.getByText("share me").first();
+  const panel = page.getByTestId("all-playlists-panel");
+  await panel.waitFor({ timeout: 3000 });
+  const row = panel.getByText("share me").first();
   await row.hover();
-  await page.getByTitle("share playlist").first().click();
+  await panel.getByTitle("share playlist").first().click();
 
   // share panel should be open
   await expect(page.getByTitle("close share panel")).toBeVisible({ timeout: 5000 });
@@ -182,7 +187,7 @@ test("new playlist row creates a playlist and closes the panel", async ({ page }
 
   // panel should close and new playlist edit mode should be open
   await expect(page.getByTitle("close all playlists")).not.toBeVisible({ timeout: 5000 });
-  await expect(page.getByTitle("edit playlist")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByTitle("edit playlist").first()).toBeVisible({ timeout: 5000 });
   await expect(page.locator("input[placeholder='playlist title']")).toHaveValue("new playlist");
 });
 
@@ -198,7 +203,7 @@ test("row shows song count for playlists with songs", async ({ page }) => {
   // create a second (selected) playlist
   await page.getByTitle("all playlistz").click();
   await page.getByRole("button", { name: "new playlist" }).first().click();
-  await page.getByTitle("edit playlist").waitFor();
+  await page.getByTitle("edit playlist").first().waitFor();
   await page.waitForTimeout(300);
 
   // open panel - "has songs" row should show "3 songz"
