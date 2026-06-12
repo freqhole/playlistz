@@ -18,6 +18,7 @@ import {
   deleteSong,
   reorderSongsInDoc,
   getSongsForPlaylist,
+  getSongsFromHandle,
   docToPlaylistAsync,
 } from "../services/playlistDocService.js";
 import { findPlaylistDoc } from "../services/automergeRepo.js";
@@ -299,7 +300,8 @@ export function usePlaylistManager() {
               setSelectedPlaylist(updated);
             }
 
-            const songs = await getSongsForPlaylist(playlistId);
+            // use the handle we already have - avoids a redundant repo.find()
+            const songs = await getSongsFromHandle(playlistId, handle);
             if (!disposed) {
               setPlaylistSongs(songs);
             }

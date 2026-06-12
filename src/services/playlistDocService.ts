@@ -218,6 +218,16 @@ export async function docToPlaylistAsync(
 // also populates the songRegistry for subsequent getSongById calls.
 export async function getSongsForPlaylist(docId: string): Promise<Song[]> {
   const handle = await findPlaylistDoc(docId as AutomergeUrl);
+  return getSongsFromHandle(docId, handle);
+}
+
+// same as getSongsForPlaylist but accepts an already-resolved handle.
+// use this in contexts where findPlaylistDoc has already been called (e.g.
+// inside a doc change handler) to avoid a redundant repo.find() call.
+export async function getSongsFromHandle(
+  docId: string,
+  handle: Awaited<ReturnType<typeof findPlaylistDoc>>
+): Promise<Song[]> {
   const raw = handle.doc();
   if (!raw) return [];
   const doc = parsePlaylistDoc(raw);
@@ -232,6 +242,11 @@ export async function getSongsForPlaylist(docId: string): Promise<Song[]> {
   return Promise.all(songs.map(hydrateSongImage));
 }
 
+// coalesces concurrent registry-rebuild requests into a single operation.
+// without this, N SongRow components all firing getSongById on an empty
+// registry each triggers their own findPlaylistDoc call in parallel.
+let _registryRebuildPromise: Promise<void> | null = null;
+
 // get a single song by id using the in-memory registry.
 // on a registry miss (e.g. right after a page reload, before any playlist's
 // songs have been fetched), rebuilds the registry from the docIndex.
@@ -239,20 +254,27 @@ export async function getSongById(songId: string): Promise<Song | null> {
   let reg = songRegistry.get(songId);
 
   if (!reg) {
-    // rebuild from known docs until we find the song
-    const entries = await getAllDocIndexEntries();
-    for (const entry of entries) {
-      try {
-        const handle = await findPlaylistDoc(entry.docId as AutomergeUrl);
-        const raw = handle.doc();
-        if (!raw) continue;
-        registerDocSongs(entry.docId, parsePlaylistDoc(raw));
-      } catch {
-        continue;
-      }
-      reg = songRegistry.get(songId);
-      if (reg) break;
+    // coalesce all concurrent misses into a single rebuild so N SongRows
+    // waiting on empty registry only call findPlaylistDoc once.
+    if (!_registryRebuildPromise) {
+      _registryRebuildPromise = (async () => {
+        const entries = await getAllDocIndexEntries();
+        for (const entry of entries) {
+          try {
+            const handle = await findPlaylistDoc(entry.docId as AutomergeUrl);
+            const raw = handle.doc();
+            if (!raw) continue;
+            registerDocSongs(entry.docId, parsePlaylistDoc(raw));
+          } catch {
+            continue;
+          }
+        }
+      })().finally(() => {
+        _registryRebuildPromise = null;
+      });
     }
+    await _registryRebuildPromise;
+    reg = songRegistry.get(songId);
   }
 
   if (!reg) return null;
