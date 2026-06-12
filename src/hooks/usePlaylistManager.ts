@@ -125,14 +125,18 @@ export function usePlaylistManager() {
       if (current) {
         const updated = resolved.find((p) => p.id === current.id);
         if (updated) {
+          console.log("[pm.sync] setSelectedPlaylist updated, songIds:", updated.songIds?.length);
           setSelectedPlaylist(updated);
         } else if (resolved.length > 0) {
+          console.warn("[pm.sync] current not in resolved, fallback to resolved[0]");
           setSelectedPlaylist(resolved[0]!);
         } else {
+          console.warn("[pm.sync] resolved empty - setSelectedPlaylist(null)!");
           setSelectedPlaylist(null);
         }
       } else if (resolved.length > 0) {
         // nothing selected but playlists exist - auto-select first
+        console.log("[pm.sync] auto-selecting first playlist");
         setSelectedPlaylist(resolved[0]!);
       }
     } catch (err) {
@@ -143,11 +147,13 @@ export function usePlaylistManager() {
   // update songs when selected playlist changes
   async function loadSongsForSelected(playlist: Playlist | null): Promise<void> {
     if (!playlist) {
+      console.warn("[pm.load] loadSongsForSelected(null) -> setPlaylistSongs([])");
       setPlaylistSongs([]);
       return;
     }
     try {
       const songs = await getSongsForPlaylist(playlist.id);
+      console.log("[pm.load] getSongsForPlaylist returned", songs.length, "for", playlist.id);
       setPlaylistSongs(songs);
     } catch (err) {
       log.error("playlist.songs", "error loading songs for playlist:", err);
@@ -275,6 +281,7 @@ export function usePlaylistManager() {
         }
 
         if (!playlistId) {
+          console.warn("[pm.select] effect: playlistId null -> setPlaylistSongs([])");
           setPlaylistSongs([]);
           return;
         }
@@ -302,8 +309,12 @@ export function usePlaylistManager() {
 
             // use the handle we already have - avoids a redundant repo.find()
             const songs = await getSongsFromHandle(playlistId, handle);
+            console.log("[pm.refresh] #", _refreshCount, "getSongsFromHandle returned", songs.length, "songs, disposed=", disposed, songs.map(s => s.title));
             if (!disposed) {
               setPlaylistSongs(songs);
+              console.log("[pm.refresh] setPlaylistSongs called with", songs.length);
+            } else {
+              console.warn("[pm.refresh] SKIPPED setPlaylistSongs - disposed!");
             }
           } catch (err) {
             log.error("playlist.select", "error refreshing selected playlist doc:", err);
@@ -332,6 +343,7 @@ export function usePlaylistManager() {
         })();
 
         onCleanup(() => {
+          console.warn("[pm.select] onCleanup: disposed=true for", playlistId);
           disposed = true;
         });
       }

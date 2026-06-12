@@ -195,6 +195,31 @@ export function useDragAndDrop() {
     }
   };
 
+  // processFileImport: the core import logic, callable without a DragEvent.
+  // useful for tests and for wiring to file-input onChange handlers.
+  const processFileImport = async (
+    files: File[],
+    options: {
+      selectedPlaylist?: Playlist | null;
+      playlists: Playlist[];
+      onPlaylistCreated?: (playlist: Playlist) => void;
+      onPlaylistSelected?: (playlist: Playlist) => void;
+    }
+  ) => {
+    const zipFiles = files.filter(
+      (f) =>
+        f.type === "application/zip" || f.name.toLowerCase().endsWith(".zip")
+    );
+    if (zipFiles.length > 0) {
+      await handleZipFiles(zipFiles, options);
+      return;
+    }
+    const audioFiles = filterAudioFiles(files as unknown as FileList);
+    if (audioFiles.length > 0) {
+      await handleAudioFiles(audioFiles, options);
+    }
+  };
+
   const handleZipFiles = async (
     zipFiles: File[],
     options: {
@@ -207,6 +232,8 @@ export function useDragAndDrop() {
       const { playlist: playlistData, songs: songsData } =
         await parsePlaylistZip(zipFile);
 
+      log.debug("handleZipFiles", `parsed zip: title="${playlistData.title}" songs=${songsData.length} existing playlists=${options.playlists.length}`);
+
       // check if a playlist with the same name and songs already exists
       const existingPlaylist = options.playlists.find(
         (p) =>
@@ -215,6 +242,7 @@ export function useDragAndDrop() {
       );
 
       if (existingPlaylist) {
+        log.debug("handleZipFiles", `dedup match: "${playlistData.title}" already exists`);
         setError(`Playlist "${playlistData.title}" already exists`);
         setTimeout(() => setError(null), 3000);
         continue;
@@ -225,9 +253,11 @@ export function useDragAndDrop() {
         description: playlistData.description,
       });
 
+      log.debug("handleZipFiles", `created playlist ${newPlaylist.id}, adding ${songsData.length} songs`);
+
       // and add the songz
       for (const songData of songsData) {
-        // create a File object from the audio data for compatibility
+        log.debug("handleZipFiles", `adding song "${songData.title}" audioData=${songData.audioData?.byteLength ?? "none"}`);
         const audioBlob = new Blob([songData.audioData!], {
           type: songData.mimeType,
         });
@@ -362,6 +392,7 @@ export function useDragAndDrop() {
     handleDragLeave,
     handleDrop,
     handleFileDrop,
+    processFileImport,
 
     // utilz
     analyzeDragData,

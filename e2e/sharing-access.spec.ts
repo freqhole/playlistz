@@ -35,13 +35,12 @@ test("default mode is knock first", async ({ page }) => {
   await createPlaylistViaUI(page);
   await openSharePanel(page);
 
-  // "knock first" should have the active styling (magenta border class)
+  // "knock first" should be the active mode
   const knockBtn = page.getByTestId("btn-mode-knock");
   await expect(knockBtn).toBeVisible();
-  // active button has magenta border; inactive has gray
-  await expect(knockBtn).toHaveClass(/border-magenta/);
+  await expect(knockBtn).toHaveAttribute("aria-pressed", "true");
   const publicBtn = page.getByTestId("btn-mode-public");
-  await expect(publicBtn).not.toHaveClass(/border-magenta/);
+  await expect(publicBtn).toHaveAttribute("aria-pressed", "false");
 });
 
 test("clicking anyone (public) switches the active mode", async ({ page }) => {
@@ -49,10 +48,9 @@ test("clicking anyone (public) switches the active mode", async ({ page }) => {
   await openSharePanel(page);
 
   await page.getByTestId("btn-mode-public").click();
-  await page.waitForTimeout(300);
 
-  await expect(page.getByTestId("btn-mode-public")).toHaveClass(/border-magenta/);
-  await expect(page.getByTestId("btn-mode-knock")).not.toHaveClass(/border-magenta/);
+  await expect(page.getByTestId("btn-mode-public")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("btn-mode-knock")).toHaveAttribute("aria-pressed", "false");
 });
 
 test("mode setting persists after closing and reopening the share panel", async ({ page }) => {
@@ -61,17 +59,14 @@ test("mode setting persists after closing and reopening the share panel", async 
 
   // switch to public
   await page.getByTestId("btn-mode-public").click();
-  await page.waitForTimeout(500);
+  await expect(page.getByTestId("btn-mode-public")).toHaveAttribute("aria-pressed", "true");
 
-  // close panel
+  // close and reopen
   await page.getByTestId("btn-close-panel").click();
-  await page.waitForTimeout(300);
-
-  // reopen
   await openSharePanel(page);
 
   // mode should still be public
-  await expect(page.getByTestId("btn-mode-public")).toHaveClass(/border-magenta/);
+  await expect(page.getByTestId("btn-mode-public")).toHaveAttribute("aria-pressed", "true");
 });
 
 test("mode setting persists across page reload", async ({ page }) => {
@@ -80,7 +75,13 @@ test("mode setting persists across page reload", async ({ page }) => {
 
   // switch to public
   await page.getByTestId("btn-mode-public").click();
-  await page.waitForTimeout(500);
+  await expect(page.getByTestId("btn-mode-public")).toHaveAttribute("aria-pressed", "true");
+
+  // close and reopen the share panel - confirms the IDB write completed
+  // (aria-pressed updates sync but saveShareSettings is async)
+  await page.getByTestId("btn-close-panel").click();
+  await openSharePanel(page);
+  await expect(page.getByTestId("btn-mode-public")).toHaveAttribute("aria-pressed", "true");
 
   // reload
   await page.reload();
@@ -90,25 +91,29 @@ test("mode setting persists across page reload", async ({ page }) => {
   await openSharePanel(page);
 
   // mode should still be public
-  await expect(page.getByTestId("btn-mode-public")).toHaveClass(/border-magenta/);
+  await expect(page.getByTestId("btn-mode-public")).toHaveAttribute("aria-pressed", "true");
 });
 
 test("switching back to knock first from public persists", async ({ page }) => {
   await createPlaylistViaUI(page);
   await openSharePanel(page);
 
-  // first switch to public
+  // switch to public then back to knock
   await page.getByTestId("btn-mode-public").click();
-  await page.waitForTimeout(300);
-  // then back to knock
+  await expect(page.getByTestId("btn-mode-public")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("btn-mode-knock").click();
-  await page.waitForTimeout(500);
+  await expect(page.getByTestId("btn-mode-knock")).toHaveAttribute("aria-pressed", "true");
+
+  // close and reopen to confirm the IDB write landed before reload
+  await page.getByTestId("btn-close-panel").click();
+  await openSharePanel(page);
+  await expect(page.getByTestId("btn-mode-knock")).toHaveAttribute("aria-pressed", "true");
 
   await page.reload();
   await waitForApp(page);
   await openSharePanel(page);
 
-  await expect(page.getByTestId("btn-mode-knock")).toHaveClass(/border-magenta/);
+  await expect(page.getByTestId("btn-mode-knock")).toHaveAttribute("aria-pressed", "true");
 });
 
 // --- knock inbox ---

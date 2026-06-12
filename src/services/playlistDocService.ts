@@ -229,8 +229,9 @@ export async function getSongsFromHandle(
   handle: Awaited<ReturnType<typeof findPlaylistDoc>>
 ): Promise<Song[]> {
   const raw = handle.doc();
-  if (!raw) return [];
+  if (!raw) { console.warn("[getSongsFromHandle] handle.doc() returned null"); return []; }
   const doc = parsePlaylistDoc(raw);
+  console.log("[getSongsFromHandle] doc.order.length=", doc.order.length, "songs keys:", Object.keys(doc.songs).length);
   registerDocSongs(docId, doc);
   const songs = doc.order
     .map((id, i) => {

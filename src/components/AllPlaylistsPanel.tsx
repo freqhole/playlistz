@@ -187,6 +187,7 @@ function PlaylistRow(props: {
       <div class="relative flex-shrink-0 w-10 h-10 overflow-hidden bg-black/40">
         <Show when={isPlaying()}>
           <div
+            data-testid="row-playing-indicator"
             class="absolute inset-0 z-10 flex items-center justify-center bg-black/50"
             title="playing"
           >

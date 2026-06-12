@@ -10,7 +10,7 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const USER_PROVIDED_DIR = join(FIXTURES_DIR, "user-provided");
@@ -189,7 +189,7 @@ export async function dropFiles(page: Page, files: FixtureFile[]): Promise<void>
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       dt.items.add(new File([bytes], f.name, { type: f.mimeType }));
     }
-    const target = document.querySelector("[class*='bg-black']") ?? document.body;
+    const target = document.querySelector('[data-testid="app-root"]') ?? document.body;
     target.dispatchEvent(
       new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt })
     );
@@ -238,6 +238,11 @@ export async function createPlaylistViaUI(page: Page): Promise<void> {
     await page.getByTestId("btn-new-playlist").click();
   }
   await page.getByTestId("btn-edit-playlist").waitFor({ timeout: 5000 });
+  // wait for the title input to reflect the new playlist's default title,
+  // confirming the reactive binding is live before callers try to fill it
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue(
+    "new playlist"
+  );
 }
 
 // add n synthetic songs to the selected playlist via drag and drop

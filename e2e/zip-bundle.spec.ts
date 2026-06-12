@@ -182,6 +182,11 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await createPlaylistViaUI(page);
     await addSongs(page, 2);
 
+    const titleInput = page.getByTestId("input-playlist-title");
+    await titleInput.fill("my test playlist");
+    await titleInput.blur();
+    await expect(titleInput).toHaveValue("my test playlist");
+
     const downloadPromise = page.waitForEvent("download");
     await page.getByTestId("btn-download-zip").click();
     const download = await downloadPromise;
@@ -202,6 +207,36 @@ test.describe("zip bundle download + standalone roundtrip", () => {
       /\.(wav|mp3|flac|ogg|aiff|m4a)$/i.test(n)
     );
     expect(audioFiles.length).toBeGreaterThanOrEqual(2);
+
+    // validate playlistz.js content
+    const playlistzJsFile = zip.file(/playlistz\.js$/)[0];
+    expect(playlistzJsFile).toBeTruthy();
+    const playlistzJs = await playlistzJsFile!.async("string");
+
+    // must be a valid window.__PLAYLISTZ__ assignment
+    expect(playlistzJs).toMatch(/^window\.__PLAYLISTZ__\s*=/);
+
+    // parse the JSON payload from "window.__PLAYLISTZ__ = [...];"
+    const jsonMatch = playlistzJs.match(/window\.__PLAYLISTZ__\s*=\s*(\[.*\]);?\s*$/s);
+    expect(jsonMatch).toBeTruthy();
+    const playlistzData = JSON.parse(jsonMatch![1]!) as Array<{
+      playlist: { id: string; title: string };
+      songs: Array<{ title: string; duration: number; originalFilename: string; mimeType: string }>;
+    }>;
+
+    expect(playlistzData).toHaveLength(1);
+    const entry = playlistzData[0]!;
+
+    expect(entry.playlist.title).toBe("my test playlist");
+    expect(entry.songs).toHaveLength(2);
+
+    // each song must have a title, a positive duration, a filename, and a mime type
+    for (const song of entry.songs) {
+      expect(song.title).toBeTruthy();
+      expect(song.duration).toBeGreaterThan(0);
+      expect(song.originalFilename).toMatch(/\.wav$/i);
+      expect(song.mimeType).toBeTruthy();
+    }
   });
 
   test("zip reimport: drop zip back onto the app and songs reappear", async ({
@@ -217,24 +252,61 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     const zipPath = await download.path();
     const zipBuf = fs.readFileSync(zipPath!);
 
-    // reset app to a clean state, then drop the zip
+    // reset to a clean state
     await resetAppState(page);
-    await page.evaluate(async (zipBase64: string) => {
+    // wait for empty state - confirms app is interactive and __processFiles is live
+    await page.getByTestId("btn-new-playlist").waitFor();
+
+    // collect browser console output for diagnosis
+    const logs: string[] = [];
+    page.on("console", (msg) => logs.push(`[${msg.type()}] ${msg.text()}`));
+    page.on("pageerror", (err) => logs.push(`[pageerror] ${err.message}`));
+
+    // use window.__processFiles (dev hook) instead of DragEvent to avoid
+    // browser DataTransfer restrictions on synthesized events
+    const result = await page.evaluate(async (zipBase64: string) => {
       const bin = atob(zipBase64);
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const dt = new DataTransfer();
-      dt.items.add(new File([bytes], "playlist.zip", { type: "application/zip" }));
-      const target = document.body;
-      target.dispatchEvent(
-        new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt })
-      );
+      const file = new File([bytes], "playlist.zip", { type: "application/zip" });
+      const hook = (window as typeof window & { __processFiles?: (files: File[]) => Promise<void> }).__processFiles;
+      console.log("[test] __processFiles hook present:", !!hook);
+      if (!hook) return "hook-missing";
+      try {
+        await hook([file]);
+        // check what the dom looks like now
+        const rows = document.querySelectorAll("[data-testid='song-row'], [class*='song']");
+        console.log("[test] dom rows after import:", rows.length);
+        const allText = document.body.innerText.slice(0, 500);
+        console.log("[test] body text sample:", allText);
+        return "ok";
+      } catch (e) {
+        console.error("[test] __processFiles threw:", e);
+        return String(e);
+      }
     }, zipBuf.toString("base64"));
+
+    console.log("[zip reimport] __processFiles result:", result);
+    console.log("[zip reimport] browser logs (since resetAppState):", logs.join("\n") || "(none)");
+
+    // give SolidJS one more tick to flush reactive updates to the DOM
+    await page.waitForTimeout(200);
+
+    const domSnapshot = await page.evaluate(() => ({
+      bodyText: document.body.innerText.slice(0, 800),
+      songRows: document.querySelectorAll("[data-testid='song-row']").length,
+      allText: Array.from(document.querySelectorAll("*"))
+        .filter(el => el.childNodes.length === 1 && el.childNodes[0]?.nodeType === 3)
+        .map(el => (el as HTMLElement).innerText?.trim())
+        .filter(t => t && t.includes("song-"))
+        .slice(0, 10),
+    }));
+    console.log("[zip reimport] DOM snapshot:", JSON.stringify(domSnapshot));
 
     // after reimport, songs should be visible
     await expect(page.getByText("song-00")).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText("song-01")).toBeVisible();
-    await expect(page.getByText("song-02")).toBeVisible();
+    await expect(page.getByText("song-01")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText("song-02")).toBeVisible({ timeout: 15000 });
   });
 
   test("standalone mode: zip serves via http and shows songs", async ({

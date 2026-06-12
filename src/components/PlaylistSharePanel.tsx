@@ -419,6 +419,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           <div class="flex gap-2">
             <button
               data-testid="btn-mode-public"
+              aria-pressed={settings().mode === "public"}
               onClick={() => void handleSaveSettings({ mode: "public" })}
               class={`flex-1 px-3 py-2 text-sm border ${settings().mode === "public" ? "border-magenta-500 bg-magenta-500/20 text-white" : "border-gray-600 text-gray-400"}`}
             >
@@ -426,6 +427,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
             </button>
             <button
               data-testid="btn-mode-knock"
+              aria-pressed={settings().mode === "knock"}
               onClick={() => void handleSaveSettings({ mode: "knock" })}
               class={`flex-1 px-3 py-2 text-sm border ${settings().mode === "knock" ? "border-magenta-500 bg-magenta-500/20 text-white" : "border-gray-600 text-gray-400"}`}
             >

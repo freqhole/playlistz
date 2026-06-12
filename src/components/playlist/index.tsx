@@ -527,6 +527,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 {/* hamburger: open all-playlists overlay */}
                 <button
                   data-testid="btn-all-playlists"
+                  aria-expanded={showAllPlaylists()}
                   onClick={() => {
                     if (showingShare()) closeShare();
                     if (editingPlaylist() || editingSong()) handleCloseEdit();
@@ -557,6 +558,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 {/* edit playlist button - toggles edit panel */}
                 <button
                   data-testid="btn-edit-playlist"
+                  aria-expanded={editingPlaylist()}
                   onClick={() => {
                     if (showingShare()) closeShare();
                     editingPlaylist()
@@ -587,6 +589,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     peer count (1/2/3+), pulse when transfers are active */}
                 <button
                   data-testid="btn-share-playlist"
+                  aria-expanded={showingShare()}
                   onClick={() => {
                     if (showingShare()) {
                       closeShare();

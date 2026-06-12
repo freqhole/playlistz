@@ -41,6 +41,7 @@ function PlaylistzInner() {
     handleDragOver,
     handleDragLeave,
     handleFileDrop,
+    processFileImport,
     setIsDragOver,
     error: dragError,
   } = dragAndDrop;
@@ -157,8 +158,24 @@ function PlaylistzInner() {
     })();
   });
 
+  // dev/test hook: exposes file import logic without needing a DragEvent.
+  // call window.__processFiles([file1, file2, ...]) from playwright tests.
+  if (import.meta.env.DEV) {
+    (
+      window as typeof window & {
+        __processFiles?: (files: File[]) => Promise<void>;
+      }
+    ).__processFiles = (files: File[]) =>
+      processFileImport(files, {
+        selectedPlaylist: selectedPlaylist(),
+        playlists: playlists(),
+        onPlaylistSelected: (playlist) => selectPlaylist(playlist),
+      });
+  }
+
   return (
     <div
+      data-testid="app-root"
       class="relative bg-black text-white h-screen overflow-hidden"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}

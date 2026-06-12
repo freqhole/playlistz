@@ -80,15 +80,16 @@ test("playlist cover image persists across reload", async ({ page }) => {
   });
 
   // cover preview appears in the edit panel
-  await expect(page.locator("img[alt='playlist cover']").first()).toBeVisible(
+  await expect(page.getByTestId("edit-panel").locator("img[alt='playlist cover']").first()).toBeVisible(
     { timeout: 10000 }
   );
 
   await page.reload();
   await waitForApp(page);
 
-  // cover is still rendered from the blob store after reload
-  await expect(page.locator("img[alt='playlist cover']").first()).toBeVisible({
+  // re-open edit panel and confirm the cover is still there from blob store
+  await page.getByTestId("btn-edit-playlist").click();
+  await expect(page.getByTestId("edit-panel").locator("img[alt='playlist cover']").first()).toBeVisible({
     timeout: 10000,
   });
 });

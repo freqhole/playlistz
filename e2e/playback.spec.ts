@@ -34,19 +34,23 @@ test("all-playlists thumbnail shows a play icon while the playlist plays", async
   await createPlaylistViaUI(page);
   await addSongs(page, 2, 2);
 
-  // start playback
+  // start playback on the first playlist
   await page.getByText("song-00").dblclick();
   await expect(page.locator("button.bg-magenta-500").first()).toBeVisible({
     timeout: 10000,
   });
 
-  // open the all-playlists panel - the currently-playing playlist row
-  // shows a play icon overlay on its thumbnail
+  // create a second playlist so the first one (playing) appears as a row
+  // (the selected playlist is excluded from panel rows)
   await page.getByTestId("btn-all-playlists").click();
-  // wait for panel to render before checking the playing indicator
+  await page.getByTestId("btn-new-playlist").click();
+  await page.getByTestId("btn-edit-playlist").waitFor();
+
+  // open the panel - the first playlist (still playing) is now a row
+  await page.getByTestId("btn-all-playlists").click();
   await page.getByTestId("all-playlists-panel").waitFor();
 
-  await expect(page.locator("div[title='playing']")).toBeVisible({
+  await expect(page.getByTestId("row-playing-indicator")).toBeVisible({
     timeout: 8000,
   });
 });

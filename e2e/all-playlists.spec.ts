@@ -23,6 +23,7 @@ test("hamburger opens the all-playlists panel", async ({ page }) => {
   await page.getByTestId("btn-all-playlists").click();
   await page.getByTestId("btn-new-playlist").click();
   await page.getByTestId("btn-edit-playlist").waitFor({ timeout: 5000 });
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("new playlist");
   await page.getByTestId("input-playlist-title").fill("beta");
   await page.getByTestId("input-playlist-title").blur();
 
@@ -58,6 +59,7 @@ test("selected playlist is not shown in panel rows", async ({ page }) => {
   await page.getByTestId("btn-all-playlists").click();
   await page.getByTestId("btn-new-playlist").click();
   await page.getByTestId("btn-edit-playlist").waitFor();
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("new playlist");
   await page.getByTestId("input-playlist-title").fill("other one");
   await page.getByTestId("input-playlist-title").blur();
   await page.waitForTimeout(300);
@@ -88,9 +90,11 @@ test("all other playlists are shown in panel rows", async ({ page }) => {
     await page.getByTestId("btn-all-playlists").click();
     await page.getByTestId("btn-new-playlist").click();
     await page.getByTestId("btn-edit-playlist").waitFor();
+    await expect(page.getByTestId("input-playlist-title")).toHaveValue("new playlist");
     await page.getByTestId("input-playlist-title").fill(name);
     await page.getByTestId("input-playlist-title").blur();
-    await page.waitForTimeout(300);
+    // wait for the doc to reflect the new title before navigating away
+    await expect(page.getByTestId("input-playlist-title")).toHaveValue(name);
   }
 
   // currently selected is "playlist c" - panel should show a and b
@@ -110,9 +114,10 @@ test("clicking a row selects the playlist and closes the panel", async ({ page }
   await page.getByTestId("btn-all-playlists").click();
   await page.getByTestId("btn-new-playlist").click();
   await page.getByTestId("btn-edit-playlist").waitFor();
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("new playlist");
   await page.getByTestId("input-playlist-title").fill("second");
   await page.getByTestId("input-playlist-title").blur();
-  await page.waitForTimeout(300);
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("second");
 
   // open panel and click "first"
   await page.getByTestId("btn-all-playlists").click();
@@ -128,15 +133,16 @@ test("edit button in row opens edit panel for that playlist", async ({ page }) =
   await createPlaylistViaUI(page);
   await page.getByTestId("input-playlist-title").fill("edit me");
   await page.getByTestId("input-playlist-title").blur();
-  await page.waitForTimeout(300);
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("edit me");
 
   // create a second playlist as the "currently selected" one
   await page.getByTestId("btn-all-playlists").click();
   await page.getByTestId("btn-new-playlist").click();
   await page.getByTestId("btn-edit-playlist").waitFor();
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("new playlist");
   await page.getByTestId("input-playlist-title").fill("currently selected");
   await page.getByTestId("input-playlist-title").blur();
-  await page.waitForTimeout(300);
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("currently selected");
 
   // open panel, hover over "edit me" row and click its edit button
   await page.getByTestId("btn-all-playlists").click();
@@ -162,9 +168,10 @@ test("share button in row opens share panel for that playlist", async ({ page })
   await page.getByTestId("btn-all-playlists").click();
   await page.getByTestId("btn-new-playlist").click();
   await page.getByTestId("btn-edit-playlist").waitFor();
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("new playlist");
   await page.getByTestId("input-playlist-title").fill("currently selected");
   await page.getByTestId("input-playlist-title").blur();
-  await page.waitForTimeout(300);
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("currently selected");
 
   await page.getByTestId("btn-all-playlists").click();
   const panel = page.getByTestId("all-playlists-panel");

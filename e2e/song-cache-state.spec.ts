@@ -152,22 +152,22 @@ test("jpg accepted as playlist cover", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTestId("btn-edit-playlist").click();
   await setPlaylistCover(page, fixture("cover-gradient.jpg"));
-  // the edit panel renders a preview img once the cover is processed
-  await expect(page.locator("img[alt='playlist cover']").first()).toBeVisible({ timeout: 10000 });
+  // scope to edit-panel - the preview img appears there after processing
+  await expect(page.getByTestId("edit-panel").locator("img[alt='playlist cover']").first()).toBeVisible({ timeout: 10000 });
 });
 
 test("webp accepted as playlist cover", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTestId("btn-edit-playlist").click();
   await setPlaylistCover(page, fixture("cover-plasma.webp"));
-  await expect(page.locator("img[alt='playlist cover']").first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByTestId("edit-panel").locator("img[alt='playlist cover']").first()).toBeVisible({ timeout: 10000 });
 });
 
 test("portrait jpg (non-square) accepted as playlist cover", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTestId("btn-edit-playlist").click();
   await setPlaylistCover(page, fixture("cover-portrait.jpg"));
-  await expect(page.locator("img[alt='playlist cover']").first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByTestId("edit-panel").locator("img[alt='playlist cover']").first()).toBeVisible({ timeout: 10000 });
 });
 
 // --- metadata persistence ---
