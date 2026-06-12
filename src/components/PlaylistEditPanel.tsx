@@ -82,7 +82,12 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
 
   onMount(() => {
     initSharingState();
+  });
 
+  // update the displayed cover whenever the playlist's image resolves from
+  // the blob store. docToPlaylistAsync sets imageFilePath asynchronously after
+  // the initial sync, so onMount alone would miss it on a fresh page load.
+  createEffect(() => {
     if (props.playlist.imageData && props.playlist.imageType) {
       const displayData =
         props.playlist.thumbnailData || props.playlist.imageData;

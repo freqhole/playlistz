@@ -157,7 +157,7 @@ async function importFixture(
   if (result !== "ok") throw new Error(`importFixture failed: ${result}`);
 }
 
-test("mockBlobFetch delayed: song row shows downloading state", async ({
+test("mockBlobFetch delayed: song row shows downloading state @mock", async ({
   page,
 }) => {
   await createPlaylistViaUI(page);
@@ -196,7 +196,7 @@ test("mockBlobFetch delayed: song row shows downloading state", async ({
   }
 });
 
-test("mockBlobFetch error: song row shows error state", async ({ page }) => {
+test("mockBlobFetch error: song row shows error state @mock", async ({ page }) => {
   await createPlaylistViaUI(page);
   await importFixture(page, "tone-440hz-2s.wav");
   await expect(page.getByText("tone-440hz-2s")).toBeVisible({ timeout: 10000 });

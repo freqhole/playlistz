@@ -65,7 +65,7 @@ async function firstSongSha(
 
 // --- pending state ---
 
-test("prefetch marks songs pending before fetch starts", async ({ page }) => {
+test("prefetch marks songs pending before fetch starts @mock", async ({ page }) => {
   test.setTimeout(30_000);
   await createPlaylistViaUI(page);
   // 3 songs: song-00 plays, song-01 and song-02 should enter pending state
@@ -99,7 +99,7 @@ test("prefetch marks songs pending before fetch starts", async ({ page }) => {
 
 // --- fetch timeout ---
 
-test("blob fetch timeout: song shows error state after timeout", async ({
+test("blob fetch timeout: song shows error state after timeout @mock", async ({
   page,
 }) => {
   test.setTimeout(20_000);
@@ -132,7 +132,7 @@ test("blob fetch timeout: song shows error state after timeout", async ({
 
 // --- retry on error ---
 
-test("error duration cell has retry affordance and retry clears error state", async ({ page }) => {
+test("error duration cell has retry affordance and retry clears error state @mock", async ({ page }) => {
   test.setTimeout(20_000);
   await createPlaylistViaUI(page);
   await importFixture(page, "tone-440hz-2s.wav");
@@ -175,7 +175,7 @@ test("error duration cell has retry affordance and retry clears error state", as
 
 // --- prefetch triggered on play ---
 
-test("prefetch activates for upcoming songs when playback starts", async ({
+test("prefetch activates for upcoming songs when playback starts @mock", async ({
   page,
 }) => {
   test.setTimeout(30_000);
@@ -214,7 +214,7 @@ test("prefetch activates for upcoming songs when playback starts", async ({
 
 // --- prefetch cancels on playlist switch ---
 
-test("prefetch for old playlist cancels when switching to new playlist", async ({
+test("prefetch for old playlist cancels when switching to new playlist @mock", async ({
   page,
 }) => {
   test.setTimeout(40_000);
@@ -266,7 +266,7 @@ test("prefetch for old playlist cancels when switching to new playlist", async (
 
 // --- seek recalculates prefetch window ---
 
-test("seeking forward recalculates the prefetch window", async ({ page }) => {
+test("seeking forward recalculates the prefetch window @mock", async ({ page }) => {
   test.setTimeout(30_000);
   await createPlaylistViaUI(page);
   await addSongs(page, 4, 2); // 4x 2s songs
