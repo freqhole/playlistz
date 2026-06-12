@@ -25,6 +25,7 @@ import {
   storeBlob,
   getBlobObjectURL,
   getBlobMetadata,
+  deleteBlob,
 } from "freqhole-api-client/storage";
 import {
   addDocIndexEntry,
@@ -375,8 +376,48 @@ export async function updatePlaylist(
   }
 }
 
+// collect all sha256 refs across all docs except the given one.
+// used for blob GC before deleting a doc.
+async function shaRefsExcluding(excludeDocId: string): Promise<Set<string>> {
+  const entries = await getAllDocIndexEntries();
+  const refs = new Set<string>();
+  await Promise.allSettled(
+    entries
+      .filter((e) => e.docId !== excludeDocId)
+      .map(async (e) => {
+        try {
+          const h = await findPlaylistDoc(e.docId as AutomergeUrl);
+          const raw = h.doc();
+          if (!raw) return;
+          const doc = parsePlaylistDoc(raw);
+          for (const song of Object.values(doc.songs)) {
+            if (song?.sha256) refs.add(song.sha256);
+            for (const img of song?.images ?? []) refs.add(img.blobId);
+          }
+          for (const img of doc.images ?? []) refs.add(img.blobId);
+        } catch { /* ignore unavailable docs */ }
+      })
+  );
+  return refs;
+}
+
 // tombstone and remove a playlist doc from the local repo and docIndex.
 export async function deletePlaylist(docId: string): Promise<void> {
+  // collect sha refs from the doc being deleted before it's gone
+  let deletedShas: string[] = [];
+  try {
+    const handle = await findPlaylistDoc(docId as AutomergeUrl);
+    const raw = handle.doc();
+    if (raw) {
+      const doc = parsePlaylistDoc(raw);
+      for (const song of Object.values(doc.songs)) {
+        if (song?.sha256) deletedShas.push(song.sha256);
+        for (const img of song?.images ?? []) deletedShas.push(img.blobId);
+      }
+      for (const img of doc.images ?? []) deletedShas.push(img.blobId);
+    }
+  } catch { /* best-effort */ }
+
   await deletePlaylistDoc(docId as AutomergeUrl);
   await removeDocIndexEntry(docId);
   // clear all songs for this doc from the registry
@@ -384,6 +425,16 @@ export async function deletePlaylist(docId: string): Promise<void> {
     if (reg.docId === docId) {
       songRegistry.delete(id);
     }
+  }
+
+  // gc: delete blobs not referenced by any other playlist
+  if (deletedShas.length > 0) {
+    const stillReferenced = await shaRefsExcluding(docId);
+    await Promise.allSettled(
+      deletedShas
+        .filter((sha) => !stillReferenced.has(sha))
+        .map((sha) => deleteBlob(sha))
+    );
   }
 }
 
@@ -431,6 +482,21 @@ export async function addSongToPlaylist(
   };
 
   const handle = await findPlaylistDoc(docId as AutomergeUrl);
+
+  // dedup: if a song with this sha already exists in the doc, return it
+  const existingRaw = handle.doc();
+  const existingDoc = parsePlaylistDoc(existingRaw ?? {});
+  const dupId = Object.keys(existingDoc.songs).find(
+    (id) => existingDoc.songs[id]?.sha256 === sha256
+  );
+  if (dupId) {
+    log.debug("playlist.doc", "addSongToPlaylist: dedup, sha already in doc", sha256);
+    const dupIndex = existingDoc.order.indexOf(dupId);
+    return hydrateSongImage(
+      songEntryToSong(existingDoc.songs[dupId]!, docId, dupIndex >= 0 ? dupIndex : 0)
+    );
+  }
+
   handle.change((doc) => upsertSong(doc, toPlain(entry)));
   await flushDoc(docId as AutomergeUrl);
 

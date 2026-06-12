@@ -160,6 +160,7 @@ function PlaylistzInner() {
 
   // dev/test hook: exposes file import logic without needing a DragEvent.
   // call window.__processFiles([file1, file2, ...]) from playwright tests.
+  // must live here (not in dev-hooks.ts) because it needs the live reactive context.
   if (import.meta.env.DEV) {
     (
       window as typeof window & {
@@ -171,6 +172,9 @@ function PlaylistzInner() {
         playlists: playlists(),
         onPlaylistSelected: (playlist) => selectPlaylist(playlist),
       });
+
+    // load all other dev hooks (audio element control, mock blob fetch, etc.)
+    void import("../dev-hooks.js");
   }
 
   return (

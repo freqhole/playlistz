@@ -1,10 +1,10 @@
-
 import { Show } from "solid-js";
 import {
   audioState,
   togglePlayback,
   playPlaylist,
 } from "../services/audioService.js";
+import { blobDownloadStates } from "../services/blobTransferService.js";
 import type { Playlist } from "../types/playlist.js";
 
 interface AudioPlayerProps {
@@ -44,6 +44,15 @@ export function AudioPlayer(props: AudioPlayerProps) {
     );
   };
 
+  // check if the current song's blob is being fetched from a peer
+  const isFetchingBlob = () => {
+    const sha =
+      audioState.currentSong()?.sha ?? audioState.currentSong()?.sha256;
+    return sha ? blobDownloadStates().get(sha) === "downloading" : false;
+  };
+
+  const isSpinning = () => isCurrentlyLoading() || isFetchingBlob();
+
   // check if this playlist is currently playing
   const isThisPlaylistPlaying = () => {
     if (!props.playlist) return false;
@@ -58,11 +67,14 @@ export function AudioPlayer(props: AudioPlayerProps) {
 
   return (
     <button
+      data-testid="btn-play-playlist"
       onClick={handleClick}
+      aria-pressed={isThisPlaylistPlaying() ? "true" : "false"}
+      aria-busy={isSpinning()}
       class={`inline-flex items-center justify-center ${props.size || "w-12 h-12"} disabled:bg-gray-600 disabled:cursor-not-allowed rounded-full text-white hover:text-magenta-200 transition-colors mx-2 ${isThisPlaylistPlaying() ? "bg-magenta-500" : "hover:bg-magenta-500"}`}
     >
       <Show
-        when={isCurrentlyLoading()}
+        when={isSpinning()}
         fallback={
           <Show
             when={isThisPlaylistPlaying()}

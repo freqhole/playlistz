@@ -493,6 +493,16 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 class="flex items-center justify-end text-sm gap-0"
                 style={{ "grid-area": "info" }}
               >
+                <Show when={audioState.currentSong()}>
+                  {(song) => (
+                    <span
+                      data-testid="now-playing-title"
+                      class="bg-black bg-opacity-80 p-2 truncate max-w-[12rem]"
+                    >
+                      {song().title}
+                    </span>
+                  )}
+                </Show>
                 <span
                   data-testid="playlist-song-count"
                   class="bg-black bg-opacity-80 p-2"

@@ -1354,3 +1354,31 @@ export function getSongDownloadProgress(songId: string): number {
 export function isSongCaching(songId: string): boolean {
   return cachingSongIds().has(songId);
 }
+
+// --- dev hook points (implementations registered in src/dev-hooks.ts) ---
+
+// seek the current audio element to a specific time in seconds.
+export function _devSeekTo(seconds: number): void {
+  if (audioElement) audioElement.currentTime = seconds;
+}
+
+// fire the "ended" event on the audio element as if the track finished.
+export function _devTriggerTrackEnd(): void {
+  audioElement?.dispatchEvent(new Event("ended"));
+}
+
+// fire an "error" event on the audio element. code defaults to
+// MEDIA_ERR_SRC_NOT_SUPPORTED (4).
+export function _devTriggerAudioError(code = 4): void {
+  if (!audioElement) return;
+  const err = { code, message: "test-injected error" };
+  Object.defineProperty(audioElement, "error", {
+    get: () => err,
+    configurable: true,
+  });
+  audioElement.dispatchEvent(new Event("error"));
+  Object.defineProperty(audioElement, "error", {
+    get: undefined,
+    configurable: true,
+  });
+}

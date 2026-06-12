@@ -280,3 +280,51 @@ export async function setPlaylistCover(page: Page, f: FixtureFile): Promise<void
   await input.waitFor({ state: "attached", timeout: 5000 });
   await input.setInputFiles({ name: f.name, mimeType: f.mimeType, buffer: Buffer.from(f.bytes) });
 }
+
+// --- dev hook helpers ---
+// typed wrappers around window.__* dev hooks (registered by src/dev-hooks.ts).
+// use these in tests instead of raw page.evaluate calls.
+
+// mock blob behaviour modes (mirrors MockBlobBehaviour in src/dev-hooks.ts)
+export type MockBlobBehaviour =
+  | { type: "instant" }
+  | { type: "delayed"; ms: number }
+  | { type: "progress"; chunks: number; msPerChunk: number }
+  | { type: "error"; code: "not_found" | "timeout" | "peer_gone" }
+  | { type: "stall" };
+
+// seek the audio element to a specific time (seconds)
+export async function seekTo(page: Page, seconds: number): Promise<void> {
+  await page.evaluate((t) => window.__seekTo?.(t), seconds);
+}
+
+// fire the "ended" event on the audio element
+export async function triggerTrackEnd(page: Page): Promise<void> {
+  await page.evaluate(() => window.__triggerTrackEnd?.());
+}
+
+// fire an audio error event (code defaults to MEDIA_ERR_SRC_NOT_SUPPORTED = 4)
+export async function triggerAudioError(page: Page, code = 4): Promise<void> {
+  await page.evaluate((c) => window.__triggerAudioError?.(c), code);
+}
+
+// override p2p blob fetching with a deterministic mock behaviour
+export async function mockBlobFetch(
+  page: Page,
+  behaviour: MockBlobBehaviour
+): Promise<void> {
+  await page.evaluate(
+    (b) => window.__mockBlobFetch?.(b),
+    behaviour as Parameters<NonNullable<typeof window.__mockBlobFetch>>[0]
+  );
+}
+
+// restore real p2p blob fetching
+export async function clearMockBlobFetch(page: Page): Promise<void> {
+  await page.evaluate(() => window.__clearMockBlobFetch?.());
+}
+
+// remove a blob from local store (simulates a cache miss before pressing play)
+export async function evictBlob(page: Page, sha256: string): Promise<void> {
+  await page.evaluate((sha) => window.__evictBlob?.(sha), sha256);
+}

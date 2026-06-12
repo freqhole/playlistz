@@ -21,6 +21,7 @@ import {
   getBlobMetadata,
   storeBlob,
 } from "freqhole-api-client/storage";
+import { createSignal } from "solid-js";
 import {
   PLAYLISTZ_ALPN,
   sendMessage,
@@ -145,6 +146,27 @@ async function _serveBlobRequest(
   });
 }
 
+// --- per-sha download state (reactive) ---
+
+export type BlobDownloadState = "downloading" | "error";
+
+// sha256 -> current download state for in-progress or failed fetches.
+// absence = not currently tracked (either cached or not yet started).
+const [_blobDownloadStates, _setBlobDownloadStates] = createSignal<
+  ReadonlyMap<string, BlobDownloadState>
+>(new Map(), { equals: false });
+
+export const blobDownloadStates = _blobDownloadStates;
+
+function setBlobState(sha256: string, state: BlobDownloadState | null): void {
+  _setBlobDownloadStates((prev) => {
+    const next = new Map(prev);
+    if (state === null) next.delete(sha256);
+    else next.set(sha256, state);
+    return next;
+  });
+}
+
 // --- fetching side ---
 
 export interface BlobFetchProgress {
@@ -260,6 +282,35 @@ export async function fetchBlobForDoc(
   const existing = inflight.get(sha256);
   if (existing) return existing;
 
+  // dev override: bypass real p2p transport (set by dev-hooks.ts)
+  if (import.meta.env.DEV && _devFetchOverride) {
+    setBlobState(sha256, "downloading");
+    notifyTransferListeners();
+    const task = _devFetchOverride(sha256, mimeType, onProgress).then(
+      (r) => {
+        inflight.delete(sha256);
+        _setBlobDownloadStates((prev) => {
+          if (prev.get(sha256) === "downloading") {
+            const next = new Map(prev);
+            next.delete(sha256);
+            return next;
+          }
+          return prev;
+        });
+        notifyTransferListeners();
+        return r;
+      },
+      (err: unknown) => {
+        inflight.delete(sha256);
+        setBlobState(sha256, "error");
+        notifyTransferListeners();
+        throw err;
+      }
+    );
+    inflight.set(sha256, task);
+    return task;
+  }
+
   const task = (async () => {
     const myNodeId = getIdentity()?.node_id ?? "";
     let peers: string[] = [];
@@ -303,11 +354,25 @@ export async function fetchBlobForDoc(
   })();
 
   inflight.set(sha256, task);
+  setBlobState(sha256, "downloading");
   notifyTransferListeners();
   try {
-    return await task;
+    const result = await task;
+    return result;
+  } catch {
+    setBlobState(sha256, "error");
+    return null;
   } finally {
     inflight.delete(sha256);
+    // clear downloading state on success (error state stays until next attempt)
+    _setBlobDownloadStates((prev) => {
+      if (prev.get(sha256) === "downloading") {
+        const next = new Map(prev);
+        next.delete(sha256);
+        return next;
+      }
+      return prev;
+    });
     notifyTransferListeners();
   }
 }
@@ -498,5 +563,33 @@ export function _resetBlobTransferForTests(): void {
   }
   servedBlobs.clear();
   inflight.clear();
+  _setBlobDownloadStates(new Map());
   prefetchRun++;
+  _devFetchOverride = null;
+}
+
+// --- dev hook slot (implementation lives in src/dev-hooks.ts) ---
+
+// override function for fetchBlobForDoc - set by dev-hooks.ts in DEV builds only.
+// checked under `import.meta.env.DEV` so the branch is eliminated in production.
+let _devFetchOverride: (
+  | ((
+      sha256: string,
+      mimeType: string,
+      onProgress?: (p: BlobFetchProgress) => void
+    ) => Promise<string | null>)
+  | null
+) = null;
+
+// set the fetch override (called from dev-hooks.ts)
+export function _devSetFetchOverride(
+  fn: typeof _devFetchOverride
+): void {
+  _devFetchOverride = fn;
+}
+
+// evict a blob from local store - for simulating cache misses in tests
+export async function _devEvictBlob(sha256: string): Promise<void> {
+  const { deleteBlob } = await import("freqhole-api-client/storage");
+  await deleteBlob(sha256).catch(() => {});
 }

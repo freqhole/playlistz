@@ -282,6 +282,55 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await expect(page.getByText("song-02")).toBeVisible({ timeout: 15000 });
   });
 
+  test("zip reimport dedup: re-importing the same zip does not add duplicate songs", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+
+    // build a playlist with 3 songs and download its zip
+    await createPlaylistViaUI(page);
+    await addSongs(page, 3);
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByTestId("btn-download-zip").click();
+    const download = await downloadPromise;
+    const zipPath = await download.path();
+    expect(zipPath).toBeTruthy();
+    const zipBuf = fs.readFileSync(zipPath!);
+
+    await resetAppState(page);
+    await page.getByTestId("btn-new-playlist").waitFor();
+
+    const importZip = async () =>
+      page.evaluate(async (b64: string) => {
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const file = new File([bytes], "playlist.zip", { type: "application/zip" });
+        const hook = (window as typeof window & { __processFiles?: (files: File[]) => Promise<void> }).__processFiles;
+        if (!hook) return "hook-missing";
+        await hook([file]);
+        return "ok";
+      }, zipBuf.toString("base64"));
+
+    // first import
+    const r1 = await importZip();
+    if (r1 !== "ok") throw new Error(`first import failed: ${r1}`);
+    await expect(page.getByText("song-00")).toBeVisible({ timeout: 15000 });
+
+    const countBefore = await page.getByTestId("song-duration").count();
+    expect(countBefore).toBe(3);
+
+    // second import of the same zip - should dedup, not add duplicates
+    const r2 = await importZip();
+    if (r2 !== "ok") throw new Error(`second import failed: ${r2}`);
+
+    // wait briefly then assert count is unchanged
+    await page.waitForTimeout(500);
+    const countAfter = await page.getByTestId("song-duration").count();
+    expect(countAfter).toBe(countBefore);
+  });
+
   test("standalone mode: zip serves via http and shows songs", async ({
     page,
   }) => {
