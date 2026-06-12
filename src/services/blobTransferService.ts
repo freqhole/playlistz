@@ -138,6 +138,33 @@ export interface BlobFetchProgress {
 // in-flight fetches deduped by sha256
 const inflight = new Map<string, Promise<string | null>>();
 
+// --- transfer count listeners (used by sharingState for ui signals) ---
+
+const _transferListeners = new Set<() => void>();
+
+function notifyTransferListeners(): void {
+  for (const cb of _transferListeners) {
+    try { cb(); } catch { /* ignore listener errors */ }
+  }
+}
+
+export function onTransferCountChange(cb: () => void): () => void {
+  _transferListeners.add(cb);
+  return () => _transferListeners.delete(cb);
+}
+
+export function getActiveTransferCount(): number {
+  return inflight.size;
+}
+
+/** returns true if the blob with the given sha256 exists in the local blob store. */
+export async function isBlobCachedLocally(
+  sha: string | undefined
+): Promise<boolean> {
+  if (!sha) return false;
+  return (await getBlobMetadata(sha)) !== null;
+}
+
 /**
  * fetch a blob from a specific peer. returns the stored blobId (sha256)
  * or null on failure.
@@ -259,10 +286,12 @@ export async function fetchBlobForDoc(
   })();
 
   inflight.set(sha256, task);
+  notifyTransferListeners();
   try {
     return await task;
   } finally {
     inflight.delete(sha256);
+    notifyTransferListeners();
   }
 }
 

@@ -13,7 +13,6 @@ import {
 import {
   getShareSettings,
   saveShareSettings,
-  ensureSharingReady,
   buildShareLink,
   openShareLink,
   getInboundKnocks,
@@ -32,6 +31,12 @@ import {
   onIdentityChange,
 } from "../services/p2pService.js";
 import { getIrohAdapter } from "../services/automergeRepo.js";
+import {
+  sharingReady,
+  endpointEnabled,
+  toggleEndpoint,
+  hasP2pIdentity,
+} from "../services/sharingState.js";
 import type { KnockRecord } from "../services/indexedDBService.js";
 import type { Playlist } from "../types/playlist.js";
 
@@ -49,8 +54,10 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
   });
   const [nodeId, setNodeId] = createSignal<string>("");
   const [leader, setLeader] = createSignal(false);
-  const [p2pEnabled, setP2pEnabled] = createSignal(false);
+  // use sharingReady() from sharingState as the source of truth for whether
+  // the p2p node is running, falling back to local state for the "starting" phase
   const [starting, setStarting] = createSignal(false);
+  const p2pEnabled = () => sharingReady();
   const [connSummary, setConnSummary] = createSignal({
     connected: 0,
     reconnecting: 0,
@@ -107,7 +114,6 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       const identity = getIdentity();
       if (identity?.node_id) {
         setNodeId(identity.node_id);
-        setP2pEnabled(true);
         await rebuildShareLink();
       }
       setLeader(isLeader());
@@ -142,8 +148,8 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
     setStarting(true);
     setError(null);
     try {
-      await ensureSharingReady();
-      setP2pEnabled(true);
+      // route through toggleEndpoint so endpointEnabled stays in sync
+      await toggleEndpoint();
       const identity = getIdentity();
       if (identity?.node_id) setNodeId(identity.node_id);
       setLeader(isLeader());
@@ -255,18 +261,16 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
 
       {/* p2p node status */}
       <div>
-        <Show
-          when={p2pEnabled()}
-          fallback={
-            <button
-              onClick={() => void handleEnableP2P()}
-              disabled={starting()}
-              class="w-full px-4 py-3 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white font-medium"
-            >
-              {starting() ? "starting p2p node..." : "enable p2p sharing"}
-            </button>
-          }
-        >
+        <Show when={!hasP2pIdentity()}>
+          <button
+            onClick={() => void handleEnableP2P()}
+            disabled={starting()}
+            class="w-full px-4 py-3 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white font-medium"
+          >
+            {starting() ? "starting p2p node..." : "enable p2p sharing"}
+          </button>
+        </Show>
+        <Show when={hasP2pIdentity() && p2pEnabled()}>
           <div class="flex items-center gap-2 text-sm">
             <span
               class={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${leader() ? "bg-green-500" : "bg-yellow-500"}`}
@@ -276,8 +280,8 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                   : "another tab holds the p2p node"
               }
             />
-            <span class="text-gray-300">online</span>
-            <span class="text-gray-500 text-xs ml-auto">
+            <span class="bg-black px-1 text-gray-300">online</span>
+            <span class="bg-black px-1 text-gray-500 text-xs ml-auto">
               {connSummary().connected} connected
               <Show when={connSummary().reconnecting > 0}>
                 , {connSummary().reconnecting} reconnecting
@@ -288,13 +292,29 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
             </span>
           </div>
         </Show>
+        {/* endpoint on/off toggle - persists across page loads */}
+        <div class="flex items-center justify-between mt-2">
+          <span class="bg-black px-1 text-xs text-gray-500">endpoint</span>
+          <button
+            onClick={() => hasP2pIdentity() && void toggleEndpoint()}
+            disabled={!hasP2pIdentity()}
+            class={`px-3 py-1 text-xs border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+              endpointEnabled()
+                ? "border-magenta-500 text-magenta-400 hover:bg-magenta-500/20"
+                : "border-gray-600 text-gray-500 hover:bg-gray-800"
+            }`}
+            title={endpointEnabled() ? "disable endpoint" : "enable endpoint"}
+          >
+            {endpointEnabled() ? "on" : "off"}
+          </button>
+        </div>
       </div>
 
       {/* share link for this playlist */}
       <Show when={p2pEnabled()}>
         <div>
-          <label class="block text-xs text-gray-400 mb-1">
-            share this playlist
+          <label class="block text-xs mb-1">
+            <span class="bg-black px-1 text-gray-400">share this playlist</span>
           </label>
           <Show
             when={shareLink()}
@@ -323,8 +343,8 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
 
       {/* receive a shared playlist */}
       <div>
-        <label class="block text-xs text-gray-400 mb-1">
-          open a share link
+        <label class="block text-xs mb-1">
+          <span class="bg-black px-1 text-gray-400">open a share link</span>
         </label>
         <div class="flex flex-col gap-2">
           <input
@@ -352,7 +372,9 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       {/* endpoint settings */}
       <div class="space-y-3">
         <div>
-          <label class="block text-xs text-gray-400 mb-1">display name</label>
+          <label class="block text-xs mb-1">
+            <span class="bg-black px-1 text-gray-400">display name</span>
+          </label>
           <input
             type="text"
             value={settings().name}
@@ -364,8 +386,10 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           />
         </div>
         <div>
-          <label class="block text-xs text-gray-400 mb-1">
-            who can browse my playlistz?
+          <label class="block text-xs mb-1">
+            <span class="bg-black px-1 text-gray-400">
+              who can browse my playlistz?
+            </span>
           </label>
           <div class="flex gap-2">
             <button
@@ -392,8 +416,10 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
 
       {/* browse a peer */}
       <div>
-        <label class="block text-xs text-gray-400 mb-1">
-          browse a peer's playlistz
+        <label class="block text-xs mb-1">
+          <span class="bg-black px-1 text-gray-400">
+            browse a peer's playlistz
+          </span>
         </label>
         <div class="flex flex-col gap-2">
           <input
@@ -486,13 +512,15 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
 
       {/* knock inbox */}
       <div>
-        <label class="block text-xs text-gray-400 mb-1">
-          knock inbox
-          <Show when={pendingKnocks().length > 0}>
-            <span class="ml-2 text-magenta-400">
-              ({pendingKnocks().length} pending)
-            </span>
-          </Show>
+        <label class="block text-xs mb-1">
+          <span class="bg-black px-1 text-gray-400">
+            knock inbox
+            <Show when={pendingKnocks().length > 0}>
+              <span class="ml-2 text-magenta-400">
+                ({pendingKnocks().length} pending)
+              </span>
+            </Show>
+          </span>
         </label>
         <Show
           when={pendingKnocks().length > 0}

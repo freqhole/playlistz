@@ -140,6 +140,46 @@
       opacity: 1;
     }
   }
+
+  /* comet-border: a rotating gradient that appears as a moving "comet tail"
+     border around a button. wrap the button in a div.comet-border element.
+     the div needs overflow:hidden and padding:1px (the visible border width).
+     the button inside needs a solid bg (e.g. bg-black) to mask the gradient
+     except at the 1px edge. */
+  @keyframes comet-border-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .comet-border {
+    position: relative;
+    overflow: hidden;
+    padding: 1px;
+  }
+
+  .comet-border > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .comet-border::before {
+    content: '';
+    position: absolute;
+    /* oversized square centered on the element so the conic gradient
+       fully covers all four edges as it rotates */
+    inset: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 40%,
+      #d946ef 55%,
+      transparent 70%
+    );
+    animation: comet-border-spin 2s linear infinite;
+    z-index: 0;
+    pointer-events: none;
+  }
 }
 
 @layer utilities {

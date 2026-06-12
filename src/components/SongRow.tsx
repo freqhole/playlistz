@@ -16,6 +16,7 @@ import {
   seek,
 } from "../services/audioService.js";
 import { getImageUrlForContext } from "../services/imageService.js";
+import { isBlobCachedLocally } from "../services/blobTransferService.js";
 import type { Song } from "../types/playlist.js";
 
 interface SongRowProps {
@@ -103,6 +104,28 @@ export function SongRow(props: SongRowProps) {
   const isCachingActive = () => {
     return isSongCaching(props.songId);
   };
+
+  // check if the audio blob is cached locally.
+  // re-checks whenever the song-specific trigger fires (e.g. after a p2p
+  // blob download completes) so the duration style updates without a reload.
+  const [blobCached] = createResource(
+    () => [props.songId, getSongSpecificTrigger(props.songId)()] as const,
+    async ([_songId, _trigger]) => {
+      const s = song();
+      const sha = s?.sha ?? s?.sha256;
+      if (!sha) {
+        // no sha - could be a local-only or legacy song; treat as cached
+        return true;
+      }
+      return isBlobCachedLocally(sha);
+    }
+  );
+
+  // standalone mode: the song has a local file path (zip bundle or file://)
+  const isStandalone = () =>
+    !!song()?.standaloneFilePath ||
+    window.location.protocol === "file:" ||
+    !!window.STANDALONE_MODE;
 
   const formatDuration = (seconds: number | undefined) => {
     if (!seconds) return "0:00";
@@ -522,9 +545,18 @@ export function SongRow(props: SongRowProps) {
               {/* duration */}
               <div
                 class={`text-sm font-mono mr-4 ${
-                  isCurrentlyPlaying() || isCurrentlySelected()
-                    ? "text-magenta-200"
-                    : "text-white"
+                  isCachingActive() ||
+                  (isCurrentlyLoading() && blobCached() === false)
+                    ? "text-gray-400 animate-pulse" // being downloaded/fetched
+                    : isCurrentlyPlaying() || isCurrentlySelected()
+                      ? isStandalone() || blobCached() === true
+                        ? "text-magenta-200 underline underline-offset-2" // playing + cached
+                        : "text-magenta-200" // playing, not cached
+                      : isStandalone() || blobCached() === true
+                        ? "text-white underline underline-offset-2" // cached locally
+                        : blobCached() === false
+                          ? "text-gray-500 group-hover:text-white transition-colors" // not cached
+                          : "text-white" // unknown / still resolving
                 }`}
               >
                 {formatDuration(songData().duration)}

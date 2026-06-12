@@ -52,6 +52,13 @@ const [songPlaybackPositions, setSongPlaybackPositions] = createSignal<Map<strin
 // pending seek time to apply after loadedmetadata fires for the new song
 let pendingSeekTime = 0;
 
+// whether the current audio.src was created from an in-memory File object
+// (vs a blob store url). only file-based urls should be explicitly revoked;
+// blob store urls are backed by persistent opfs data and may be cached by
+// getBlobObjectURL - revoking them causes the cached handle to become stale,
+// resulting in WebKitBlobResource errors on replay.
+let currentAudioNeedsRevoke = false;
+
 // load all persisted positions from indexeddb into the in-memory signal
 let positionsLoaded = false;
 async function ensurePositionsLoaded(): Promise<void> {
@@ -576,8 +583,11 @@ export async function playSong(song: Song, skipResume = false): Promise<void> {
       setPreloadingSongId(null);
     }
 
-    // clean up previous url if exists
-    if (audio.src && audio.src.startsWith("blob:")) {
+    // only revoke file-backed blob urls (created from File objects). blob
+    // store urls (getBlobObjectURL) are backed by persistent opfs data and
+    // may be cached internally - revoking them causes the cache to return
+    // the same now-invalid url on replay (WebKitBlobResource error 1).
+    if (currentAudioNeedsRevoke && audio.src && audio.src.startsWith("blob:")) {
       releaseAudioURL(audio.src);
     }
 
@@ -652,8 +662,12 @@ export async function playSong(song: Song, skipResume = false): Promise<void> {
     // 2. create from file if available
     // 3. load from indexeddb on-demand
     let audioURL = song.blobUrl;
+    // track whether the resolved url was created from an in-memory File
+    // (needs explicit revocation) vs from the blob store (should not be revoked)
+    let audioUrlIsFileBacked = false;
     if (!audioURL && song.file) {
       audioURL = createAudioURL(song.file);
+      audioUrlIsFileBacked = true;
     }
 
     if (!audioURL) {
@@ -738,6 +752,7 @@ export async function playSong(song: Song, skipResume = false): Promise<void> {
               );
 
               audioURL = blobUrl;
+              audioUrlIsFileBacked = true; // blobUrl from streamAudioWithCaching is a temp object url
 
               // handle caching completion in background
               downloadPromise
@@ -818,6 +833,8 @@ export async function playSong(song: Song, skipResume = false): Promise<void> {
       return;
     }
 
+    // update the revoke flag before switching src
+    currentAudioNeedsRevoke = audioUrlIsFileBacked;
     audio.src = audioURL;
 
     // add error event listener to catch loading issues

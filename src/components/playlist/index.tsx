@@ -22,6 +22,8 @@ import {
   initSharingState,
   sharingReady,
   pendingKnockCount,
+  connectedPeerCount,
+  isTransferring,
 } from "../../services/sharingState.js";
 import {
   savePlaylistOffline,
@@ -109,12 +111,9 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   // share panel state - declared before isEditing so the memo can reference it
   const [showingShare, setShowingShare] = createSignal(false);
-  const [sharePage, setSharePage] = createSignal(0);
-  const SHARE_TOTAL_PAGES = 1; // more pages will be added in the future
 
   const closeShare = () => {
     setShowingShare(false);
-    setSharePage(0);
   };
 
   // true when any edit panel or the share panel is open.
@@ -365,53 +364,6 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
             </div>
           </div>
 
-          {/* page navigation - < > buttons (disabled until more pages exist) */}
-          <button
-            onClick={() => setSharePage((p) => Math.max(0, p - 1))}
-            disabled={sharePage() === 0}
-            class="p-1 text-gray-500 disabled:opacity-30 hover:text-white transition-colors"
-            title="previous"
-          >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-          </button>
-          <span class="text-xs text-gray-600 tabular-nums">
-            {sharePage() + 1}/{SHARE_TOTAL_PAGES}
-          </span>
-          <button
-            onClick={() =>
-              setSharePage((p) => Math.min(SHARE_TOTAL_PAGES - 1, p + 1))
-            }
-            disabled={sharePage() === SHARE_TOTAL_PAGES - 1}
-            class="p-1 text-gray-500 disabled:opacity-30 hover:text-white transition-colors"
-            title="next"
-          >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-          </button>
-
           {/* close button */}
           <button
             onClick={closeShare}
@@ -603,18 +555,12 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 {/* edit playlist button - toggles edit panel */}
                 <button
                   onClick={() => {
-                    console.log(
-                      "[trace] edit button click, editingPlaylist =",
-                      editingPlaylist(),
-                      "rowsGone =",
-                      rowsGone()
-                    );
                     if (showingShare()) closeShare();
                     editingPlaylist()
                       ? handleCloseEdit()
                       : handleEditPlaylist();
                   }}
-                  class={`p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black bg-opacity-80 border ${editingPlaylist() ? "text-magenta-400 border-magenta-500" : "text-gray-400 border-transparent"}`}
+                  class={`p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black/90 border ${editingPlaylist() ? "text-magenta-400 border-magenta-500" : "text-gray-400 border-transparent"}`}
                   title={
                     editingPlaylist() ? "close edit panel" : "edit playlist"
                   }
@@ -634,7 +580,8 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   </svg>
                 </button>
 
-                {/* share playlist button */}
+                {/* share playlist button: icon nodes fill based on connected
+                    peer count (1/2/3+), pulse when transfers are active */}
                 <button
                   onClick={() => {
                     if (showingShare()) {
@@ -644,7 +591,13 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                       setShowingShare(true);
                     }
                   }}
-                  class={`relative p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black bg-opacity-80 border ${showingShare() ? "text-magenta-400 border-magenta-500" : "text-gray-400 border-transparent"}`}
+                  class={`relative p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black/90 border ${
+                    showingShare()
+                      ? "text-magenta-400 border-magenta-500"
+                      : sharingReady()
+                        ? "text-magenta-400 border-transparent"
+                        : "text-gray-400 border-transparent"
+                  }`}
                   title="share playlist"
                 >
                   <svg
@@ -653,11 +606,59 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     stroke="currentColor"
                     viewBox="0 0 24 24"
                   >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                    {/* connection lines */}
+                    <line
+                      x1="7"
+                      y1="11.5"
+                      x2="17"
+                      y2="5.5"
+                      stroke-width="1.5"
+                    />
+                    <line
+                      x1="7"
+                      y1="12.5"
+                      x2="17"
+                      y2="18.5"
+                      stroke-width="1.5"
+                    />
+                    {/* left node - fills when 1+ connected */}
+                    <circle
+                      cx="5"
+                      cy="12"
+                      r="2.5"
+                      stroke-width="1.5"
+                      fill={connectedPeerCount() >= 1 ? "currentColor" : "none"}
+                      class={
+                        connectedPeerCount() >= 1 && isTransferring()
+                          ? "animate-pulse"
+                          : ""
+                      }
+                    />
+                    {/* top-right node - fills when 2+ connected */}
+                    <circle
+                      cx="19"
+                      cy="5"
+                      r="2.5"
+                      stroke-width="1.5"
+                      fill={connectedPeerCount() >= 2 ? "currentColor" : "none"}
+                      class={
+                        connectedPeerCount() >= 2 && isTransferring()
+                          ? "animate-pulse"
+                          : ""
+                      }
+                    />
+                    {/* bottom-right node - fills when 3+ connected */}
+                    <circle
+                      cx="19"
+                      cy="19"
+                      r="2.5"
+                      stroke-width="1.5"
+                      fill={connectedPeerCount() >= 3 ? "currentColor" : "none"}
+                      class={
+                        connectedPeerCount() >= 3 && isTransferring()
+                          ? "animate-pulse"
+                          : ""
+                      }
                     />
                   </svg>
                   <Show when={pendingKnockCount() > 0}>
@@ -678,7 +679,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     <button
                       onClick={handleCachePlaylist}
                       disabled={isCaching() || playlistSongs().length === 0}
-                      class="p-2 text-gray-400 hover:text-magenta-400 hover:bg-gray-700 transition-colors bg-black bg-opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                      class="p-2 text-gray-400 hover:text-magenta-400 hover:bg-gray-700 transition-colors bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="download songz for offline use"
                     >
                       <Show
@@ -718,7 +719,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   <button
                     onClick={() => void handleP2pSaveOffline()}
                     disabled={p2pSaveProgress() !== null}
-                    class="p-2 text-gray-400 hover:text-magenta-400 hover:bg-gray-700 transition-colors bg-black bg-opacity-80 disabled:opacity-50"
+                    class="p-2 text-gray-400 hover:text-magenta-400 hover:bg-gray-700 transition-colors bg-black/90 disabled:opacity-50"
                     title={
                       p2pSaveProgress()
                         ? `fetching ${p2pSaveProgress()!.currentTitle} (${p2pSaveProgress()!.done}/${p2pSaveProgress()!.total})`
@@ -765,7 +766,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   <button
                     onClick={handleDownloadPlaylist}
                     disabled={isDownloading()}
-                    class="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 transition-colors bg-black bg-opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 transition-colors bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="download playlist as zip"
                   >
                     <Show

@@ -33,6 +33,7 @@ import {
 } from "./docIndexService.js";
 import { calculateSHA256 } from "../utils/hashUtils.js";
 import { triggerSpecificSongUpdate } from "./songReactivity.js";
+import { fetchBlobForDoc } from "./blobTransferService.js";
 import type { Playlist, Song } from "../types/playlist.js";
 import type { DocIndexEntry } from "./indexedDBService.js";
 
@@ -141,9 +142,11 @@ export function songEntryToSong(
     playlistId: docId,
     sha: entry.sha256,
     sha256: entry.sha256,
-    // timestamp fields not in SongEntry; derive from playlist's lastModified
-    createdAt: 0,
-    updatedAt: 0,
+    // timestamp fields not in SongEntry; use current time as a reasonable
+    // "when was this added to my library" fallback. the real value is unknown
+    // for received songs because the doc schema has no per-song timestamps.
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
     // image fields hydrated async via hydrateSongImage (blob store)
     imageData: undefined,
     thumbnailData: undefined,
@@ -162,7 +165,17 @@ async function hydrateSongImage(song: Song): Promise<Song> {
   if (!primary) return song;
   try {
     const url = await getBlobObjectURL(primary.blobId);
-    if (!url) return song;
+    if (!url) {
+      // blob not in local store - trigger a background fetch from the
+      // playlist's p2p peers and re-notify when it arrives so the row
+      // can re-render with the image.
+      if (song.playlistId) {
+        void fetchBlobForDoc(song.playlistId, primary.blobId, primary.blobType ?? "image/jpeg")
+          .then((result) => { if (result) triggerSpecificSongUpdate(song.id); })
+          .catch(() => {});
+      }
+      return song;
+    }
     const meta = await getBlobMetadata(primary.blobId);
     song.imageFilePath = url;
     song.imageType = meta?.mime_type ?? "image/jpeg";
@@ -186,6 +199,11 @@ export async function docToPlaylistAsync(
         playlist.imageFilePath = url;
         const meta = await getBlobMetadata(playlist._primaryImageSha);
         playlist.imageType = meta?.mime_type ?? "image/jpeg";
+      } else {
+        // blob not local - trigger background fetch from peers; the caller
+        // can re-render when the playlist update arrives via doc subscription.
+        void fetchBlobForDoc(docId, playlist._primaryImageSha, "image/jpeg")
+          .catch(() => {});
       }
     } catch {
       // blob missing - leave image fields unset
