@@ -28,6 +28,7 @@ import {
   stop,
 } from "../services/audioService.js";
 import { filterAudioFiles } from "../services/fileProcessingService.js";
+import { log } from "../utils/log.js";
 import {
   parsePlaylistZip,
   downloadPlaylistAsZip,
@@ -90,7 +91,7 @@ export function usePlaylistManager() {
   ): Promise<void> {
     _syncCalls++;
     const syncId = _syncCalls;
-    console.log("[trace] syncPlaylists #", syncId, "entries:", entries.length);
+    log.debug("playlist.sync", "syncPlaylists #", String(syncId), "entries:", String(entries.length));
     try {
       const resolved = await Promise.all(
         entries.map(async (entry) => {
@@ -115,7 +116,7 @@ export function usePlaylistManager() {
         })
       );
 
-      console.log("[trace] syncPlaylists #", syncId, "resolved", resolved.length);
+      log.debug("playlist.sync", "syncPlaylists #", String(syncId), "resolved", String(resolved.length));
       setPlaylists(resolved);
 
       // keep selected playlist in sync
@@ -134,7 +135,7 @@ export function usePlaylistManager() {
         setSelectedPlaylist(resolved[0]!);
       }
     } catch (err) {
-      console.error("error syncing playlists from doc index:", err);
+      log.error("playlist.sync", "error syncing playlists from doc index:", err);
     }
   }
 
@@ -148,7 +149,7 @@ export function usePlaylistManager() {
       const songs = await getSongsForPlaylist(playlist.id);
       setPlaylistSongs(songs);
     } catch (err) {
-      console.error("error loading songs for playlist:", err);
+      log.error("playlist.songs", "error loading songs for playlist:", err);
       setPlaylistSongs([]);
     }
   }
@@ -173,7 +174,7 @@ export function usePlaylistManager() {
             });
             delete window.DEFERRED_PLAYLIST_DATA;
           } catch (err) {
-            console.error("error initializing deferred playlist:", err);
+            log.error("playlist.init", "error initializing deferred playlist:", err);
             setError("failed to initialize playlist!");
           }
         }
@@ -184,12 +185,12 @@ export function usePlaylistManager() {
       try {
         await initializeOfflineSupport();
       } catch (offlineError) {
-        console.warn("offline support initialization failed:", offlineError);
+        log.warn("playlist.init", "offline support initialization failed:", offlineError);
       }
 
       setIsInitialized(true);
     } catch (err) {
-      console.error("error initializing playlist manager:", err);
+      log.error("playlist.init", "error initializing playlist manager:", err);
       setError("failed to initialize playlist");
     }
   };
@@ -200,7 +201,7 @@ export function usePlaylistManager() {
       const playlist = await createPlaylist({ title, description: "" });
       return playlist;
     } catch (err) {
-      console.error("error creating playlist:", err);
+      log.error("playlist.create", "error creating playlist:", err);
       setError("failed to create new playlist!");
       return null;
     }
@@ -241,7 +242,7 @@ export function usePlaylistManager() {
 
       return playlistId;
     } catch (err) {
-      console.error("error handling file drop:", err);
+      log.error("playlist.drop", "error handling file drop:", err);
       setError("failed to process dropped files");
       return null;
     }
@@ -250,7 +251,7 @@ export function usePlaylistManager() {
   // reactive effect: when docIndex changes, refresh the playlists list
   createEffect(() => {
     const entries = docIndexEntries();
-    console.log("[trace] docIndex effect fired, entries:", entries.length);
+    log.debug("playlist.docindex", "docIndex effect fired, entries:", String(entries.length));
     void syncPlaylistsFromDocIndex(entries);
   });
 
@@ -266,7 +267,7 @@ export function usePlaylistManager() {
     on(
       selectedPlaylistId,
       (playlistId) => {
-        console.log("[trace] selection effect fired:", playlistId);
+        log.debug("playlist.select", "selection effect fired:", playlistId ?? "null");
         if (docStoreCleanup) {
           docStoreCleanup();
           docStoreCleanup = null;
@@ -284,7 +285,7 @@ export function usePlaylistManager() {
           handle: Awaited<ReturnType<typeof findPlaylistDoc>>
         ) => {
           _refreshCount++;
-          console.log("[trace] selected-doc refresh #", _refreshCount, playlistId);
+          log.debug("playlist.select", "selected-doc refresh #", String(_refreshCount), playlistId);
           try {
             const raw = handle.doc();
             const doc = parsePlaylistDoc(raw ?? {});
@@ -303,7 +304,7 @@ export function usePlaylistManager() {
               setPlaylistSongs(songs);
             }
           } catch (err) {
-            console.error("error refreshing selected playlist doc:", err);
+            log.error("playlist.select", "error refreshing selected playlist doc:", err);
           }
         };
 
@@ -313,10 +314,7 @@ export function usePlaylistManager() {
             if (disposed) return;
 
             const onChange = () => {
-              console.log(
-                "[trace] selected-doc change event -> refresh",
-                playlistId
-              );
+              log.debug("playlist.select", "selected-doc change event -> refresh", playlistId);
               void refresh(handle);
             };
             handle.on("change", onChange);
@@ -324,7 +322,7 @@ export function usePlaylistManager() {
 
             await refresh(handle);
           } catch (err) {
-            console.error("error subscribing to playlist doc:", err);
+            log.error("playlist.select", "error subscribing to playlist doc:", err);
             if (!disposed) {
               setPlaylistSongs([]);
             }
@@ -412,7 +410,7 @@ export function usePlaylistManager() {
   createEffect(() => {
     const playlist = selectedPlaylist();
     if (playlist) {
-      console.log("[trace] PWA manifest effect fired", playlist.id);
+      log.debug("playlist.manifest", "PWA manifest effect fired", playlist.id);
       updatePWAManifest(playlist.title, playlist);
     }
   });
@@ -447,11 +445,7 @@ export function usePlaylistManager() {
     const playlist = selectedPlaylist();
     if (!playlist) return;
 
-    console.log(
-      "[trace] handlePlaylistUpdate",
-      playlist.id,
-      JSON.stringify(updates)
-    );
+    log.debug("playlist.update", "handlePlaylistUpdate", playlist.id, JSON.stringify(updates));
     try {
       setError(null);
       await updatePlaylist(playlist.id, {
@@ -460,7 +454,7 @@ export function usePlaylistManager() {
       });
       // reactive query will refresh from docIndex
     } catch (err) {
-      console.error("error updating playlist:", err);
+      log.error("playlist.update", "error updating playlist:", err);
       setError("failed to update playlist!");
     }
   };
@@ -481,7 +475,7 @@ export function usePlaylistManager() {
       setSelectedPlaylist(null);
       setShowDeleteConfirm(false);
     } catch (err) {
-      console.error("error deleting playlist:", err);
+      log.error("playlist.delete", "error deleting playlist:", err);
       setError("failed to delete playlist!");
     }
   };
@@ -500,7 +494,7 @@ export function usePlaylistManager() {
         includeHTML: true,
       });
     } catch (err) {
-      console.error("error downloading playlist:", err);
+      log.error("playlist.download", "error downloading playlist:", err);
       setError("failed to download playlist!");
     } finally {
       setIsDownloading(false);
@@ -526,7 +520,7 @@ export function usePlaylistManager() {
         onClose();
       }
     } catch (err) {
-      console.error("error removing song from playlist:", err);
+      log.error("playlist.songs", "error removing song from playlist:", err);
       setError("failed to remove song from playlist!");
     }
   };
@@ -551,7 +545,7 @@ export function usePlaylistManager() {
         }
       }
     } catch (err) {
-      console.error("error reordering songz:", err);
+      log.error("playlist.songs", "error reordering songz:", err);
       setError("failed to reorder songz");
     }
   };
@@ -578,7 +572,7 @@ export function usePlaylistManager() {
 
       setAllSongsCached(true);
     } catch (err) {
-      console.error("error caching playlist:", err);
+      log.error("playlist.cache", "error caching playlist:", err);
       setError("failed to cache playlist for offline use!");
     } finally {
       setIsCaching(false);

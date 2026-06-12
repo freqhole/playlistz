@@ -174,7 +174,7 @@ function PlaylistRow(props: {
 
   return (
     <div
-      class="group relative flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-white/5 border-t border-white/5"
+      class="group relative flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-magenta-500/75"
       onClick={() => props.onSelect(props.playlist)}
       onDblClick={(e) => {
         e.stopPropagation();
@@ -235,9 +235,7 @@ function PlaylistRow(props: {
           />
         </Show>
         <div class="flex items-center gap-1 mt-0.5 flex-wrap">
-          <span class="text-xs text-gray-500 px-1 bg-black">
-            {songCount()}
-          </span>
+          <span class="text-xs text-gray-500 px-1 bg-black">{songCount()}</span>
           <Show when={totalTime()}>
             <span class="text-xs text-gray-700 bg-black px-0.5">·</span>
             <span class="text-xs text-gray-500 px-1 bg-black">

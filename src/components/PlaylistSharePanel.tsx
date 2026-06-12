@@ -39,6 +39,7 @@ import {
 } from "../services/sharingState.js";
 import type { KnockRecord } from "../services/indexedDBService.js";
 import type { Playlist } from "../types/playlist.js";
+import { log } from "../utils/log.js";
 
 interface PlaylistSharePanelProps {
   playlist: Accessor<Playlist>;
@@ -102,7 +103,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       );
       setShareLink(result.url);
     } catch (err) {
-      console.warn("[share panel] could not build share link:", err);
+      log.warn("share.panel", "could not build share link:", err);
     }
   }
 

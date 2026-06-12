@@ -11,6 +11,7 @@ import {
 } from "../context/PlaylistzContext.js";
 
 import { PlaylistContainer } from "./playlist/index.js";
+import { log } from "../utils/log.js";
 function PlaylistzInner() {
   // context hooks
   const playlistManager = usePlaylistzManager();
@@ -86,8 +87,14 @@ function PlaylistzInner() {
   };
 
   // open a #share/ link once the app has initialized. the shared playlist
-  // appears in the sidebar via the docIndex live query; select it when found
+  // appears in the docIndex live query; select it + start playback when found.
+  // the playlist may not be in the reactive list immediately (doc sync takes a
+  // moment), so we track the pending docId and auto-select it reactively.
   let shareFragmentHandled = false;
+  const [pendingShareDocId, setPendingShareDocId] = createSignal<string | null>(
+    null
+  );
+
   createEffect(() => {
     if (!isInitialized() || shareFragmentHandled) return;
     if (!window.location.hash.startsWith("#share/")) return;
@@ -100,11 +107,37 @@ function PlaylistzInner() {
         const docId = await handleShareFragment();
         if (docId) {
           const found = playlists().find((p) => p.id === docId);
-          if (found) selectPlaylist(found);
+          if (found) {
+            selectPlaylist(found);
+            // start playback if nothing is currently playing
+            const { playPlaylist, audioState } = await import(
+              "../services/audioService.js"
+            );
+            if (!audioState.isPlaying()) void playPlaylist(found);
+          } else {
+            // playlist not synced yet - watch for it reactively
+            setPendingShareDocId(docId);
+          }
         }
       } catch (err) {
-        console.warn("share link open failed:", err);
+        log.warn("share.fragment", "share link open failed:", err);
       }
+    })();
+  });
+
+  // once the pending share playlist appears in the list, select + play it
+  createEffect(() => {
+    const docId = pendingShareDocId();
+    if (!docId) return;
+    const found = playlists().find((p) => p.id === docId);
+    if (!found) return;
+    setPendingShareDocId(null);
+    selectPlaylist(found);
+    void (async () => {
+      const { playPlaylist, audioState } = await import(
+        "../services/audioService.js"
+      );
+      if (!audioState.isPlaying()) void playPlaylist(found);
     })();
   });
 
@@ -120,7 +153,7 @@ function PlaylistzInner() {
         );
         await resumeSharingIfEnabled();
       } catch (err) {
-        console.warn("p2p resume failed:", err);
+        log.warn("p2p.resume", "p2p resume failed:", err);
       }
     })();
   });

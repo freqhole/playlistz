@@ -44,6 +44,7 @@ import {
 import { loadSetting, saveSetting } from "./indexedDBService.js";
 import type { KnockRecord } from "./indexedDBService.js";
 import { serveBlobRequest } from "./blobTransferService.js";
+import { log } from "../utils/log.js";
 
 // --- endpoint settings ---
 
@@ -155,11 +156,7 @@ export async function reconnectKnownPeers(): Promise<void> {
         if (nodeId && nodeId !== myNodeId && !seen.has(nodeId)) {
           seen.add(nodeId);
           adapter.addPeer(nodeId).catch((err) => {
-            console.warn(
-              "[sharing] reconnect to peer failed:",
-              nodeId.slice(0, 16),
-              err
-            );
+            log.warn("p2p.reconnect", "reconnect to peer failed:", nodeId.slice(0, 16), err);
           });
         }
       }
@@ -227,7 +224,7 @@ export async function openShareLink(input: string): Promise<string> {
       break;
     } catch (err) {
       if (attempt >= 5) {
-        console.warn("[sharing] could not connect to sharing peer:", err);
+        log.warn("p2p.connect", "could not connect to sharing peer:", err);
         // continue anyway - the doc may already be local or another peer has it
         break;
       }
@@ -283,7 +280,7 @@ export async function handleShareFragment(): Promise<string | null> {
     history.replaceState(null, "", window.location.pathname);
     return docId;
   } catch (err) {
-    console.error("[sharing] failed to open share link:", err);
+    log.error("share.fragment", "failed to open share link:", err);
     history.replaceState(null, "", window.location.pathname);
     throw err;
   }
@@ -423,7 +420,7 @@ export async function knockOnPeer(
           });
         }
       } catch (err) {
-        console.warn("[sharing] failed to open granted doc:", docId, err);
+        log.warn("p2p.knock", "failed to open granted doc:", docId, err);
       }
     }
   }
@@ -466,7 +463,7 @@ export async function acceptKnock(
         await flushDoc(docId as AutomergeUrl);
       }
     } catch (err) {
-      console.warn("[sharing] failed to record peer in doc:", docId, err);
+      log.warn("p2p.knock", "failed to record peer in doc:", docId, err);
     }
   }
 
@@ -534,7 +531,7 @@ export async function handlePlaylistzStream(
       await handleProtocolMessage(stream, peerNodeId, msg);
     }
   } catch (err) {
-    console.warn("[sharing] protocol stream error:", err);
+      log.warn("p2p.protocol", "protocol stream error:", err);
   } finally {
     try {
       stream.close();
@@ -630,6 +627,17 @@ async function handleProtocolMessage(
     }
 
     case "blob_request": {
+      // only serve blobs to peers who have an accepted grant (or if public mode)
+      const blobGrant = await getAccessGrant(peerNodeId);
+      if (settings.mode !== "public" && !blobGrant) {
+        await sendMessage(stream, {
+          v: 1,
+          type: "error",
+          code: "knock_required",
+          message: "access denied: knock required before requesting blobs",
+        });
+        break;
+      }
       await serveBlobRequest(stream, msg.sha256);
       break;
     }

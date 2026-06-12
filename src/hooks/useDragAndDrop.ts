@@ -1,6 +1,7 @@
 /* @jsxImportSource solid-js */
 import { createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import type { Playlist } from "../types/playlist.js";
+import { log } from "../utils/log.js";
 import {
   filterAudioFiles,
   extractMetadata,
@@ -187,7 +188,7 @@ export function useDragAndDrop() {
 
       await handleAudioFiles(audioFiles, options);
     } catch (err) {
-      console.error("Error handling file drop:", err);
+      log.error("drag.drop", "error handling file drop:", err);
       setError("Failed to process dropped files");
       setTimeout(() => setError(null), 5000);
       throw err;
@@ -341,7 +342,7 @@ export function useDragAndDrop() {
     try {
       await handleDrop(e, options);
     } catch (error) {
-      console.error("onoz! error in handleFileDrop:", error);
+      log.error("drag.drop", "error in handleFileDrop:", error);
       // ensure drag overlay is cleared, even on error
       setIsDragOver(false);
     }

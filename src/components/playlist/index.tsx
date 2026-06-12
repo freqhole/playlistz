@@ -37,6 +37,7 @@ import { SongEditPanel } from "../SongEditPanel.js";
 import { PlaylistSharePanel } from "../PlaylistSharePanel.js";
 import { AllPlaylistsPanel } from "../AllPlaylistsPanel.js";
 import { PanelMiniHeader } from "./PanelMiniHeader.js";
+import { log } from "../../utils/log.js";
 
 export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const playlistManager = usePlaylistzManager();
@@ -108,7 +109,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
         await playlistHasMissingBlobs(props.playlist()).catch(() => false)
       );
     } catch (err) {
-      console.warn("p2p save offline failed:", err);
+      log.warn("p2p.save", "p2p save offline failed:", err);
     } finally {
       setP2pSaveProgress(null);
     }
@@ -235,14 +236,18 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   // hidden rows don't flash back in between panels
   createEffect(
     on(isEditing, (editing, prevEditing) => {
-      console.log("[trace] rowsGone effect", { editing, prevEditing });
+      log.debug(
+        "playlist.rows",
+        "rowsGone effect",
+        JSON.stringify({ editing, prevEditing })
+      );
       if (editing && !prevEditing) {
         setRowsGone(false);
         // collapse layout and show panel after the first few rows have started
         // exiting - remaining row animations complete behind the panel
         const totalMs = rowExitDelayMs(2) + FLYOUT_MS;
         const t = setTimeout(() => {
-          console.log("[trace] rowsGone -> true");
+          log.debug("playlist.rows", "rowsGone -> true");
           setRowsGone(true);
         }, totalMs);
         onCleanup(() => clearTimeout(t));
@@ -1003,7 +1008,9 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                       props.playlist().songIds.length === 0)
                   }
                 >
-                  <div class="text-center py-16">
+                  <div
+                    class={`${isMobile() ? "" : "ml-42 mr-42"} text-center p-8 bg-black/75`}
+                  >
                     <div class="text-gray-400 text-xl mb-4">no songz yet</div>
                     <p class="text-gray-400 mb-4">
                       drag and drop audio filez (or a .zip file!) here to add

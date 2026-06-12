@@ -2,6 +2,7 @@
 import { createSignal, batch } from "solid-js";
 import type { Song, Playlist } from "../types/playlist.js";
 import { updateSongInDoc } from "../services/playlistDocService.js";
+import { log } from "../utils/log.js";
 import {
   playSong,
   playSongFromPlaylist,
@@ -48,7 +49,7 @@ export function useSongState() {
       await updateSongInDoc(updatedSong.playlistId, updatedSong.id, updatedSong);
       setEditingSong(updatedSong);
     } catch (err) {
-      console.error("error saving song:", err);
+      log.error("song.save", "error saving song:", err);
       setError("failed to save song changes");
     }
   };
@@ -62,7 +63,7 @@ export function useSongState() {
         await playSong(song);
       }
     } catch (err) {
-      console.error("error playing song:", err);
+      log.error("song.play", "error playing song:", err);
       setError("failed to play song");
     }
   };
@@ -72,7 +73,7 @@ export function useSongState() {
       setError(null);
       await togglePlayback();
     } catch (err) {
-      console.error("Error pausing song:", err);
+      log.error("song.play", "error pausing song:", err);
       setError("Failed to pause song");
     }
   };
