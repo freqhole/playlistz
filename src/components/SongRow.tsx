@@ -18,6 +18,7 @@ import { getImageUrlForContext } from "../services/imageService.js";
 import {
   isBlobCachedLocally,
   blobDownloadStates,
+  fetchSongBlob,
 } from "../services/blobTransferService.js";
 import type { Song } from "../types/playlist.js";
 
@@ -555,27 +556,36 @@ export function SongRow(props: SongRowProps) {
                 data-testid="song-duration"
                 data-download-state={blobDownloadState() ?? undefined}
                 data-sha256={songSha() ?? undefined}
-                class={`text-sm font-mono mr-4 ${
+                onClick={
+                  blobDownloadState() === "error"
+                    ? () => {
+                        void fetchSongBlob(song()!);
+                      }
+                    : undefined
+                }
+                class={`text-sm font-mono mr-4 ${blobDownloadState() === "error" ? "cursor-pointer" : ""} ${
                   blobDownloadState() === "downloading"
                     ? "text-blue-400 animate-pulse" // actively fetching from peer
-                    : blobDownloadState() === "error"
-                      ? "text-red-400" // fetch failed
-                      : isCachingActive() ||
-                          (isCurrentlyLoading() && blobCached() === false)
-                        ? "text-gray-400 animate-pulse" // being downloaded/fetched
-                        : isCurrentlyPlaying() || isCurrentlySelected()
-                          ? isStandalone() ||
-                            blobCached() === true ||
-                            !songSha()
-                            ? "text-magenta-200 underline underline-offset-2" // playing + cached
-                            : blobCached() === undefined
-                              ? "text-gray-500 animate-pulse" // playing, cache state loading
-                              : "text-magenta-200" // playing, confirmed not cached
-                          : blobCached() === true ||
-                              isStandalone() ||
+                    : blobDownloadState() === "pending"
+                      ? "text-gray-500" // queued for prefetch
+                      : blobDownloadState() === "error"
+                        ? "text-red-400" // fetch failed
+                        : isCachingActive() ||
+                            (isCurrentlyLoading() && blobCached() === false)
+                          ? "text-gray-400 animate-pulse" // being downloaded/fetched
+                          : isCurrentlyPlaying() || isCurrentlySelected()
+                            ? isStandalone() ||
+                              blobCached() === true ||
                               !songSha()
-                            ? "text-white underline underline-offset-2" // cached (or no-sha local song)
-                            : "text-gray-500 group-hover:text-white transition-colors" // not cached or loading
+                              ? "text-magenta-200 underline underline-offset-2" // playing + cached
+                              : blobCached() === undefined
+                                ? "text-gray-500 animate-pulse" // playing, cache state loading
+                                : "text-magenta-200" // playing, confirmed not cached
+                            : blobCached() === true ||
+                                isStandalone() ||
+                                !songSha()
+                              ? "text-white underline underline-offset-2" // cached (or no-sha local song)
+                              : "text-gray-500 group-hover:text-white transition-colors" // not cached or loading
                 }`}
               >
                 {formatDuration(songData().duration)}

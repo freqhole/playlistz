@@ -188,6 +188,16 @@ function initializeAudio(): HTMLAudioElement {
     updatePageTitle();
   });
 
+  audioElement.addEventListener("seeked", () => {
+    const playingPl = currentPlaylist();
+    const song = currentSong();
+    if (!playingPl || !song || !isPlaying()) return;
+    const elapsed = audioElement?.currentTime ?? 0;
+    const dur = audioElement?.duration ?? song.duration ?? 0;
+    const remaining = Math.max(0, dur - elapsed);
+    prefetchUpcoming(playingPl, song.id, remaining);
+  });
+
   return audioElement;
 }
 

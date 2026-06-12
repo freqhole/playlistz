@@ -148,7 +148,7 @@ async function _serveBlobRequest(
 
 // --- per-sha download state (reactive) ---
 
-export type BlobDownloadState = "downloading" | "error";
+export type BlobDownloadState = "downloading" | "pending" | "error";
 
 // sha256 -> current download state for in-progress or failed fetches.
 // absence = not currently tracked (either cached or not yet started).
@@ -176,6 +176,13 @@ export interface BlobFetchProgress {
 
 // in-flight fetches deduped by sha256
 const inflight = new Map<string, Promise<string | null>>();
+
+// timeout for individual blob fetches (configurable by dev hook)
+let BLOB_FETCH_TIMEOUT_MS = 30_000;
+
+export function _devSetBlobFetchTimeout(ms: number): void {
+  BLOB_FETCH_TIMEOUT_MS = ms;
+}
 
 // --- transfer count listeners (used by sharingState for ui signals) ---
 
@@ -286,7 +293,12 @@ export async function fetchBlobForDoc(
   if (import.meta.env.DEV && _devFetchOverride) {
     setBlobState(sha256, "downloading");
     notifyTransferListeners();
-    const task = _devFetchOverride(sha256, mimeType, onProgress).then(
+    const devTask = _devFetchOverride(sha256, mimeType, onProgress);
+    const withTimeout = new Promise<string | null>((_, reject) => {
+      const t = setTimeout(() => reject(new Error("blob fetch timeout")), BLOB_FETCH_TIMEOUT_MS);
+      devTask.finally(() => clearTimeout(t));
+    });
+    const task = Promise.race([devTask, withTimeout]).then(
       (r) => {
         inflight.delete(sha256);
         _setBlobDownloadStates((prev) => {
@@ -298,7 +310,7 @@ export async function fetchBlobForDoc(
           return prev;
         });
         notifyTransferListeners();
-        return r;
+        return r as string | null;
       },
       (err: unknown) => {
         inflight.delete(sha256);
@@ -353,11 +365,16 @@ export async function fetchBlobForDoc(
     return null;
   })();
 
-  inflight.set(sha256, task);
+  const withTimeout = new Promise<string | null>((_, reject) => {
+    const t = setTimeout(() => reject(new Error("blob fetch timeout")), BLOB_FETCH_TIMEOUT_MS);
+    task.finally(() => clearTimeout(t));
+  });
+  const racedTask = Promise.race([task, withTimeout]) as Promise<string | null>;
+  inflight.set(sha256, racedTask);
   setBlobState(sha256, "downloading");
   notifyTransferListeners();
   try {
-    const result = await task;
+    const result = await racedTask;
     return result;
   } catch {
     setBlobState(sha256, "error");
@@ -399,6 +416,7 @@ export async function fetchSongBlob(
 
 // upcoming-playback prefetch window
 const PREFETCH_WINDOW_SECONDS = 30 * 60;
+const PREFETCH_CONCURRENCY = 3;
 
 let prefetchRun = 0;
 
@@ -419,21 +437,51 @@ export function prefetchUpcoming(playlist: Playlist, currentSongId: string, curr
     const startIdx = songs.findIndex((s) => s.id === currentSongId);
     if (startIdx === -1) return;
 
-    // subtract the time already covered by the currently-playing song
+    // collect songs within the budget window that need fetching
     let budget = PREFETCH_WINDOW_SECONDS - currentSongRemaining;
+    const toFetch: Song[] = [];
+    const pendingShas: string[] = [];
+
+    const clearPending = () => {
+      for (const sha of pendingShas) {
+        _setBlobDownloadStates((prev) => {
+          if (prev.get(sha) === "pending") {
+            const next = new Map(prev);
+            next.delete(sha);
+            return next;
+          }
+          return prev;
+        });
+      }
+    };
+
     for (let i = startIdx + 1; i < songs.length && budget > 0; i++) {
-      if (run !== prefetchRun) return; // superseded
+      if (run !== prefetchRun) {
+        clearPending();
+        return;
+      }
       const song = songs[i]!;
       budget -= song.duration || 0;
       const sha = song.sha ?? song.sha256;
       if (!sha) continue;
       if (await getBlobMetadata(sha)) continue; // already local
-      try {
-        await fetchSongBlob(song);
-      } catch {
-        // best effort
-      }
+      setBlobState(sha, "pending");
+      pendingShas.push(sha);
+      toFetch.push(song);
     }
+
+    // fetch in concurrent batches
+    for (let i = 0; i < toFetch.length; i += PREFETCH_CONCURRENCY) {
+      if (run !== prefetchRun) {
+        clearPending();
+        return;
+      }
+      const batch = toFetch.slice(i, i + PREFETCH_CONCURRENCY);
+      await Promise.allSettled(batch.map((s) => fetchSongBlob(s)));
+    }
+
+    // clear any remaining pending states after normal completion
+    clearPending();
   })();
 }
 
@@ -566,6 +614,7 @@ export function _resetBlobTransferForTests(): void {
   _setBlobDownloadStates(new Map());
   prefetchRun++;
   _devFetchOverride = null;
+  BLOB_FETCH_TIMEOUT_MS = 30_000;
 }
 
 // --- dev hook slot (implementation lives in src/dev-hooks.ts) ---
@@ -592,4 +641,10 @@ export function _devSetFetchOverride(
 export async function _devEvictBlob(sha256: string): Promise<void> {
   const { deleteBlob } = await import("freqhole-api-client/storage");
   await deleteBlob(sha256).catch(() => {});
+}
+
+// fetch a blob directly by sha256 - used in tests to trigger retry without a UI click.
+// passes an empty docId because mock overrides don't use it.
+export async function _devFetchBlobBySha(sha256: string): Promise<string | null> {
+  return fetchBlobForDoc("", sha256, "audio/wav");
 }

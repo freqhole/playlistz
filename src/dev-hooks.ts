@@ -14,6 +14,8 @@ import {
 import {
   _devSetFetchOverride,
   _devEvictBlob,
+  _devSetBlobFetchTimeout,
+  _devFetchBlobBySha,
   type BlobFetchProgress,
 } from "./services/blobTransferService.js";
 import { storeBlob } from "freqhole-api-client/storage";
@@ -115,3 +117,6 @@ window.__clearMockBlobFetch = () => {
   activeBehaviour = null;
   _devSetFetchOverride(null);
 };
+
+window.__setBlobFetchTimeout = _devSetBlobFetchTimeout;
+window.__fetchBlobBySha = _devFetchBlobBySha;

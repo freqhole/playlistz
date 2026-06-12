@@ -30,6 +30,8 @@ declare global {
     __evictBlob?: (sha256: string) => Promise<void>;
     __mockBlobFetch?: (behaviour: MockBlobBehaviour) => void;
     __clearMockBlobFetch?: () => void;
+    __setBlobFetchTimeout?: (ms: number) => void;
+    __fetchBlobBySha?: (sha256: string) => Promise<string | null>;
   }
 }
 

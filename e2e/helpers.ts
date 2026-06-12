@@ -328,3 +328,15 @@ export async function clearMockBlobFetch(page: Page): Promise<void> {
 export async function evictBlob(page: Page, sha256: string): Promise<void> {
   await page.evaluate((sha) => window.__evictBlob?.(sha), sha256);
 }
+
+// set the blob fetch timeout in ms (default 30000). use a short value in
+// tests to avoid waiting for the real 30s default when testing timeout behaviour.
+export async function setBlobFetchTimeout(page: Page, ms: number): Promise<void> {
+  await page.evaluate((t) => window.__setBlobFetchTimeout?.(t), ms);
+}
+
+// programmatically trigger a blob fetch by sha256 (bypass UI click).
+// useful in tests where the retry click target is obstructed by an overlay.
+export async function fetchBlobBySha(page: Page, sha256: string): Promise<void> {
+  await page.evaluate((sha) => window.__fetchBlobBySha?.(sha), sha256);
+}
