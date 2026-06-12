@@ -87,6 +87,7 @@ export function AllPlaylistsPanel(props: Props) {
         {/* sticky new-playlist row */}
         <div class="sticky bottom-0">
           <button
+            data-testid="btn-new-playlist"
             onClick={handleCreate}
             disabled={isCreating()}
             class="w-full flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-magenta-400 hover:bg-black/60 disabled:opacity-50 transition-colors border-t border-white/10 bg-black/40 text-sm"
@@ -234,7 +235,12 @@ function PlaylistRow(props: {
           />
         </Show>
         <div class="flex items-center gap-1 mt-0.5 flex-wrap">
-          <span class="text-xs text-gray-500 px-1 bg-black">{songCount()}</span>
+          <span
+            data-testid="row-song-count"
+            class="text-xs text-gray-500 px-1 bg-black"
+          >
+            {songCount()}
+          </span>
           <Show when={totalTime()}>
             <span class="text-xs text-gray-700 bg-black px-0.5">·</span>
             <span class="text-xs text-gray-500 px-1 bg-black">
@@ -255,6 +261,7 @@ function PlaylistRow(props: {
         }`}
       >
         <button
+          data-testid="btn-play-playlist-row"
           class="p-3 text-gray-500 hover:text-magenta-400 transition-colors"
           title={`play ${props.playlist.title}`}
           onClick={(e) => {
@@ -267,6 +274,7 @@ function PlaylistRow(props: {
           </svg>
         </button>
         <button
+          data-testid="btn-edit-playlist-row"
           class="p-3 text-gray-500 hover:text-white transition-colors"
           title="edit playlist"
           onClick={(e) => {
@@ -289,6 +297,7 @@ function PlaylistRow(props: {
           </svg>
         </button>
         <button
+          data-testid="btn-share-playlist-row"
           class="p-3 text-gray-500 hover:text-magenta-400 transition-colors"
           title="share playlist"
           onClick={(e) => {
@@ -311,6 +320,7 @@ function PlaylistRow(props: {
         </button>
         <Show when={window.location.protocol !== "file:"}>
           <button
+            data-testid="btn-download-zip-row"
             class="p-3 text-gray-500 hover:text-green-400 transition-colors disabled:opacity-40"
             title="download playlist as zip"
             disabled={downloading()}

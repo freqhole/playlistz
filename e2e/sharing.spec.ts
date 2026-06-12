@@ -17,13 +17,13 @@ test.beforeEach(async ({ page }) => {
 
 async function openSharePanel(page: import("@playwright/test").Page) {
   // the share panel lives in the playlist header - a playlist must be selected
-  const shareBtn = page.getByTitle("share playlist");
+  const shareBtn = page.getByTestId("btn-share-playlist");
   if (!(await shareBtn.isVisible({ timeout: 1000 }).catch(() => false))) {
     await createPlaylistViaUI(page);
   }
   await shareBtn.click();
-  // "sharez" label appears in the share panel header bar
-  await expect(page.getByText("sharez")).toBeVisible();
+  // share panel becomes visible
+  await expect(page.getByTestId("share-panel")).toBeVisible();
 }
 
 test("share panel opens and closes from the playlist header", async ({
@@ -32,11 +32,11 @@ test("share panel opens and closes from the playlist header", async ({
   await waitForApp(page);
   await openSharePanel(page);
 
-  await expect(page.getByText("enable p2p sharing")).toBeVisible();
+  await expect(page.getByTestId("btn-enable-sharing")).toBeVisible();
   await expect(page.getByText("no pending knockz")).toBeVisible();
 
   await page.getByTestId("btn-close-panel").click();
-  await expect(page.getByText("enable p2p sharing")).toHaveCount(0);
+  await expect(page.getByTestId("btn-enable-sharing")).toHaveCount(0);
 });
 
 test("share settings persist across panel reopen and reload", async ({
@@ -45,15 +45,15 @@ test("share settings persist across panel reopen and reload", async ({
   await waitForApp(page);
   await openSharePanel(page);
 
-  await page.locator("input[placeholder='anonymous']").fill("doomlord");
-  await page.locator("input[placeholder='anonymous']").blur();
+  await page.getByTestId("input-node-name").fill("doomlord");
+  await page.getByTestId("input-node-name").blur();
   await page.getByText("anyone (public)").click();
   await page.waitForTimeout(300);
 
   // reopen
   await page.getByTestId("btn-close-panel").click();
   await openSharePanel(page);
-  await expect(page.locator("input[placeholder='anonymous']")).toHaveValue(
+  await expect(page.getByTestId("input-node-name")).toHaveValue(
     "doomlord"
   );
 
@@ -61,7 +61,7 @@ test("share settings persist across panel reopen and reload", async ({
   await page.reload();
   await waitForApp(page);
   await openSharePanel(page);
-  await expect(page.locator("input[placeholder='anonymous']")).toHaveValue(
+  await expect(page.getByTestId("input-node-name")).toHaveValue(
     "doomlord",
     { timeout: 10000 }
   );
@@ -72,11 +72,11 @@ test("pasting an invalid share link shows an error", async ({ page }) => {
   await openSharePanel(page);
 
   await page
-    .locator("input[placeholder='paste share link or token...']")
+    .getByTestId("input-paste-share-link")
     .fill("definitely not a share link");
-  await page.getByRole("button", { name: "open", exact: true }).click();
+  await page.getByTestId("btn-open-share-link").click();
 
-  await expect(page.getByText("invalid share link")).toBeVisible({
+  await expect(page.getByTestId("share-link-error")).toBeVisible({
     timeout: 10000,
   });
 });
@@ -86,12 +86,12 @@ test("playlist header has a share button that opens the share panel", async ({
 }) => {
   await createPlaylistViaUI(page);
   await expect(
-    page.locator("input[placeholder='playlist title']")
+    page.getByTestId("input-playlist-title")
   ).toBeVisible();
   // share button is in the playlist header action row
-  await expect(page.getByTitle("share playlist")).toBeVisible();
-  await page.getByTitle("share playlist").click();
-  await expect(page.getByText("enable p2p sharing")).toBeVisible();
+  await expect(page.getByTestId("btn-share-playlist")).toBeVisible();
+  await page.getByTestId("btn-share-playlist").click();
+  await expect(page.getByTestId("btn-enable-sharing")).toBeVisible();
 });
 
 // real two-peer sharing test over the iroh relay. slow (node boot takes
@@ -121,7 +121,7 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
       // peer a: create a playlist and enable p2p
       await resetAppState(pageA);
       await createPlaylistViaUI(pageA);
-      const title = pageA.locator("input[placeholder='playlist title']");
+      const title = pageA.getByTestId("input-playlist-title");
       await title.fill("shared doom");
       await title.blur();
       await pageA.waitForTimeout(500);
@@ -130,11 +130,11 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
       // (the sidebar auto-collapses once a playlist is selected, so the
       // sidebar share panel is off-screen here)
       logTs("[e2e] peer a: enabling p2p from the edit panel...");
-      await pageA.getByTitle("edit playlist").click();
-      await pageA.getByText("enable p2p sharing").click();
+      await pageA.getByTestId("btn-edit-playlist").click();
+      await pageA.getByTestId("btn-enable-sharing").click();
 
       // once the node is up the share column shows the link + copy button
-      const copyBtn = pageA.getByRole("button", { name: "copy share link" });
+      const copyBtn = pageA.getByTestId("btn-copy-share-link");
       await expect(copyBtn).toBeEnabled({ timeout: 180_000 });
       logTs("[e2e] peer a: p2p node online");
     };
@@ -144,10 +144,10 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
       // header, so we need a playlist selected first.
       await resetAppState(pageB);
       await createPlaylistViaUI(pageB);
-      await pageB.getByTitle("share playlist").click();
+      await pageB.getByTestId("btn-share-playlist").click();
       logTs("[e2e] peer b: enabling p2p from the share panel...");
-      await pageB.getByText("enable p2p sharing").click();
-      await expect(pageB.getByText("online")).toBeVisible({
+      await pageB.getByTestId("btn-enable-sharing").click();
+      await expect(pageB.getByTestId("sharing-status")).toBeVisible({
         timeout: 180_000,
       });
       logTs("[e2e] peer b: p2p node online");
@@ -165,11 +165,11 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
 
     // peer b: paste the link into the share panel
     await pageB
-      .locator("input[placeholder='paste share link or token...']")
+      .getByTestId("input-paste-share-link")
       .fill(shareUrl);
-    await pageB.getByRole("button", { name: "open", exact: true }).click();
+    await pageB.getByTestId("btn-browse-peer").click();
     logTs("[e2e] peer b: opening share link...");
-    await expect(pageB.getByText("playlist added!")).toBeVisible({
+    await expect(pageB.getByTestId("share-success")).toBeVisible({
       timeout: 120_000,
     });
     logTs("[e2e] peer b: playlist added");

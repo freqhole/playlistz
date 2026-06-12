@@ -1,4 +1,3 @@
-
 import { Show, createEffect, createSignal } from "solid-js";
 
 import {
@@ -205,7 +204,9 @@ function PlaylistzInner() {
         }
       >
         {/* visually hidden landmark for e2e/accessibility - always present once app loads */}
-        <h1 class="sr-only">playlistz</h1>
+        <h1 class="sr-only" data-testid="app-ready">
+          playlistz
+        </h1>
         {/* full-width playlist content */}
         <div class="relative flex h-full" style={{ "z-index": "2" }}>
           <div class="flex-1 flex flex-col min-h-0">
@@ -394,8 +395,11 @@ function EmptyState() {
   return (
     <div class="flex items-center justify-center h-full text-gray-400 text-sm">
       <div class="text-center">
-        <p class="mb-6 text-gray-500">no playlistz yet</p>
+        <p class="mb-6 text-gray-500" data-testid="empty-playlists">
+          no playlistz yet
+        </p>
         <button
+          data-testid="btn-new-playlist"
           onClick={handleCreate}
           disabled={creating()}
           class="flex items-center gap-2 px-4 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:opacity-60 text-white text-sm font-medium transition-colors mx-auto"

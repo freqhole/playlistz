@@ -1,4 +1,3 @@
-
 import {
   createSignal,
   createResource,
@@ -568,6 +567,7 @@ export function SongRow(props: SongRowProps) {
                 <div class="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1 bg-black bg-opacity-80 px-2 py-1 z-50">
                   {/* edit button */}
                   <button
+                    data-testid="btn-edit-song"
                     onClick={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
@@ -598,6 +598,7 @@ export function SongRow(props: SongRowProps) {
                   {/* delete/remove button */}
                   <Show when={props.showRemoveButton}>
                     <button
+                      data-testid="btn-remove-song"
                       onClick={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
@@ -624,6 +625,7 @@ export function SongRow(props: SongRowProps) {
 
                   {/* drag handle */}
                   <div
+                    data-testid="btn-drag-song"
                     class={`p-1 text-gray-400 transition-colors cursor-grab ${
                       isDragging()
                         ? "cursor-grabbing text-magenta-400"

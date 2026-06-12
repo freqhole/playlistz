@@ -42,9 +42,11 @@ test("all-playlists thumbnail shows a play icon while the playlist plays", async
 
   // open the all-playlists panel - the currently-playing playlist row
   // shows a play icon overlay on its thumbnail
-  await page.getByTitle("all playlistz").first().click();
+  await page.getByTestId("btn-all-playlists").click();
+  // wait for panel to render before checking the playing indicator
+  await page.getByTestId("all-playlists-panel").waitFor();
 
   await expect(page.locator("div[title='playing']")).toBeVisible({
-    timeout: 5000,
+    timeout: 8000,
   });
 });

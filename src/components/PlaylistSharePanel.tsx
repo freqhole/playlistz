@@ -1,4 +1,3 @@
-
 // inline share panel: p2p status, share link for the current playlist,
 // receive a shared playlist, endpoint settings, and knock inbox.
 // rendered inside the playlist view (not as a floating modal).
@@ -253,9 +252,15 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
   const pendingKnocks = () => knocks().filter((k) => k.status === "pending");
 
   return (
-    <div class="px-4 pb-6 pt-2 space-y-5 font-mono text-white">
+    <div
+      data-testid="share-panel"
+      class="px-4 pb-6 pt-2 space-y-5 font-mono text-white"
+    >
       <Show when={error()}>
-        <div class="p-2 border border-red-500 text-red-400 text-sm">
+        <div
+          data-testid="share-link-error"
+          class="p-2 border border-red-500 text-red-400 text-sm"
+        >
           <span class="bg-black/80 px-1">{error()}</span>
         </div>
       </Show>
@@ -264,6 +269,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       <div>
         <Show when={!hasP2pIdentity()}>
           <button
+            data-testid="btn-enable-sharing"
             onClick={() => void handleEnableP2P()}
             disabled={starting()}
             class="w-full px-4 py-3 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white font-medium"
@@ -272,7 +278,10 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           </button>
         </Show>
         <Show when={hasP2pIdentity() && p2pEnabled()}>
-          <div class="flex items-center gap-2 text-sm">
+          <div
+            data-testid="sharing-status"
+            class="flex items-center gap-2 text-sm"
+          >
             <span
               class={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${leader() ? "bg-green-500" : "bg-yellow-500"}`}
               title={
@@ -297,6 +306,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
         <div class="flex items-center justify-between mt-2">
           <span class="bg-black px-1 text-xs text-gray-500">endpoint</span>
           <button
+            data-testid="btn-toggle-endpoint"
             onClick={() => hasP2pIdentity() && void toggleEndpoint()}
             disabled={!hasP2pIdentity()}
             class={`px-3 py-1 text-xs border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
@@ -327,6 +337,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           >
             <div class="flex gap-2">
               <input
+                data-testid="input-share-link"
                 type="text"
                 readOnly
                 value={shareLink()}
@@ -335,6 +346,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                 class="flex-1 bg-black text-white px-3 py-2 text-xs border border-magenta-200 focus:outline-none truncate min-w-0"
               />
               <button
+                data-testid="btn-copy-share-link"
                 onClick={() => void handleCopyLink()}
                 title="copy share link"
                 class="px-4 py-2 bg-magenta-500 hover:bg-magenta-600 text-white text-sm whitespace-nowrap flex-shrink-0"
@@ -353,6 +365,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
         </label>
         <div class="flex flex-col gap-2">
           <input
+            data-testid="input-paste-share-link"
             type="text"
             value={pasteValue()}
             placeholder="paste share link or token..."
@@ -363,6 +376,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
             class="w-full bg-black text-white px-3 py-2 text-sm border border-magenta-200 focus:border-magenta-500 focus:outline-none"
           />
           <button
+            data-testid="btn-open-share-link"
             onClick={() => void handleOpenLink()}
             class="w-full px-4 py-2 bg-magenta-500 hover:bg-magenta-600 text-white text-sm"
           >
@@ -370,7 +384,10 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           </button>
         </div>
         <Show when={pasteStatus()}>
-          <div class="mt-1 text-xs text-magenta-400">
+          <div
+            data-testid="share-success"
+            class="mt-1 text-xs text-magenta-400"
+          >
             <span class="bg-black/80 px-1">{pasteStatus()}</span>
           </div>
         </Show>
@@ -383,6 +400,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
             <span class="bg-black px-1 text-gray-400">display name</span>
           </label>
           <input
+            data-testid="input-node-name"
             type="text"
             value={settings().name}
             placeholder="anonymous"
@@ -400,12 +418,14 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           </label>
           <div class="flex gap-2">
             <button
+              data-testid="btn-mode-public"
               onClick={() => void handleSaveSettings({ mode: "public" })}
               class={`flex-1 px-3 py-2 text-sm border ${settings().mode === "public" ? "border-magenta-500 bg-magenta-500/20 text-white" : "border-gray-600 text-gray-400"}`}
             >
               anyone (public)
             </button>
             <button
+              data-testid="btn-mode-knock"
               onClick={() => void handleSaveSettings({ mode: "knock" })}
               class={`flex-1 px-3 py-2 text-sm border ${settings().mode === "knock" ? "border-magenta-500 bg-magenta-500/20 text-white" : "border-gray-600 text-gray-400"}`}
             >
@@ -430,6 +450,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
         </label>
         <div class="flex flex-col gap-2">
           <input
+            data-testid="input-peer-node-id"
             type="text"
             value={browseNodeId()}
             placeholder="peer node id..."
@@ -438,12 +459,14 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           />
           <div class="flex gap-2">
             <button
+              data-testid="btn-browse-peer"
               onClick={() => void handleBrowsePeer()}
               class="flex-1 px-3 py-2 border border-magenta-500 text-magenta-400 hover:bg-magenta-500/20 text-sm"
             >
               browse
             </button>
             <button
+              data-testid="btn-knock-peer"
               onClick={() => void handleKnock()}
               class="flex-1 px-3 py-2 border border-gray-600 text-gray-300 hover:bg-gray-800 text-sm"
               title="ask this peer for access"
@@ -523,7 +546,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
 
       {/* knock inbox */}
       <div>
-        <label class="block text-xs mb-1">
+        <label data-testid="knock-inbox" class="block text-xs mb-1">
           <span class="bg-black px-1 text-gray-400">
             knock inbox
             <Show when={pendingKnocks().length > 0}>
@@ -536,7 +559,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
         <Show
           when={pendingKnocks().length > 0}
           fallback={
-            <div class="text-gray-600 text-xs">
+            <div data-testid="empty-knock-inbox" class="text-gray-600 text-xs">
               <span class="bg-black/80 px-1">no pending knockz</span>
             </div>
           }

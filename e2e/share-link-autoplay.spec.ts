@@ -53,8 +53,8 @@ test("navigating to a #share/ link selects the playlist", async ({ page }) => {
   // set up: create a playlist with songs
   await createPlaylistViaUI(page);
   await addSongs(page, 2);
-  await page.locator("input[placeholder='playlist title']").fill("share target");
-  await page.locator("input[placeholder='playlist title']").blur();
+  await page.getByTestId("input-playlist-title").fill("share target");
+  await page.getByTestId("input-playlist-title").blur();
   await page.waitForTimeout(500);
 
   // read the docId from idb
@@ -69,7 +69,7 @@ test("navigating to a #share/ link selects the playlist", async ({ page }) => {
   // the playlist with that title should be selected
   // (either in the edit input or as the active playlist header)
   await expect(
-    page.locator("input[placeholder='playlist title']").or(
+    page.getByTestId("input-playlist-title").or(
       page.getByText("share target").first()
     )
   ).toBeVisible({ timeout: 10000 });

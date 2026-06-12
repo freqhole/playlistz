@@ -1,4 +1,3 @@
-
 import { createSignal, Show, onMount, onCleanup } from "solid-js";
 import {
   processPlaylistCover,
@@ -203,7 +202,10 @@ export function SongEditPanel(props: SongEditPanelProps) {
     imageUrl() ?? getImageUrlForContext(props.song, "thumbnail") ?? undefined;
 
   return (
-    <div class="bg-black/40 border-none overflow-hidden min-w-0 w-full">
+    <div
+      data-testid="song-edit-panel"
+      class="bg-black/40 border-none overflow-hidden min-w-0 w-full"
+    >
       {/* read-only song row preview - updates live as user edits */}
       <div class="flex items-center gap-2 px-3 py-3 bg-black border-none select-none min-w-0">
         {/* close button */}

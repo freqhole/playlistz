@@ -32,7 +32,7 @@ test("duration shows underline once blob is locally cached", async ({ page }) =>
   await addSongs(page, 1, 2);
 
   // wait for the song row duration cell to appear, then check for underline
-  const dur = page.locator("[data-testid='song-duration']").first();
+  const dur = page.getByTestId("song-duration").first();
   await expect(dur).toBeVisible({ timeout: 15000 });
   await expect(dur).toHaveClass(/underline/, { timeout: 10000 });
 });
@@ -41,7 +41,7 @@ test("duration stays muted gray until cache check resolves", async ({ page }) =>
   await createPlaylistViaUI(page);
   await addSongs(page, 1, 2);
 
-  const dur = page.locator("[data-testid='song-duration']").first();
+  const dur = page.getByTestId("song-duration").first();
   await expect(dur).toBeVisible({ timeout: 15000 });
 
   // once the async check completes it should be underlined
@@ -53,13 +53,13 @@ test("duration stays muted gray until cache check resolves", async ({ page }) =>
 test("duration underline persists across page reload", async ({ page }) => {
   await createPlaylistViaUI(page);
   await addSongs(page, 1, 2);
-  await expect(page.locator("[data-testid='song-duration']").first()).toHaveClass(/underline/, { timeout: 10000 });
+  await expect(page.getByTestId("song-duration").first()).toHaveClass(/underline/, { timeout: 10000 });
 
   await page.reload();
   await waitForApp(page);
 
   // blobs persist in opfs; underline should reappear after reload
-  await expect(page.locator("[data-testid='song-duration']").first()).toHaveClass(/underline/, { timeout: 10000 });
+  await expect(page.getByTestId("song-duration").first()).toHaveClass(/underline/, { timeout: 10000 });
 });
 
 // --- audio format acceptance ---
@@ -70,42 +70,42 @@ test("mp3 file is accepted and shows a row", async ({ page }) => {
   // app extracts title from filename: "tagged-c5-3s"
   await expect(page.getByText("tagged-c5-3s").first()).toBeVisible({ timeout: 15000 });
   // duration: 3 seconds
-  await expect(page.getByText("0:03").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("0:03").first()).toBeVisible();
 });
 
 test("m4a file is accepted and shows a row", async ({ page }) => {
   await createPlaylistViaUI(page);
   await dropFiles(page, [fixture("tagged-a3-4s.m4a")]);
   await expect(page.getByText("tagged-a3-4s").first()).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("0:04").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("0:04").first()).toBeVisible();
 });
 
 test("ogg file is accepted and shows a row", async ({ page }) => {
   await createPlaylistViaUI(page);
   await dropFiles(page, [fixture("tagged-f4-6s.ogg")]);
   await expect(page.getByText("tagged-f4-6s").first()).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("0:06").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("0:06").first()).toBeVisible();
 });
 
 test("very short mp3 (1s) is accepted and shows duration", async ({ page }) => {
   await createPlaylistViaUI(page);
   await dropFiles(page, [fixture("bare-glitch-1s.mp3")]);
   await expect(page.getByText("bare-glitch-1s").first()).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("0:01").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("0:01").first()).toBeVisible();
 });
 
 test("stereo wav is accepted and shows duration", async ({ page }) => {
   await createPlaylistViaUI(page);
   await dropFiles(page, [fixture("tone-stereo-3s.wav")]);
   await expect(page.getByText("tone-stereo-3s").first()).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("0:03").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("0:03").first()).toBeVisible();
 });
 
 test("chord wav shows correct duration", async ({ page }) => {
   await createPlaylistViaUI(page);
   await dropFiles(page, [fixture("chord-stack-3s.wav")]);
   await expect(page.getByText("chord-stack-3s").first()).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("0:03").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("0:03").first()).toBeVisible();
 });
 
 // --- filename-based title parsing ---
@@ -119,7 +119,7 @@ test("filename with artist-title pattern is parsed correctly", async ({ page }) 
     bytes: fixture("tagged-c5-3s.mp3").bytes,
   }]);
   await expect(page.getByText("My Song").first()).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("Fixture Bot").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("Fixture Bot").first()).toBeVisible();
 });
 
 test("filename with no separator uses full name as title", async ({ page }) => {
@@ -140,17 +140,17 @@ test("mixed formats in a single drop all appear as rows", async ({ page }) => {
   ]);
 
   await expect(page.getByText("tagged-c5-3s").first()).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("tagged-a3-4s").first()).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText("tagged-f4-6s").first()).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText("tone-440hz-2s").first()).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText("4 songz").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("tagged-a3-4s").first()).toBeVisible();
+  await expect(page.getByText("tagged-f4-6s").first()).toBeVisible();
+  await expect(page.getByText("tone-440hz-2s").first()).toBeVisible();
+  await expect(page.getByTestId("playlist-song-count").first()).toContainText("4");
 });
 
 // --- image formats as playlist cover ---
 
 test("jpg accepted as playlist cover", async ({ page }) => {
   await createPlaylistViaUI(page);
-  await page.getByTitle("edit playlist").click();
+  await page.getByTestId("btn-edit-playlist").click();
   await setPlaylistCover(page, fixture("cover-gradient.jpg"));
   // the edit panel renders a preview img once the cover is processed
   await expect(page.locator("img[alt='playlist cover']").first()).toBeVisible({ timeout: 10000 });
@@ -158,14 +158,14 @@ test("jpg accepted as playlist cover", async ({ page }) => {
 
 test("webp accepted as playlist cover", async ({ page }) => {
   await createPlaylistViaUI(page);
-  await page.getByTitle("edit playlist").click();
+  await page.getByTestId("btn-edit-playlist").click();
   await setPlaylistCover(page, fixture("cover-plasma.webp"));
   await expect(page.locator("img[alt='playlist cover']").first()).toBeVisible({ timeout: 10000 });
 });
 
 test("portrait jpg (non-square) accepted as playlist cover", async ({ page }) => {
   await createPlaylistViaUI(page);
-  await page.getByTitle("edit playlist").click();
+  await page.getByTestId("btn-edit-playlist").click();
   await setPlaylistCover(page, fixture("cover-portrait.jpg"));
   await expect(page.locator("img[alt='playlist cover']").first()).toBeVisible({ timeout: 10000 });
 });
@@ -176,13 +176,13 @@ test("songs persist title and duration across page reload", async ({ page }) => 
   await createPlaylistViaUI(page);
   await dropFiles(page, [fixture("tagged-c5-3s.mp3")]);
   await expect(page.getByText("tagged-c5-3s").first()).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("0:03").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("0:03").first()).toBeVisible();
 
   await page.reload();
   await waitForApp(page);
 
   await expect(page.getByText("tagged-c5-3s").first()).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText("0:03").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("0:03").first()).toBeVisible();
 });
 
 test("multiple songs survive reload with correct order", async ({ page }) => {
@@ -191,12 +191,12 @@ test("multiple songs survive reload with correct order", async ({ page }) => {
     fixture("tagged-c5-3s.mp3"),
     fixture("tagged-a3-4s.m4a"),
   ]);
-  await expect(page.getByText("2 songz").first()).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("playlist-song-count").first()).toContainText("2", { timeout: 15000 });
 
   await page.reload();
   await waitForApp(page);
 
   await expect(page.getByText("tagged-c5-3s").first()).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText("tagged-a3-4s").first()).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText("2 songz").first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("tagged-a3-4s").first()).toBeVisible();
+  await expect(page.getByTestId("playlist-song-count").first()).toContainText("2");
 });

@@ -343,7 +343,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
       <Show when={showingShare()}>
         <PanelMiniHeader
           playlist={props.playlist()}
-          label="sharez"
+          label="share"
           isMobile={isMobile()}
           style={panelEntryStyle()}
           onClose={closeShare}
@@ -429,6 +429,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               <div class="flex-1">
                 <div class={`bg-black bg-opacity-80`}>
                   <input
+                    data-testid="input-playlist-title"
                     type="text"
                     value={props.playlist().title}
                     onInput={(e) => {
@@ -442,6 +443,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 </div>
                 <div class={`bg-black bg-opacity-80`}>
                   <input
+                    data-testid="input-playlist-description"
                     type="text"
                     value={props.playlist().description || ""}
                     placeholder="add description..."
@@ -491,11 +493,17 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 class="flex items-center justify-end text-sm gap-0"
                 style={{ "grid-area": "info" }}
               >
-                <span class="bg-black bg-opacity-80 p-2">
+                <span
+                  data-testid="playlist-song-count"
+                  class="bg-black bg-opacity-80 p-2"
+                >
                   {props.playlist().songIds?.length || 0} song
                   {(props.playlist().songIds?.length || 0) !== 1 ? "z" : ""}
                 </span>
-                <span class="bg-black bg-opacity-80 p-2">
+                <span
+                  data-testid="playlist-total-time"
+                  class="bg-black bg-opacity-80 p-2"
+                >
                   {(() => {
                     const totalSeconds = playlistSongs().reduce(
                       (total, song) => total + (song.duration || 0),
@@ -518,6 +526,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               >
                 {/* hamburger: open all-playlists overlay */}
                 <button
+                  data-testid="btn-all-playlists"
                   onClick={() => {
                     if (showingShare()) closeShare();
                     if (editingPlaylist() || editingSong()) handleCloseEdit();
@@ -547,6 +556,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
                 {/* edit playlist button - toggles edit panel */}
                 <button
+                  data-testid="btn-edit-playlist"
                   onClick={() => {
                     if (showingShare()) closeShare();
                     editingPlaylist()
@@ -576,6 +586,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 {/* share playlist button: icon nodes fill based on connected
                     peer count (1/2/3+), pulse when transfers are active */}
                 <button
+                  data-testid="btn-share-playlist"
                   onClick={() => {
                     if (showingShare()) {
                       closeShare();
@@ -670,6 +681,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 >
                   <Show when={!allSongsCached()}>
                     <button
+                      data-testid="btn-cache-offline"
                       onClick={handleCachePlaylist}
                       disabled={isCaching() || playlistSongs().length === 0}
                       class="p-2 text-gray-400 hover:text-magenta-400 hover:bg-gray-700 transition-colors bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -710,6 +722,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   }
                 >
                   <button
+                    data-testid="btn-p2p-save-offline"
                     onClick={() => void handleP2pSaveOffline()}
                     disabled={p2pSaveProgress() !== null}
                     class="p-2 text-gray-400 hover:text-magenta-400 hover:bg-gray-700 transition-colors bg-black/90 disabled:opacity-50"
@@ -757,6 +770,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 {/* download playlist .zip button */}
                 <Show when={window.location.protocol !== "file:"}>
                   <button
+                    data-testid="btn-download-zip"
                     onClick={handleDownloadPlaylist}
                     disabled={isDownloading()}
                     class="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 transition-colors bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1007,6 +1021,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   }
                 >
                   <div
+                    data-testid="empty-songs"
                     class={`${isMobile() ? "" : "ml-42 mr-42"} text-center p-8 bg-black/75`}
                   >
                     <div class="text-gray-400 text-xl mb-4">no songz yet</div>

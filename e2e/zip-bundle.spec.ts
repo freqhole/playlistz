@@ -169,7 +169,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await addSongs(page, 2);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTitle("download playlist as zip").first().click();
+    await page.getByTestId("btn-download-zip").click();
     const download = await downloadPromise;
 
     expect(download.suggestedFilename()).toMatch(/\.zip$/);
@@ -183,7 +183,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await addSongs(page, 2);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTitle("download playlist as zip").first().click();
+    await page.getByTestId("btn-download-zip").click();
     const download = await downloadPromise;
 
     const zipPath = await download.path();
@@ -212,7 +212,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
 
     // download and capture the zip
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTitle("download playlist as zip").first().click();
+    await page.getByTestId("btn-download-zip").click();
     const download = await downloadPromise;
     const zipPath = await download.path();
     const zipBuf = fs.readFileSync(zipPath!);
@@ -244,7 +244,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await createPlaylistViaUI(page);
 
     // give the playlist a recognisable title
-    const titleInput = page.locator("input[placeholder='playlist title']");
+    const titleInput = page.getByTestId("input-playlist-title");
     await titleInput.fill("standalone-test");
     await titleInput.blur();
     await page.waitForTimeout(300);
@@ -253,7 +253,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
 
     // download and capture the zip
     const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
-    await page.getByTitle("download playlist as zip").first().click();
+    await page.getByTestId("btn-download-zip").click();
     const download = await downloadPromise;
     const zipPath = await download.path();
     expect(zipPath, "zip download path should exist").toBeTruthy();
@@ -302,7 +302,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
 
       // the title should match what we set
       await expect(
-        standalonePage.locator("input[placeholder='playlist title']")
+        standalonePage.getByTestId("input-playlist-title")
       ).toHaveValue("standalone-test");
 
       await ctx.close();
@@ -318,7 +318,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await addSongs(page, 1, 2); // 2-second song for faster playback check
 
     const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
-    await page.getByTitle("download playlist as zip").first().click();
+    await page.getByTestId("btn-download-zip").click();
     const download = await downloadPromise;
     const zipBuf = fs.readFileSync((await download.path())!);
 
@@ -366,7 +366,7 @@ test.describe("--http CLI server mode", () => {
     test.setTimeout(120_000);
     await createPlaylistViaUI(page);
 
-    const titleInput = page.locator("input[placeholder='playlist title']");
+    const titleInput = page.getByTestId("input-playlist-title");
     await titleInput.fill("http-server-test");
     await titleInput.blur();
     await page.waitForTimeout(300);
@@ -374,7 +374,7 @@ test.describe("--http CLI server mode", () => {
     await addSongs(page, 2);
 
     const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
-    await page.getByTitle("download playlist as zip").first().click();
+    await page.getByTestId("btn-download-zip").click();
     const download = await downloadPromise;
     const zipBuf = fs.readFileSync((await download.path())!);
 
@@ -396,7 +396,7 @@ test.describe("--http CLI server mode", () => {
       await expect(standalonePage.getByText("song-00")).toBeVisible({ timeout: 10000 });
       await expect(standalonePage.getByText("song-01")).toBeVisible();
       await expect(
-        standalonePage.locator("input[placeholder='playlist title']")
+        standalonePage.getByTestId("input-playlist-title")
       ).toHaveValue("http-server-test");
 
       // range requests work: click a song to trigger audio element range fetch

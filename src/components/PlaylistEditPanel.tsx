@@ -1,4 +1,3 @@
-
 import { createSignal, createEffect, Show, onMount } from "solid-js";
 import {
   updatePlaylist,
@@ -274,7 +273,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
   };
 
   return (
-    <div class="bg-black/40 overflow-hidden">
+    <div data-testid="edit-panel" class="bg-black/40 overflow-hidden">
       {/* on sm+: form controls left (clamped to 500px), image right.
           justify-between pushes the columns apart so spare width sits in the
           middle. order utilities keep the image on top for the mobile column.
@@ -322,6 +321,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
               }
             >
               <button
+                data-testid="btn-set-bg-cover"
                 onClick={() => setBackgroundOverride("cover")}
                 class="relative block w-full group cursor-pointer"
                 title="set the page background to this playlist's cover image"

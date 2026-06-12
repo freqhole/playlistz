@@ -219,7 +219,7 @@ export async function resetAppState(page: Page): Promise<void> {
 
 // wait for the app shell to finish booting
 export async function waitForApp(page: Page): Promise<void> {
-  await page.getByRole("heading", { name: "playlistz" }).waitFor({ timeout: 10000 });
+  await page.getByTestId("app-ready").waitFor({ timeout: 10000 });
 }
 
 // create a playlist via the UI and wait for the playlist header to appear.
@@ -228,16 +228,16 @@ export async function waitForApp(page: Page): Promise<void> {
 // hamburger and clicks "new playlist" there.
 export async function createPlaylistViaUI(page: Page): Promise<void> {
   // try the always-visible empty-state button first, fall back to hamburger flow
-  const newBtn = page.getByRole("button", { name: "new playlist" }).first();
+  const newBtn = page.getByTestId("btn-new-playlist");
   const isVisible = await newBtn.isVisible().catch(() => false);
   if (isVisible) {
     await newBtn.click();
   } else {
     // open all-playlists panel via hamburger
-    await page.getByTitle("all playlistz").first().click();
-    await page.getByRole("button", { name: "new playlist" }).first().click();
+    await page.getByTestId("btn-all-playlists").click();
+    await page.getByTestId("btn-new-playlist").click();
   }
-  await page.getByTitle("edit playlist").first().waitFor({ timeout: 5000 });
+  await page.getByTestId("btn-edit-playlist").waitFor({ timeout: 5000 });
 }
 
 // add n synthetic songs to the selected playlist via drag and drop

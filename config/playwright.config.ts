@@ -15,6 +15,7 @@ export default defineConfig({
   // default per-test timeout: 30s for normal tests.
   // tests that need more (two-browser p2p, standalone build) use test.setTimeout()
   timeout: 30_000,
+  expect: { timeout: 5000 },
   use: {
     baseURL: "http://localhost:5917",
     trace: "on-first-retry",

@@ -15,8 +15,8 @@ test.beforeEach(async ({ page }) => {
 
 test("create a playlist via the sidebar", async ({ page }) => {
   await createPlaylistViaUI(page);
-  await expect(page.getByText("no songz yet")).toBeVisible();
-  await expect(page.locator("input[placeholder='playlist title']")).toHaveValue(
+  await expect(page.getByTestId("empty-songs")).toBeVisible();
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue(
     "new playlist"
   );
 });
@@ -28,7 +28,7 @@ test("add songs via drag and drop", async ({ page }) => {
   await expect(page.getByText("song-00")).toBeVisible();
   await expect(page.getByText("song-01")).toBeVisible();
   await expect(page.getByText("song-02")).toBeVisible();
-  await expect(page.getByText("3 songz").first()).toBeVisible();
+  await expect(page.getByTestId("playlist-song-count").first()).toBeVisible();
 });
 
 test("songs survive a page reload", async ({ page }) => {
@@ -48,7 +48,7 @@ test("songs survive a page reload", async ({ page }) => {
 test("playlist title edit persists across reload", async ({ page }) => {
   await createPlaylistViaUI(page);
 
-  const title = page.locator("input[placeholder='playlist title']");
+  const title = page.getByTestId("input-playlist-title");
   await title.fill("doom mix");
   await title.blur();
   await page.waitForTimeout(500);
@@ -56,7 +56,7 @@ test("playlist title edit persists across reload", async ({ page }) => {
   await page.reload();
   await waitForApp(page);
 
-  await expect(page.locator("input[placeholder='playlist title']")).toHaveValue(
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue(
     "doom mix",
     { timeout: 10000 }
   );
@@ -68,7 +68,7 @@ test("playlist cover image persists across reload", async ({ page }) => {
   await addSongs(page, 1);
 
   // open the edit panel and upload a cover
-  await page.getByTitle("edit playlist").click();
+  await page.getByTestId("btn-edit-playlist").click();
   const fileInput = page.locator("input[type='file']").first();
   await fileInput.waitFor({ state: "attached", timeout: 5000 });
 
