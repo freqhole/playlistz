@@ -856,10 +856,13 @@ export async function playSong(song: Song, skipResume = false): Promise<void> {
       return newSet;
     });
 
-    // prefetch upcoming songs from p2p peers (~30 min of playback)
+    // prefetch upcoming songs from p2p peers (~30 min rolling window from now)
     const playingPl = currentPlaylist();
     if (playingPl) {
-      prefetchUpcoming(playingPl, song.id);
+      const elapsed = audioElement?.currentTime ?? 0;
+      const dur = audioElement?.duration ?? song.duration ?? 0;
+      const remaining = Math.max(0, dur - elapsed);
+      prefetchUpcoming(playingPl, song.id, remaining);
     }
 
     // media session will be updated by loadedmetadata event

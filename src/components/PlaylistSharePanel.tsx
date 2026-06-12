@@ -255,7 +255,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
     <div class="px-4 pb-6 pt-2 space-y-5 font-mono text-white">
       <Show when={error()}>
         <div class="p-2 border border-red-500 text-red-400 text-sm">
-          {error()}
+          <span class="bg-black/80 px-1">{error()}</span>
         </div>
       </Show>
 
@@ -318,7 +318,11 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           </label>
           <Show
             when={shareLink()}
-            fallback={<div class="text-xs text-gray-600">building link...</div>}
+            fallback={
+              <div class="text-xs text-gray-600">
+                <span class="bg-black/80 px-1">building link...</span>
+              </div>
+            }
           >
             <div class="flex gap-2">
               <input
@@ -365,7 +369,9 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           </button>
         </div>
         <Show when={pasteStatus()}>
-          <div class="mt-1 text-xs text-magenta-400">{pasteStatus()}</div>
+          <div class="mt-1 text-xs text-magenta-400">
+            <span class="bg-black/80 px-1">{pasteStatus()}</span>
+          </div>
         </Show>
       </div>
 
@@ -446,7 +452,9 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           </div>
         </div>
         <Show when={browseStatus()}>
-          <div class="mt-1 text-xs text-magenta-400">{browseStatus()}</div>
+          <div class="mt-1 text-xs text-magenta-400">
+            <span class="bg-black/80 px-1">{browseStatus()}</span>
+          </div>
         </Show>
         <Show when={browseResult()}>
           {(listing) => (
@@ -455,9 +463,11 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                 when={listing().items.length > 0}
                 fallback={
                   <div class="text-gray-500 text-xs">
-                    {listing().knockRequired
-                      ? "this peer requires a knock"
-                      : "no playlistz shared"}
+                    <span class="bg-black/80 px-1">
+                      {listing().knockRequired
+                        ? "this peer requires a knock"
+                        : "no playlistz shared"}
+                    </span>
                   </div>
                 }
               >
@@ -465,8 +475,8 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                   {(item) => (
                     <div class="flex items-center justify-between py-1 border-b border-gray-800">
                       <span>
-                        {item.title}{" "}
-                        <span class="text-gray-500 text-xs">
+                        <span class="bg-black/80 px-1">{item.title}</span>{" "}
+                        <span class="text-gray-500 text-xs bg-black/80 px-1">
                           ({item.songCount} songz)
                         </span>
                       </span>
@@ -524,23 +534,31 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
         </label>
         <Show
           when={pendingKnocks().length > 0}
-          fallback={<div class="text-gray-600 text-xs">no pending knockz</div>}
+          fallback={
+            <div class="text-gray-600 text-xs">
+              <span class="bg-black/80 px-1">no pending knockz</span>
+            </div>
+          }
         >
           <For each={pendingKnocks()}>
             {(knock) => (
               <div class="border border-gray-700 p-3 mb-2 text-sm">
                 <div class="mb-1">
-                  <span class="text-white">{knock.name || "anonymous"}</span>
-                  <span class="text-gray-500 text-xs ml-2">
+                  <span class="text-white bg-black/80 px-1">
+                    {knock.name || "anonymous"}
+                  </span>
+                  <span class="text-gray-500 text-xs ml-2 bg-black/80 px-1">
                     {knock.nodeId.slice(0, 16)}...
                   </span>
                 </div>
                 <Show when={knock.message}>
                   <div class="text-gray-400 text-xs mb-2">
-                    "{knock.message}"
+                    <span class="bg-black/80 px-1">"{knock.message}"</span>
                   </div>
                 </Show>
-                <div class="text-xs text-gray-500 mb-2">grant access to:</div>
+                <div class="text-xs text-gray-500 mb-2">
+                  <span class="bg-black/80 px-1">grant access to:</span>
+                </div>
                 <div class="max-h-24 overflow-y-auto mb-2">
                   <For each={props.playlists}>
                     {(pl) => (
@@ -552,7 +570,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                           }
                           onChange={() => toggleGrantDoc(knock.id, pl.id)}
                         />
-                        {pl.title}
+                        <span class="bg-black/80 px-1">{pl.title}</span>
                       </label>
                     )}
                   </For>

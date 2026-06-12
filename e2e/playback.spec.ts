@@ -28,7 +28,7 @@ test("decoded duration shows in the row", async ({ page }) => {
   await expect(page.getByText("0:02").first()).toBeVisible({ timeout: 15000 });
 });
 
-test("sidebar thumbnail shows a play icon while the playlist plays", async ({
+test("all-playlists thumbnail shows a play icon while the playlist plays", async ({
   page,
 }) => {
   await createPlaylistViaUI(page);
@@ -40,8 +40,9 @@ test("sidebar thumbnail shows a play icon while the playlist plays", async ({
     timeout: 10000,
   });
 
-  // the sidebar is only visible while an edit panel is open
-  await page.getByTitle("edit playlist").click();
+  // open the all-playlists panel - the currently-playing playlist row
+  // shows a play icon overlay on its thumbnail
+  await page.getByTitle("all playlistz").first().click();
 
   await expect(page.locator("div[title='playing']")).toBeVisible({
     timeout: 5000,

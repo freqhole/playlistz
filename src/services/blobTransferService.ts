@@ -65,6 +65,9 @@ const servedBlobs = new Map<
 // how long an imported blob stays available after the last request
 const RELEASE_AFTER_MS = 10 * 60 * 1000;
 
+// count of in-progress outbound serve requests (we are serving a blob to a peer)
+let activeServes = 0;
+
 function scheduleRelease(sha256: string, blake3: string): void {
   const existing = servedBlobs.get(sha256);
   if (existing) {
@@ -87,6 +90,20 @@ function scheduleRelease(sha256: string, blake3: string): void {
  * called from the sharing service's stream handler.
  */
 export async function serveBlobRequest(
+  stream: BiStreamLike,
+  sha256: string
+): Promise<void> {
+  activeServes++;
+  notifyTransferListeners();
+  try {
+    await _serveBlobRequest(stream, sha256);
+  } finally {
+    activeServes--;
+    notifyTransferListeners();
+  }
+}
+
+async function _serveBlobRequest(
   stream: BiStreamLike,
   sha256: string
 ): Promise<void> {
@@ -154,7 +171,7 @@ export function onTransferCountChange(cb: () => void): () => void {
 }
 
 export function getActiveTransferCount(): number {
-  return inflight.size;
+  return inflight.size + activeServes;
 }
 
 /** returns true if the blob with the given sha256 exists in the local blob store. */
@@ -323,9 +340,12 @@ let prefetchRun = 0;
 /**
  * prefetch audio blobs for upcoming songs in a playlist, starting after
  * the given song, until ~30 minutes of playback are locally available.
+ * currentSongRemaining: seconds left in the currently-playing song - this
+ * is included in the budget so the window is always relative to now, not
+ * the start of the next song.
  * fire-and-forget; a new call cancels the previous run.
  */
-export function prefetchUpcoming(playlist: Playlist, currentSongId: string): void {
+export function prefetchUpcoming(playlist: Playlist, currentSongId: string, currentSongRemaining = 0): void {
   const run = ++prefetchRun;
   void (async () => {
     const songs = await getSongsForPlaylist(playlist.id).catch(
@@ -334,7 +354,8 @@ export function prefetchUpcoming(playlist: Playlist, currentSongId: string): voi
     const startIdx = songs.findIndex((s) => s.id === currentSongId);
     if (startIdx === -1) return;
 
-    let budget = PREFETCH_WINDOW_SECONDS;
+    // subtract the time already covered by the currently-playing song
+    let budget = PREFETCH_WINDOW_SECONDS - currentSongRemaining;
     for (let i = startIdx + 1; i < songs.length && budget > 0; i++) {
       if (run !== prefetchRun) return; // superseded
       const song = songs[i]!;

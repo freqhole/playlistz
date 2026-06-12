@@ -1,5 +1,5 @@
 /* @jsxImportSource solid-js */
-import { Show, createEffect } from "solid-js";
+import { Show, createEffect, createSignal } from "solid-js";
 
 import {
   PlaylistzProvider,
@@ -10,7 +10,6 @@ import {
   usePlaylistzImageModal,
 } from "../context/PlaylistzContext.js";
 
-import { PlaylistSidebar } from "./PlaylistSidebar.js";
 import { PlaylistContainer } from "./playlist/index.js";
 function PlaylistzInner() {
   // context hooks
@@ -32,15 +31,9 @@ function PlaylistzInner() {
   const { showDeleteConfirm, setShowDeleteConfirm, handleDeletePlaylist } =
     playlistManager;
 
-  const { editingPlaylist, error: songError } = songState;
+  const { editingPlaylist: _editingPlaylist, error: songError } = songState;
 
-  const {
-    isMobile,
-    sidebarCollapsed,
-    setSidebarCollapsed,
-    sidebarPreferredCollapsed,
-    toggleSidebar,
-  } = uiState;
+  const { isMobile } = uiState;
 
   const {
     isDragOver,
@@ -66,20 +59,6 @@ function PlaylistzInner() {
 
   // 1 error 2 rule 'em all!
   const error = () => managerError() || songError() || dragError();
-
-  // show sidebar toggle only while editing the playlist (not a song),
-  // or when there are no playlists
-  const showSidebarToggle = () => editingPlaylist() || playlists().length === 0;
-
-  // the sidebar is only ever visible while an edit panel is open (or there are
-  // no playlists). when allowed, it opens according to the user's last toggle.
-  createEffect(() => {
-    if (showSidebarToggle()) {
-      setSidebarCollapsed(sidebarPreferredCollapsed());
-    } else {
-      setSidebarCollapsed(true);
-    }
-  });
 
   // derived bg filter string from selected playlist settings
   const bgFilter = () => {
@@ -192,62 +171,22 @@ function PlaylistzInner() {
           </div>
         }
       >
-        {/* main content wrapper with sidebar layout */}
+        {/* visually hidden landmark for e2e/accessibility - always present once app loads */}
+        <h1 class="sr-only">playlistz</h1>
+        {/* full-width playlist content */}
         <div class="relative flex h-full" style={{ "z-index": "2" }}>
-          {/* left side nav */}
-          <div
-            class={`transition-all duration-300 ease-out ${isMobile() ? "" : "overflow-hidden"} ${
-              sidebarCollapsed()
-                ? "w-0 opacity-0"
-                : isMobile()
-                  ? "w-full opacity-100"
-                  : "w-80 opacity-100"
-            }`}
-          >
-            <div
-              class={`${isMobile() ? "w-full" : "w-80"} h-full transform transition-transform duration-300 ease-out ${
-                sidebarCollapsed() ? "-translate-x-full" : "translate-x-0"
-              }`}
+          <div class="flex-1 flex flex-col min-h-0">
+            <Show
+              when={selectedPlaylist()}
+              fallback={
+                // no playlist selected (e.g. fresh install with no playlists yet).
+                // show a create button since the hamburger isn't available here.
+                <EmptyState />
+              }
             >
-              <PlaylistSidebar />
-            </div>
-          </div>
-
-          {/* main playlist content */}
-          <div
-            class={`${isMobile() && !sidebarCollapsed() ? "hidden" : "flex-1"} flex flex-col min-h-0`}
-          >
-            <Show when={selectedPlaylist()}>
               {(playlist) => <PlaylistContainer playlist={playlist} />}
             </Show>
           </div>
-        </div>
-      </Show>
-
-      {/* sidebar toggle button - only shown in edit mode or when there are no playlists */}
-      <Show when={showSidebarToggle()}>
-        <div
-          class={`fixed top-0 inset-0 bg-black bg-opacity-80 flex items-center justify-center z-10 transition-all duration-300 ease-in-out w-10 h-10 ${sidebarCollapsed() ? "left-0" : isMobile() ? "left-[calc(100vw-40px)]" : "left-80"}`}
-        >
-          <button
-            onClick={() => toggleSidebar()}
-            class="p-2 text-magenta-200 hover:text-magenta-500 hover:bg-gray-800 transition-colors bg-black bg-opacity-80"
-            title={`${sidebarCollapsed() ? "show" : "hide"} playlist sidebar`}
-          >
-            <svg
-              class={`w-8 h-8 transform transition-transform duration-600 ease-in-out ${sidebarCollapsed() ? "rotate-0" : "rotate-180"}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-          </button>
         </div>
       </Show>
 
@@ -399,6 +338,58 @@ function PlaylistzInner() {
           </Show>
         </div>
       </Show>
+    </div>
+  );
+}
+
+// shown when no playlist exists or none is selected
+function EmptyState() {
+  const { createNewPlaylist, selectPlaylist } = usePlaylistzManager();
+  const [creating, setCreating] = createSignal(false);
+
+  const handleCreate = async () => {
+    if (creating()) return;
+    setCreating(true);
+    try {
+      const p = await createNewPlaylist("new playlist");
+      if (p) selectPlaylist(p);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div class="flex items-center justify-center h-full text-gray-400 text-sm">
+      <div class="text-center">
+        <p class="mb-6 text-gray-500">no playlistz yet</p>
+        <button
+          onClick={handleCreate}
+          disabled={creating()}
+          class="flex items-center gap-2 px-4 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:opacity-60 text-white text-sm font-medium transition-colors mx-auto"
+        >
+          <Show
+            when={!creating()}
+            fallback={
+              <div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            }
+          >
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+          </Show>
+          <span>{creating() ? "creating..." : "new playlist"}</span>
+        </button>
+      </div>
     </div>
   );
 }

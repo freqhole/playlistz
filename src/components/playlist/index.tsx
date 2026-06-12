@@ -35,6 +35,8 @@ import { SongRow } from "../SongRow.js";
 import { PlaylistEditPanel } from "../PlaylistEditPanel.js";
 import { SongEditPanel } from "../SongEditPanel.js";
 import { PlaylistSharePanel } from "../PlaylistSharePanel.js";
+import { AllPlaylistsPanel } from "../AllPlaylistsPanel.js";
+import { PanelMiniHeader } from "./PanelMiniHeader.js";
 
 export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const playlistManager = usePlaylistzManager();
@@ -82,7 +84,14 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const [p2pHasMissing, setP2pHasMissing] = createSignal(false);
   createEffect(
     on(
-      () => [props.playlist().id, playlistSongs().length] as const,
+      // re-check whenever the song list changes OR after a save-offline run
+      // completes (p2pSaveProgress transitions back to null)
+      () =>
+        [
+          props.playlist().id,
+          playlistSongs().length,
+          p2pSaveProgress() === null,
+        ] as const,
       () => {
         void playlistHasMissingBlobs(props.playlist())
           .then(setP2pHasMissing)
@@ -111,14 +120,19 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   // share panel state - declared before isEditing so the memo can reference it
   const [showingShare, setShowingShare] = createSignal(false);
+  const [showAllPlaylists, setShowAllPlaylists] = createSignal(false);
 
   const closeShare = () => {
     setShowingShare(false);
   };
 
-  // true when any edit panel or the share panel is open.
+  // true when any edit panel, share panel, or all-playlists view is open.
   const isEditing = createMemo(
-    () => editingSong() !== null || editingPlaylist() || showingShare()
+    () =>
+      editingSong() !== null ||
+      editingPlaylist() ||
+      showingShare() ||
+      showAllPlaylists()
   );
 
   // index of the song being edited (for directional row animation)
@@ -145,7 +159,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 
   // which CSS keyframe to use for a row's exit
   const rowExitKeyframe = (rowIndex: number): string => {
-    if (editingPlaylist()) return "rowFlyDown";
+    if (editingPlaylist() || showAllPlaylists()) return "rowFlyDown";
     const editIdx = editingSongIndex();
     if (editIdx >= 0) {
       return rowIndex < editIdx ? "rowFlyUp" : "rowFlyDown";
@@ -201,6 +215,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   onMount(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (showAllPlaylists()) {
+          setShowAllPlaylists(false);
+          return;
+        }
         if (showingShare()) {
           closeShare();
           return;
@@ -257,12 +275,14 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     return {};
   };
 
-  // header collapses completely (out of layout) when editing a song or when
-  // the share panel is open (the share panel has its own header bar).
+  // header collapses completely (out of layout) when editing a song, when
+  // the share panel is open, or when the all-playlists panel is open.
   // stays visible in playlist edit mode (where the song panel is secondary).
   // overflow:hidden only applied while collapsing so it doesn't clip mobile content.
   const headerStyle = () =>
-    (editingSong() && !editingPlaylist()) || showingShare()
+    (editingSong() && !editingPlaylist()) ||
+    showingShare() ||
+    showAllPlaylists()
       ? {
           transition: "max-height 350ms ease, opacity 300ms ease",
           "max-height": "0px",
@@ -302,89 +322,28 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     <div
       class={`flex-1 flex flex-col min-h-0 [overflow-x:clip] ${isMobile() ? "p-2" : "p-6"}`}
     >
-      {/* share panel header bar - replaces the regular header when the share
-          panel is open. shows the playlist thumbnail, title, page nav, and close. */}
-      <Show when={showingShare()}>
-        <div
+      {/* all-playlists mini header */}
+      <Show when={showAllPlaylists()}>
+        <PanelMiniHeader
+          playlist={props.playlist()}
+          label="all playlistz"
+          isMobile={isMobile()}
           style={panelEntryStyle()}
-          class={`flex items-center gap-3 ${isMobile() ? "p-2" : "px-6 py-4"}`}
-        >
-          {/* playlist thumbnail */}
-          <div class="w-10 h-10 flex-shrink-0 overflow-hidden">
-            <Show
-              when={props.playlist().imageType}
-              fallback={
-                <div class="w-full h-full flex items-center justify-center">
-                  <svg width="32" height="32" viewBox="0 0 100 100" fill="none">
-                    <path
-                      d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
-                      fill="#FF00FF"
-                    />
-                  </svg>
-                </div>
-              }
-            >
-              {(() => {
-                const imageUrl = getImageUrlForContext(
-                  props.playlist(),
-                  "thumbnail"
-                );
-                return imageUrl ? (
-                  <img
-                    src={imageUrl}
-                    alt=""
-                    class="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div class="w-full h-full flex items-center justify-center">
-                    <svg
-                      width="32"
-                      height="32"
-                      viewBox="0 0 100 100"
-                      fill="none"
-                    >
-                      <path
-                        d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z"
-                        fill="#FF00FF"
-                      />
-                    </svg>
-                  </div>
-                );
-              })()}
-            </Show>
-          </div>
+          onClose={() => setShowAllPlaylists(false)}
+          closeTitle="close all playlists"
+        />
+      </Show>
 
-          {/* "sharez" label + playlist title */}
-          <div class="flex-1 min-w-0">
-            <div class="text-[10px] text-gray-500 uppercase tracking-widest">
-              sharez
-            </div>
-            <div class="text-sm font-bold text-white truncate">
-              {props.playlist().title}
-            </div>
-          </div>
-
-          {/* close button */}
-          <button
-            onClick={closeShare}
-            title="close share panel"
-            class="p-1 text-gray-400 hover:text-white transition-colors ml-1"
-          >
-            <svg
-              class="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
+      {/* share panel mini header */}
+      <Show when={showingShare()}>
+        <PanelMiniHeader
+          playlist={props.playlist()}
+          label="sharez"
+          isMobile={isMobile()}
+          style={panelEntryStyle()}
+          onClose={closeShare}
+          closeTitle="close share panel"
+        />
       </Show>
 
       {(() => {
@@ -395,7 +354,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
         const headerSection = () => (
           <div
             style={headerStyle()}
-            class={`flex items-center justify-between ${isMobile() ? "p-2 flex-col" : "p-6"}`}
+            class={`flex items-center justify-between ${isMobile() ? "flex-col" : "p-6"}`}
           >
             {/* playlist cover image for mobile - hidden in edit mode (edit panel has its own) */}
             <div class={`${isMobile() && !isEditing() ? "" : "hidden"}`}>
@@ -552,6 +511,37 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 class="flex items-center justify-end gap-2"
                 style={{ "grid-area": "buttons" }}
               >
+                {/* hamburger: open all-playlists overlay */}
+                <button
+                  onClick={() => {
+                    if (showingShare()) closeShare();
+                    if (editingPlaylist() || editingSong()) handleCloseEdit();
+                    setShowAllPlaylists((v) => !v);
+                  }}
+                  class={`p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black/90 border ${
+                    showAllPlaylists()
+                      ? "text-magenta-400 border-magenta-500"
+                      : "text-gray-400 border-transparent"
+                  }`}
+                  title={
+                    showAllPlaylists() ? "close all playlists" : "all playlistz"
+                  }
+                >
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
+                  </svg>
+                </button>
+
                 {/* edit playlist button - toggles edit panel */}
                 <button
                   onClick={() => {
@@ -925,6 +915,29 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     playlist={props.playlist}
                     playlists={playlists()}
                     onClose={closeShare}
+                  />
+                </div>
+              </Show>
+
+              {/* inline all-playlists panel - same row-exit animation as edit mode.
+            the selected playlist row is not shown (it's the header above).
+            edit/share on other rows selects that playlist first. */}
+              <Show when={showAllPlaylists() && rowsGone()}>
+                <div style={panelEntryStyle()}>
+                  <AllPlaylistsPanel
+                    onClose={() => setShowAllPlaylists(false)}
+                    onEdit={(p) => {
+                      playlistManager.selectPlaylist(p);
+                      setShowAllPlaylists(false);
+                      // small delay so the selection + panel close propagate
+                      // before handleEditPlaylist reads selectedPlaylist()
+                      setTimeout(() => handleEditPlaylist(), 0);
+                    }}
+                    onShare={(p) => {
+                      playlistManager.selectPlaylist(p);
+                      setShowAllPlaylists(false);
+                      setTimeout(() => setShowingShare(true), 0);
+                    }}
                   />
                 </div>
               </Show>

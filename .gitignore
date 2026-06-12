@@ -3,5 +3,6 @@ dist/
 coverage/
 .DS_Store
 /e2e/fixtures/user-provided/*
+!/e2e/fixtures/user-provided/README.md
 test-results/
 playwright-report/
