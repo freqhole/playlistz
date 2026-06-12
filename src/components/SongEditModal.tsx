@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { createSignal, Show, onMount, onCleanup, createEffect } from "solid-js";
 import { updateSong } from "../services/indexedDBService.js";
 import {

@@ -1,7 +1,7 @@
 // e2e: the share panel UI. covers opening the panel, settings
 // persistence, share-link paste validation, and a real two-browser
-// p2p transfer over the iroh relay (slow; skip with
-// PLAYLISTZ_E2E_SKIP_P2P=1 when offline or in a hurry).
+// p2p transfer over the iroh relay (slow; tagged @p2p so you can
+// skip it with: npm run test:e2e -- --grep-invert @p2p)
 
 import { test, expect } from "@playwright/test";
 import {
@@ -96,12 +96,8 @@ test("playlist header has a share button that opens the share panel", async ({
 
 // real two-peer sharing test over the iroh relay. slow (node boot takes
 // 1-2 min per peer) but it exercises the full share-link flow end to end.
-// set PLAYLISTZ_E2E_SKIP_P2P=1 to skip (e.g. offline or in a hurry).
-test("two browsers share a playlist over p2p", async ({ browser }) => {
-  test.skip(
-    !!process.env.PLAYLISTZ_E2E_SKIP_P2P,
-    "skipped via PLAYLISTZ_E2E_SKIP_P2P"
-  );
+// tagged @p2p - skip with: npm run test:e2e -- --grep-invert @p2p
+test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
   test.setTimeout(480_000);
 
   const ctxA = await browser.newContext();

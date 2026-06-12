@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 // p2p sharing panel: endpoint setup, node status, share link paste,
 // and the knock inbox. opened from the sidebar header.
 import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";

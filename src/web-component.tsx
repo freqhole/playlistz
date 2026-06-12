@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { render } from "solid-js/web";
 import { Playlistz } from "./components/index.js";
 import { FreqholePlaylistzSchema } from "./utils/standaloneTemplates.js";

@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { createSignal, Show, onMount, onCleanup } from "solid-js";
 import {
   processPlaylistCover,

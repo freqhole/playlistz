@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import {
   createSignal,
   createEffect,

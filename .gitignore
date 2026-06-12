@@ -6,3 +6,4 @@ coverage/
 !/e2e/fixtures/user-provided/README.md
 test-results/
 playwright-report/
+logz.txt

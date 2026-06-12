@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import type { Playlist } from "../types/playlist.js";
 import { log } from "../utils/log.js";

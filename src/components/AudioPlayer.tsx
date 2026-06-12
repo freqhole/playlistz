@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { Show } from "solid-js";
 import {
   audioState,

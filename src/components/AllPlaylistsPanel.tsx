@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 // inline all-playlists panel. replaces song rows when the hamburger is pressed.
 //
 // - the currently selected playlist is NOT shown (it's in the header above)

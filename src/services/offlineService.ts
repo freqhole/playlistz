@@ -202,7 +202,7 @@ async function registerServiceWorker(): Promise<boolean> {
       return false;
     }
 
-    const swPath = "./sw.js";
+    const swPath = "/sw.js";
     const registration = await navigator.serviceWorker.register(swPath);
     await navigator.serviceWorker.ready;
 

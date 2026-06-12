@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { createSignal, batch } from "solid-js";
 import type { Song, Playlist } from "../types/playlist.js";
 import { updateSongInDoc } from "../services/playlistDocService.js";

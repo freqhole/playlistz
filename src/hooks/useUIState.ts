@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { createSignal, onMount, onCleanup } from "solid-js";
 import { saveSetting, loadSetting } from "../services/indexedDBService.js";
 

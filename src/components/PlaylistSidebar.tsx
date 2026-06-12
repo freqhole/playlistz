@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { createSignal, onMount, For, Show } from "solid-js";
 
 import { createRelativeTimeSignal } from "../utils/timeUtils.js";

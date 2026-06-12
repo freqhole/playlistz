@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { createSignal, createEffect, onCleanup } from "solid-js";
 import type { Playlist, Song } from "../types/playlist.js";
 import { getImageUrlForContext } from "../services/imageService.js";

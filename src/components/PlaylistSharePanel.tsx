@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 // inline share panel: p2p status, share link for the current playlist,
 // receive a shared playlist, endpoint settings, and knock inbox.
 // rendered inside the playlist view (not as a floating modal).

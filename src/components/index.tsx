@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 import { Show, createEffect, createSignal } from "solid-js";
 
 import {

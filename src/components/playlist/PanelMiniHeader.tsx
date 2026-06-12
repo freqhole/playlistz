@@ -1,4 +1,4 @@
-/* @jsxImportSource solid-js */
+
 // shared mini header used by the all-playlists and share panels.
 // shows thumbnail, a small label ("all playlistz", "sharez", etc.),
 // the playlist title, and a close button.

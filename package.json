@@ -13,7 +13,6 @@
     "test:watch": "vitest --config config/vitest.config.ts",
     "test:coverage": "vitest --coverage --run --config config/vitest.config.ts",
     "test:e2e": "playwright test --config config/playwright.config.ts",
-    "test:e2e:headed": "playwright test --config config/playwright.config.ts --headed",
     "lint": "eslint",
     "lint:fix": "eslint 'src/**/*.{ts,tsx}' --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx}'",

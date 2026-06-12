@@ -12,10 +12,17 @@ export default defineConfig({
   // and each test resets storage in beforeEach
   workers: 1,
   reporter: [["list"]],
+  // default per-test timeout: 30s for normal tests.
+  // tests that need more (two-browser p2p, standalone build) use test.setTimeout()
+  timeout: 30_000,
   use: {
     baseURL: "http://localhost:5917",
     trace: "on-first-retry",
     viewport: { width: 1400, height: 900 },
+    // action timeout: how long to wait for a single locator action (click, fill, etc.)
+    actionTimeout: 10_000,
+    // navigation timeout: how long page.goto / page.waitForURL waits
+    navigationTimeout: 15_000,
   },
   projects: [
     {
