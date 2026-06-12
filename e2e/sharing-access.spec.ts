@@ -18,7 +18,7 @@ async function openSharePanel(page: import("@playwright/test").Page) {
   // open via the share icon button in the playlist header
   await page.getByTitle("share playlist").first().click();
   // wait for the panel to be visible
-  await page.getByTitle("close share panel").waitFor({ timeout: 5000 });
+  await page.getByTestId("btn-close-panel").waitFor({ timeout: 5000 });
 }
 
 // --- mode toggle ---
@@ -64,7 +64,7 @@ test("mode setting persists after closing and reopening the share panel", async 
   await page.waitForTimeout(500);
 
   // close panel
-  await page.getByTitle("close share panel").click();
+  await page.getByTestId("btn-close-panel").click();
   await page.waitForTimeout(300);
 
   // reopen
@@ -146,8 +146,8 @@ test("close share panel button closes the panel", async ({ page }) => {
   await createPlaylistViaUI(page);
   await openSharePanel(page);
 
-  await page.getByTitle("close share panel").click();
-  await expect(page.getByTitle("close share panel")).not.toBeVisible();
+  await page.getByTestId("btn-close-panel").click();
+  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible();
 });
 
 test("escape key closes the share panel", async ({ page }) => {
@@ -155,7 +155,7 @@ test("escape key closes the share panel", async ({ page }) => {
   await openSharePanel(page);
 
   await page.keyboard.press("Escape");
-  await expect(page.getByTitle("close share panel")).not.toBeVisible();
+  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible();
 });
 
 // --- browse a peer section ---

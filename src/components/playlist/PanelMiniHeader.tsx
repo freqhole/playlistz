@@ -59,6 +59,7 @@ export function PanelMiniHeader(props: Props) {
       <button
         onClick={props.onClose}
         title={props.closeTitle ?? "close"}
+        data-testid="btn-close-panel"
         class="p-1 text-gray-400 hover:text-white transition-colors ml-1"
       >
         <svg

@@ -35,7 +35,7 @@ test("share panel opens and closes from the playlist header", async ({
   await expect(page.getByText("enable p2p sharing")).toBeVisible();
   await expect(page.getByText("no pending knockz")).toBeVisible();
 
-  await page.getByTitle("close share panel").click();
+  await page.getByTestId("btn-close-panel").click();
   await expect(page.getByText("enable p2p sharing")).toHaveCount(0);
 });
 
@@ -51,7 +51,7 @@ test("share settings persist across panel reopen and reload", async ({
   await page.waitForTimeout(300);
 
   // reopen
-  await page.getByTitle("close share panel").click();
+  await page.getByTestId("btn-close-panel").click();
   await openSharePanel(page);
   await expect(page.locator("input[placeholder='anonymous']")).toHaveValue(
     "doomlord"
@@ -176,7 +176,7 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
 
     // the synced playlist auto-selects, which collapses the sidebar and can
     // unmount the share panel - only close it if it's still on screen
-    const closeBtn = pageB.getByTitle("close share panel");
+    const closeBtn = pageB.getByTestId("btn-close-panel");
     if (await closeBtn.isVisible().catch(() => false)) {
       await closeBtn.click({ timeout: 5_000 }).catch(() => {});
     }

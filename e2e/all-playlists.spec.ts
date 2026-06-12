@@ -34,16 +34,16 @@ test("hamburger opens the all-playlists panel", async ({ page }) => {
 test("escape closes the all-playlists panel", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTitle("all playlistz").click();
-  await expect(page.getByTitle("close all playlists").first()).toBeVisible();
+  await expect(page.getByTestId("btn-close-panel")).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByTitle("close all playlists")).not.toBeVisible();
+  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible();
 });
 
 test("close button closes the all-playlists panel", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTitle("all playlistz").click();
-  await page.getByTitle("close all playlists").first().click();
-  await expect(page.getByTitle("close all playlists")).not.toBeVisible();
+  await page.getByTestId("btn-close-panel").click();
+  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible();
 });
 
 // --- row contents ---
@@ -119,7 +119,7 @@ test("clicking a row selects the playlist and closes the panel", async ({ page }
   await page.getByText("first").first().click();
 
   // panel should close (no close button visible)
-  await expect(page.getByTitle("close all playlists")).not.toBeVisible({ timeout: 5000 });
+  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible({ timeout: 5000 });
   // "first" should now be the selected playlist shown in the mini header / title area
   await expect(page.locator("input[placeholder='playlist title']").or(page.getByText("first").first())).toBeVisible();
 });
@@ -148,7 +148,7 @@ test("edit button in row opens edit panel for that playlist", async ({ page }) =
   await panel.getByTitle("edit playlist").first().click();
 
   // panel closes, edit panel opens for "edit me"
-  await expect(page.getByTitle("close all playlists")).not.toBeVisible({ timeout: 5000 });
+  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible({ timeout: 5000 });
   // the edit input should show "edit me"
   await expect(page.locator("input[placeholder='playlist title']")).toHaveValue("edit me", { timeout: 5000 });
 });
@@ -174,7 +174,7 @@ test("share button in row opens share panel for that playlist", async ({ page })
   await panel.getByTitle("share playlist").first().click();
 
   // share panel should be open
-  await expect(page.getByTitle("close share panel")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByTestId("btn-close-panel")).toBeVisible({ timeout: 5000 });
 });
 
 // --- new playlist ---
@@ -186,7 +186,7 @@ test("new playlist row creates a playlist and closes the panel", async ({ page }
   await page.getByRole("button", { name: "new playlist" }).first().click();
 
   // panel should close and new playlist edit mode should be open
-  await expect(page.getByTitle("close all playlists")).not.toBeVisible({ timeout: 5000 });
+  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible({ timeout: 5000 });
   await expect(page.getByTitle("edit playlist").first()).toBeVisible({ timeout: 5000 });
   await expect(page.locator("input[placeholder='playlist title']")).toHaveValue("new playlist");
 });
