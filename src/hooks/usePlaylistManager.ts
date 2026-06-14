@@ -432,6 +432,10 @@ export function usePlaylistManager() {
     setSelectedPlaylistId(playlist?.id ?? null);
   };
 
+  const selectById = (id: string) => {
+    setSelectedPlaylistId(id);
+  };
+
   const handlePlaylistUpdate = async (updates: Partial<Playlist>) => {
     const playlist = selectedPlaylist();
     if (!playlist) return;
@@ -628,6 +632,7 @@ export function usePlaylistManager() {
     createNewPlaylist,
     handleFileDrop,
     selectPlaylist,
+    selectById,
     handlePlaylistUpdate,
     handleDeletePlaylist,
     handleDownloadPlaylist,

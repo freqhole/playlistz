@@ -910,6 +910,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     playlist={props.playlist}
                     playlists={playlists()}
                     onClose={closeShare}
+                    onPlaylistAdded={(docId) => {
+                      playlistManager.selectById(docId);
+                      closeShare();
+                    }}
                   />
                 </div>
               </Show>

@@ -106,6 +106,7 @@ test("selected playlist is restored after a page reload", async ({ page }) => {
   await page.getByTestId("btn-all-playlists").click();
   await page.getByTestId("btn-new-playlist").click();
   await page.getByTestId("btn-edit-playlist").waitFor({ timeout: 5000 });
+  await page.getByTestId("input-playlist-title").click({ clickCount: 3 });
   await page.getByTestId("input-playlist-title").fill("second");
   await page.getByTestId("input-playlist-title").blur();
 

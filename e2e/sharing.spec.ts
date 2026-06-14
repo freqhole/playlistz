@@ -126,11 +126,9 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
       await title.blur();
       await pageA.waitForTimeout(500);
 
-      // peer a: open the edit panel and enable p2p from the share column
-      // (the sidebar auto-collapses once a playlist is selected, so the
-      // sidebar share panel is off-screen here)
-      logTs("[e2e] peer a: enabling p2p from the edit panel...");
-      await pageA.getByTestId("btn-edit-playlist").click();
+      // peer a: open the share panel and enable p2p
+      logTs("[e2e] peer a: enabling p2p from the share panel...");
+      await pageA.getByTestId("btn-share-playlist").click();
       await pageA.getByTestId("btn-enable-sharing").click();
 
       // once the node is up the share column shows the link + copy button
@@ -163,28 +161,27 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
     expect(shareUrl).toContain("#share/");
     logTs(`[e2e] peer a: share url: ${shareUrl.slice(0, 60)}...`);
 
-    // peer b: paste the link into the share panel
+    // peer b: paste the link into the share panel and open it
     await pageB
       .getByTestId("input-paste-share-link")
       .fill(shareUrl);
-    await pageB.getByTestId("btn-browse-peer").click();
+    await pageB.getByTestId("btn-open-share-link").click();
     logTs("[e2e] peer b: opening share link...");
     await expect(pageB.getByTestId("share-success")).toBeVisible({
       timeout: 120_000,
     });
     logTs("[e2e] peer b: playlist added");
 
-    // the synced playlist auto-selects, which can unmount the share panel -
-    // only close it if it's still on screen
-    const sharePanel = pageB.getByTestId("share-panel");
-    if (await sharePanel.isVisible().catch(() => false)) {
-      await pageB.getByTestId("btn-share-playlist").click({ timeout: 5_000 }).catch(() => {});
-    }
-
-    // peer b: the shared playlist shows up in the sidebar
-    await expect(pageB.getByText("shared doom").first()).toBeVisible({
-      timeout: 30_000,
+    // opening a share link auto-selects the new playlist and closes the share
+    // panel. wait for the share panel to dismiss then verify the playlist title
+    await expect(pageB.getByTestId("share-panel")).not.toBeVisible({
+      timeout: 10_000,
     });
+
+    // peer b: the shared playlist is now selected and its title is visible
+    await expect(
+      pageB.getByTestId("input-playlist-title")
+    ).toHaveValue("shared doom", { timeout: 30_000 });
   } finally {
     await ctxA.close();
     await ctxB.close();
