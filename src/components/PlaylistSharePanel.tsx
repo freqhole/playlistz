@@ -13,15 +13,11 @@ import {
   getShareSettings,
   saveShareSettings,
   buildShareLink,
-  openShareLink,
   getInboundKnocks,
   acceptKnock,
   denyKnock,
   onKnocksChanged,
-  queryPeerPlaylists,
-  knockOnPeer,
   type ShareSettings,
-  type PeerPlaylistListing,
 } from "../services/sharingService.js";
 import {
   getIdentity,
@@ -52,7 +48,6 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
     name: "",
     mode: "knock",
   });
-  const [nodeId, setNodeId] = createSignal<string>("");
   const [leader, setLeader] = createSignal(false);
   // use sharingReady() from sharingState as the source of truth for whether
   // the p2p node is running, falling back to local state for the "starting" phase
@@ -65,22 +60,44 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
   });
   const [shareLink, setShareLink] = createSignal("");
   const [copied, setCopied] = createSignal(false);
-  const [pasteValue, setPasteValue] = createSignal("");
-  const [pasteStatus, setPasteStatus] = createSignal<string | null>(null);
   const [knocks, setKnocks] = createSignal<KnockRecord[]>([]);
   const [grantSelection, setGrantSelection] = createSignal<
     Record<string, Set<string>>
   >({});
   const [error, setError] = createSignal<string | null>(null);
-  const [browseNodeId, setBrowseNodeId] = createSignal("");
-  const [browseResult, setBrowseResult] =
-    createSignal<PeerPlaylistListing | null>(null);
-  const [browseStatus, setBrowseStatus] = createSignal<string | null>(null);
+  const [editingName, setEditingName] = createSignal(false);
+  let avatarFileInput!: HTMLInputElement;
 
   let unsubKnocks: (() => void) | null = null;
   let unsubLeader: (() => void) | null = null;
   let unsubIdentity: (() => void) | null = null;
   let connTimer: ReturnType<typeof setInterval> | null = null;
+
+  // avatar: hash name to a color for the fallback initial circle
+  const AVATAR_COLORS = [
+    "#e91e8c",
+    "#7c3aed",
+    "#0ea5e9",
+    "#10b981",
+    "#f59e0b",
+    "#ef4444",
+  ];
+  const avatarColor = (name: string) => {
+    const sum = name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    return AVATAR_COLORS[sum % AVATAR_COLORS.length] ?? AVATAR_COLORS[0];
+  };
+
+  const handleAvatarUpload = (e: Event) => {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        void handleSaveSettings({ avatarDataUrl: reader.result });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   async function refreshKnocks() {
     setKnocks(await getInboundKnocks());
@@ -113,7 +130,6 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       await refreshKnocks();
       const identity = getIdentity();
       if (identity?.node_id) {
-        setNodeId(identity.node_id);
         await rebuildShareLink();
       }
       setLeader(isLeader());
@@ -123,7 +139,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
     unsubKnocks = onKnocksChanged(() => void refreshKnocks());
     unsubLeader = onLeadershipChange((l) => setLeader(l));
     unsubIdentity = onIdentityChange((identity) => {
-      if (identity?.node_id) setNodeId(identity.node_id);
+      if (identity?.node_id) void rebuildShareLink();
     });
     connTimer = setInterval(refreshConnSummary, 3000);
 
@@ -150,8 +166,6 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
     try {
       // route through toggleEndpoint so endpointEnabled stays in sync
       await toggleEndpoint();
-      const identity = getIdentity();
-      if (identity?.node_id) setNodeId(identity.node_id);
       setLeader(isLeader());
       await rebuildShareLink();
     } catch (err) {
@@ -174,56 +188,6 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       setTimeout(() => setCopied(false), 1500);
     } catch {
       // clipboard unavailable in this context
-    }
-  };
-
-  const handleOpenLink = async () => {
-    const input = pasteValue().trim();
-    if (!input) return;
-    setPasteStatus("opening...");
-    setError(null);
-    try {
-      const docId = await openShareLink(input);
-      setPasteStatus("playlist added!");
-      setPasteValue("");
-      props.onPlaylistAdded?.(docId);
-      setTimeout(() => setPasteStatus(null), 2000);
-    } catch (err) {
-      setPasteStatus(null);
-      setError(
-        err instanceof Error ? err.message : "could not open share link"
-      );
-    }
-  };
-
-  const handleBrowsePeer = async () => {
-    const target = browseNodeId().trim();
-    if (!target) return;
-    setBrowseStatus("connecting...");
-    setBrowseResult(null);
-    setError(null);
-    try {
-      const listing = await queryPeerPlaylists(target);
-      setBrowseResult(listing);
-      setBrowseStatus(null);
-    } catch (err) {
-      setBrowseStatus(null);
-      setError(err instanceof Error ? err.message : "could not reach peer");
-    }
-  };
-
-  const handleKnock = async () => {
-    const target = browseNodeId().trim();
-    if (!target) return;
-    setBrowseStatus("sending knock...");
-    setError(null);
-    try {
-      await knockOnPeer(target);
-      setBrowseStatus("knock sent");
-      setTimeout(() => setBrowseStatus(null), 2000);
-    } catch (err) {
-      setBrowseStatus(null);
-      setError(err instanceof Error ? err.message : "could not knock");
     }
   };
 
@@ -256,6 +220,85 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       data-testid="share-panel"
       class="px-4 pb-6 pt-2 space-y-5 font-mono text-white overflow-x-hidden min-w-0"
     >
+      {/* display name pill + avatar - always shown at the top */}
+      <div class="flex items-center gap-2">
+        {/* avatar circle: image if set, colored initial fallback */}
+        <button
+          type="button"
+          class="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden border border-gray-700 hover:border-magenta-500 transition-colors focus:outline-none"
+          title="click to change avatar"
+          onClick={() => avatarFileInput.click()}
+        >
+          <Show
+            when={settings().avatarDataUrl}
+            fallback={
+              <div
+                class="w-full h-full flex items-center justify-center text-white text-sm font-bold"
+                style={{
+                  "background-color": avatarColor(settings().name || "?"),
+                }}
+              >
+                {(settings().name?.[0] ?? "?").toUpperCase()}
+              </div>
+            }
+          >
+            <img
+              src={settings().avatarDataUrl}
+              alt="avatar"
+              class="w-full h-full object-cover"
+            />
+          </Show>
+        </button>
+        <input
+          ref={avatarFileInput}
+          type="file"
+          accept="image/*"
+          class="hidden"
+          onChange={handleAvatarUpload}
+        />
+
+        {/* name pill / inline edit */}
+        <Show
+          when={editingName()}
+          fallback={
+            <button
+              type="button"
+              class="px-2 py-0.5 text-sm bg-black border border-gray-700 hover:border-magenta-500 text-white truncate max-w-[180px] transition-colors"
+              onClick={() => setEditingName(true)}
+              title="click to edit display name"
+            >
+              {settings().name || <span class="text-gray-500">anonymous</span>}
+            </button>
+          }
+        >
+          <div class="flex items-center gap-1 flex-1 min-w-0">
+            <input
+              data-testid="input-node-name"
+              type="text"
+              value={settings().name}
+              placeholder="anonymous"
+              autofocus
+              onInput={(e) =>
+                void handleSaveSettings({ name: e.currentTarget.value })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === "Escape")
+                  setEditingName(false);
+              }}
+              class="flex-1 min-w-0 bg-black text-white px-2 py-0.5 text-sm border border-magenta-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              class="flex-shrink-0 text-gray-400 hover:text-white px-1"
+              onClick={() => setEditingName(false)}
+              aria-label="close name editor"
+            >
+              &#x2715;
+            </button>
+          </div>
+        </Show>
+      </div>
+
       <Show when={error()}>
         <div
           data-testid="share-link-error"
@@ -264,8 +307,6 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
           <span class="bg-black/80 px-1">{error()}</span>
         </div>
       </Show>
-
-      {/* p2p node status */}
       <div>
         <Show when={!hasP2pIdentity()}>
           <button
@@ -358,58 +399,10 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
         </div>
       </Show>
 
-      {/* receive a shared playlist */}
-      <div>
-        <label class="block text-xs mb-1">
-          <span class="bg-black px-1 text-gray-400">open a share link</span>
-        </label>
-        <div class="flex flex-col gap-2">
-          <input
-            data-testid="input-paste-share-link"
-            type="text"
-            value={pasteValue()}
-            placeholder="paste share link or token..."
-            onInput={(e) => setPasteValue(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void handleOpenLink();
-            }}
-            class="w-full bg-black text-white px-3 py-2 text-sm border border-magenta-200 focus:border-magenta-500 focus:outline-none"
-          />
-          <button
-            data-testid="btn-open-share-link"
-            onClick={() => void handleOpenLink()}
-            class="w-full px-4 py-2 bg-magenta-500 hover:bg-magenta-600 text-white text-sm"
-          >
-            open
-          </button>
-        </div>
-        <Show when={pasteStatus()}>
-          <div
-            data-testid="share-success"
-            class="mt-1 text-xs text-magenta-400"
-          >
-            <span class="bg-black/80 px-1">{pasteStatus()}</span>
-          </div>
-        </Show>
-      </div>
+      {/* receive a shared playlist - moved to all-playlists search bar */}
 
-      {/* endpoint settings */}
+      {/* endpoint settings: mode and visibility */}
       <div class="space-y-3">
-        <div>
-          <label class="block text-xs mb-1">
-            <span class="bg-black px-1 text-gray-400">display name</span>
-          </label>
-          <input
-            data-testid="input-node-name"
-            type="text"
-            value={settings().name}
-            placeholder="anonymous"
-            onChange={(e) =>
-              void handleSaveSettings({ name: e.currentTarget.value })
-            }
-            class="w-full bg-black text-white px-3 py-2 text-sm border border-magenta-200 focus:border-magenta-500 focus:outline-none"
-          />
-        </div>
         <div>
           <label class="block text-xs mb-1">
             <span class="bg-black px-1 text-gray-400">
@@ -435,137 +428,19 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
             </button>
           </div>
         </div>
-        <Show when={nodeId()}>
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-gray-500 flex-shrink-0">node id:</span>
-            <code class="text-xs text-magenta-400 truncate">{nodeId()}</code>
-          </div>
-        </Show>
       </div>
 
-      {/* browse a peer */}
-      <div>
-        <label class="block text-xs mb-1">
-          <span class="bg-black px-1 text-gray-400">
-            browse a peer's playlistz
-          </span>
-        </label>
-        <div class="flex flex-col gap-2">
-          <input
-            data-testid="input-peer-node-id"
-            type="text"
-            value={browseNodeId()}
-            placeholder="peer node id..."
-            onInput={(e) => setBrowseNodeId(e.currentTarget.value)}
-            class="w-full bg-black text-white px-3 py-2 text-sm border border-magenta-200 focus:border-magenta-500 focus:outline-none"
-          />
-          <div class="flex gap-2">
-            <button
-              data-testid="btn-browse-peer"
-              onClick={() => void handleBrowsePeer()}
-              class="flex-1 px-3 py-2 border border-magenta-500 text-magenta-400 hover:bg-magenta-500/20 text-sm"
-            >
-              browse
-            </button>
-            <button
-              data-testid="btn-knock-peer"
-              onClick={() => void handleKnock()}
-              class="flex-1 px-3 py-2 border border-gray-600 text-gray-300 hover:bg-gray-800 text-sm"
-              title="ask this peer for access"
-            >
-              knock
-            </button>
-          </div>
-        </div>
-        <Show when={browseStatus()}>
-          <div class="mt-1 text-xs text-magenta-400">
-            <span class="bg-black/80 px-1">{browseStatus()}</span>
-          </div>
-        </Show>
-        <Show when={browseResult()}>
-          {(listing) => (
-            <div class="mt-2 text-sm">
-              <Show
-                when={listing().items.length > 0}
-                fallback={
-                  <div class="text-gray-500 text-xs">
-                    <span class="bg-black/80 px-1">
-                      {listing().knockRequired
-                        ? "this peer requires a knock"
-                        : "no playlistz shared"}
-                    </span>
-                  </div>
-                }
-              >
-                <For each={listing().items}>
-                  {(item) => (
-                    <div class="flex items-center justify-between py-1 border-b border-gray-800">
-                      <span>
-                        <span class="bg-black/80 px-1">{item.title}</span>{" "}
-                        <span class="text-gray-500 text-xs bg-black/80 px-1">
-                          ({item.songCount} songz)
-                        </span>
-                      </span>
-                      <button
-                        onClick={() =>
-                          void (async () => {
-                            try {
-                              const docId = await openShareLink(
-                                `#share/${btoa(
-                                  JSON.stringify({
-                                    v: 1,
-                                    n: listing().nodeId,
-                                    d: item.docId,
-                                    t: item.title,
-                                  })
-                                )
-                                  .replace(/\+/g, "-")
-                                  .replace(/\//g, "_")
-                                  .replace(/=/g, "")}`
-                              );
-                              props.onPlaylistAdded?.(docId);
-                            } catch (err) {
-                              setError(
-                                err instanceof Error
-                                  ? err.message
-                                  : "failed to add playlist"
-                              );
-                            }
-                          })()
-                        }
-                        class="text-xs text-magenta-400 hover:text-magenta-300 border border-magenta-500 px-2 py-1"
-                      >
-                        add
-                      </button>
-                    </div>
-                  )}
-                </For>
-              </Show>
-            </div>
-          )}
-        </Show>
-      </div>
-
-      {/* knock inbox */}
-      <div>
-        <label data-testid="knock-inbox" class="block text-xs mb-1">
-          <span class="bg-black px-1 text-gray-400">
-            knock inbox
-            <Show when={pendingKnocks().length > 0}>
+      {/* knock inbox - only shown when there are pending knocks */}
+      <Show when={pendingKnocks().length > 0}>
+        <div>
+          <label data-testid="knock-inbox" class="block text-xs mb-1">
+            <span class="bg-black px-1 text-gray-400">
+              knock inbox
               <span class="ml-2 text-magenta-400">
                 ({pendingKnocks().length} pending)
               </span>
-            </Show>
-          </span>
-        </label>
-        <Show
-          when={pendingKnocks().length > 0}
-          fallback={
-            <div data-testid="empty-knock-inbox" class="text-gray-600 text-xs">
-              <span class="bg-black/80 px-1">no pending knockz</span>
-            </div>
-          }
-        >
+            </span>
+          </label>
           <For each={pendingKnocks()}>
             {(knock) => (
               <div class="border border-gray-700 p-3 mb-2 text-sm">
@@ -626,8 +501,8 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
               </div>
             )}
           </For>
-        </Show>
-      </div>
+        </div>
+      </Show>
     </div>
   );
 }

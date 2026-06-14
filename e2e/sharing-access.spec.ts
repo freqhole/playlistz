@@ -118,19 +118,7 @@ test("switching back to knock first from public persists", async ({ page }) => {
 
 // --- knock inbox ---
 
-test("knock inbox section is visible in share panel", async ({ page }) => {
-  await createPlaylistViaUI(page);
-  await openSharePanel(page);
-
-  await expect(page.getByTestId("knock-inbox")).toBeVisible();
-});
-
-test("knock inbox shows no pending knockz when empty", async ({ page }) => {
-  await createPlaylistViaUI(page);
-  await openSharePanel(page);
-
-  await expect(page.getByTestId("empty-knock-inbox")).toBeVisible();
-});
+// knock inbox only shown when there are pending knocks - no empty state test needed
 
 // --- endpoint toggle ---
 
@@ -161,11 +149,4 @@ test("escape key closes the share panel", async ({ page }) => {
   await expect(page.getByTestId("share-panel")).not.toBeVisible();
 });
 
-// --- browse a peer section ---
-
-test("browse a peer section is visible when share panel is open", async ({ page }) => {
-  await createPlaylistViaUI(page);
-  await openSharePanel(page);
-
-  await expect(page.getByText("browse a peer's playlistz")).toBeVisible();
-});
+// browse a peer section was moved to the all-playlists search bar

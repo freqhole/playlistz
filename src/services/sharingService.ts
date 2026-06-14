@@ -51,7 +51,7 @@ import { log } from "../utils/log.js";
 export interface ShareSettings {
   name: string;
   mode: "public" | "knock";
-  avatarSha?: string;
+  avatarDataUrl?: string;
 }
 
 const SETTINGS_KEY = "p2p:endpoint";

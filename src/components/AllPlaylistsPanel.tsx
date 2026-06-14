@@ -19,6 +19,13 @@ import type { Playlist, Song } from "../types/playlist.js";
 import { usePlaylistzManager } from "../context/PlaylistzContext.js";
 import { MarqueeText } from "./MarqueeText.js";
 import { getSongsForPlaylist } from "../services/playlistDocService.js";
+import {
+  openShareLink,
+  queryPeerPlaylists,
+  ensureSharingReady,
+  type PeerPlaylistListing,
+} from "../services/sharingService.js";
+import { decodeShareToken } from "freqhole-api-client/playlistz";
 
 interface Props {
   onClose: () => void;
@@ -26,19 +33,84 @@ interface Props {
   onEdit: (p: Playlist) => void;
   // select a different playlist + open share panel
   onShare: (p: Playlist) => void;
+  // called when a share link is successfully opened from the search bar
+  onPlaylistAdded?: (docId: string) => void;
 }
 
 export function AllPlaylistsPanel(props: Props) {
-  const { playlists, selectedPlaylist, selectPlaylist, createNewPlaylist } =
-    usePlaylistzManager();
+  const {
+    playlists,
+    selectedPlaylist,
+    selectPlaylist,
+    selectById,
+    createNewPlaylist,
+  } = usePlaylistzManager();
 
   const [isCreating, setIsCreating] = createSignal(false);
   const [allSongs, setAllSongs] = createSignal<Record<string, Song[]>>({});
+  const [query, setQuery] = createSignal("");
+  const [searchStatus, setSearchStatus] = createSignal<string | null>(null);
+  const [peerListing, setPeerListing] =
+    createSignal<PeerPlaylistListing | null>(null);
+
+  // detect if a string is a hex iroh node id (64 lowercase hex chars)
+  const isNodeId = (s: string) => /^[0-9a-f]{64}$/i.test(s.trim());
+
+  // detect share links via decodeShareToken
+  const isShareLink = (s: string) => decodeShareToken(s.trim()) !== null;
 
   // exclude the currently selected playlist - it stays in the header above
   const otherPlaylists = () => {
     const sel = selectedPlaylist();
-    return sel ? playlists().filter((p) => p.id !== sel.id) : playlists();
+    const all = sel ? playlists().filter((p) => p.id !== sel.id) : playlists();
+    const q = query().trim().toLowerCase();
+    // when in peer browse mode or empty query, show all; otherwise filter
+    if (!q || peerListing()) return all;
+    return all.filter(
+      (p) =>
+        p.title.toLowerCase().includes(q) ||
+        (p.description ?? "").toLowerCase().includes(q)
+    );
+  };
+
+  const handleSearchInput = async (value: string) => {
+    setQuery(value);
+    setSearchStatus(null);
+    setPeerListing(null);
+
+    const trimmed = value.trim();
+    if (!trimmed) return;
+
+    if (isShareLink(trimmed)) {
+      setSearchStatus("opening...");
+      try {
+        const docId = await openShareLink(trimmed);
+        setQuery("");
+        setSearchStatus(null);
+        selectById(docId);
+        props.onPlaylistAdded?.(docId);
+        props.onClose();
+      } catch (err) {
+        setSearchStatus(
+          err instanceof Error ? err.message : "could not open share link"
+        );
+      }
+      return;
+    }
+
+    if (isNodeId(trimmed)) {
+      setSearchStatus("connecting to peer...");
+      try {
+        await ensureSharingReady();
+        const listing = await queryPeerPlaylists(trimmed);
+        setPeerListing(listing);
+        setSearchStatus(null);
+      } catch (err) {
+        setSearchStatus(
+          err instanceof Error ? err.message : "could not reach peer"
+        );
+      }
+    }
   };
 
   onMount(() => {
@@ -78,20 +150,94 @@ export function AllPlaylistsPanel(props: Props) {
 
   return (
     <div class="flex flex-col h-full" data-testid="all-playlists-panel">
+      {/* always-visible search input */}
+      <div class="px-3 pt-2 pb-1 flex-shrink-0">
+        <input
+          data-testid="input-search-playlists"
+          type="text"
+          value={query()}
+          placeholder="search, paste share link, or node id..."
+          onInput={(e) => void handleSearchInput(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setQuery("");
+              setPeerListing(null);
+              setSearchStatus(null);
+            }
+          }}
+          class="w-full bg-black/60 text-white px-3 py-2 text-xs border border-white/10 focus:border-magenta-500 focus:outline-none placeholder-gray-600"
+        />
+        <Show when={searchStatus()}>
+          <div class="mt-1 text-xs text-magenta-400 px-1">
+            <span class="bg-black/80 px-1">{searchStatus()}</span>
+          </div>
+        </Show>
+        <Show when={peerListing()?.knockRequired}>
+          <div class="mt-1 text-xs text-yellow-500 px-1">
+            <span class="bg-black/80 px-1">
+              this peer requires a knock to view their playlistz
+            </span>
+          </div>
+        </Show>
+      </div>
+
       <div class="flex-1 overflow-y-auto">
-        <Show when={otherPlaylists().length > 0}>
-          <For each={otherPlaylists()}>
-            {(p) => (
-              <PlaylistRow
-                playlist={p}
-                songs={allSongs()[p.id]}
-                onSelect={handleSelect}
-                onPlay={handlePlay}
-                onEdit={props.onEdit}
-                onShare={props.onShare}
-              />
-            )}
-          </For>
+        {/* peer browse mode: show remote playlists */}
+        <Show
+          when={peerListing()}
+          fallback={
+            <>
+              <Show when={otherPlaylists().length > 0}>
+                <For each={otherPlaylists()}>
+                  {(p) => (
+                    <PlaylistRow
+                      playlist={p}
+                      songs={allSongs()[p.id]}
+                      onSelect={handleSelect}
+                      onPlay={handlePlay}
+                      onEdit={props.onEdit}
+                      onShare={props.onShare}
+                    />
+                  )}
+                </For>
+              </Show>
+            </>
+          }
+        >
+          {(listing) => (
+            <Show
+              when={listing().items.length > 0}
+              fallback={
+                <div class="px-4 py-3 text-xs text-gray-500">
+                  <span class="bg-black/80 px-1">
+                    no playlistz shared by this peer
+                  </span>
+                </div>
+              }
+            >
+              <div class="px-3 pt-1 pb-0.5 text-xs text-gray-500">
+                <span class="bg-black/80 px-1">
+                  {listing().name
+                    ? `${listing().name}'s playlistz`
+                    : "peer's playlistz"}
+                </span>
+              </div>
+              <For each={listing().items}>
+                {(item) => (
+                  <PeerPlaylistRow
+                    item={item}
+                    nodeId={listing().nodeId}
+                    onAdd={async (docId) => {
+                      selectById(docId);
+                      props.onPlaylistAdded?.(docId);
+                      props.onClose();
+                    }}
+                    onError={(msg) => setSearchStatus(msg)}
+                  />
+                )}
+              </For>
+            </Show>
+          )}
         </Show>
 
         {/* sticky new-playlist row */}
@@ -130,6 +276,71 @@ export function AllPlaylistsPanel(props: Props) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PeerPlaylistRow(props: {
+  item: PeerPlaylistListing["items"][number];
+  nodeId: string;
+  onAdd: (docId: string) => Promise<void>;
+  onError: (msg: string) => void;
+}) {
+  const [adding, setAdding] = createSignal(false);
+
+  const handleAdd = async () => {
+    if (adding()) return;
+    setAdding(true);
+    try {
+      const token = btoa(
+        JSON.stringify({
+          v: 1,
+          n: props.nodeId,
+          d: props.item.docId,
+          t: props.item.title,
+        })
+      )
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=/g, "");
+      const docId = await openShareLink(`#share/${token}`);
+      await props.onAdd(docId);
+    } catch (err) {
+      props.onError(
+        err instanceof Error ? err.message : "failed to add playlist"
+      );
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <div class="group flex items-center gap-3 px-4 py-3 hover:bg-magenta-500/75 transition-colors">
+      {/* placeholder thumbnail */}
+      <div class="flex-shrink-0 w-10 h-10 bg-black/40 flex items-center justify-center">
+        <svg width="20" height="20" viewBox="0 0 100 100" fill="none">
+          <path d="M50 81L25 31L75 31L60.7222 68.1429L50 81Z" fill="#FF00FF" />
+        </svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-medium text-white truncate">
+          <span class="bg-black px-1">{props.item.title}</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          <span class="bg-black px-1">
+            {props.item.songCount === 1
+              ? "1 song"
+              : `${props.item.songCount} songz`}
+          </span>
+        </div>
+      </div>
+      <button
+        class="flex-shrink-0 px-3 py-1 text-xs border border-magenta-500 text-magenta-400 hover:bg-magenta-500/20 disabled:opacity-50 transition-colors"
+        onClick={() => void handleAdd()}
+        disabled={adding()}
+      >
+        {adding() ? "adding..." : "add"}
+      </button>
     </div>
   );
 }

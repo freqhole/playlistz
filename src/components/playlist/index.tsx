@@ -928,14 +928,16 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     onEdit={(p) => {
                       playlistManager.selectPlaylist(p);
                       setShowAllPlaylists(false);
-                      // small delay so the selection + panel close propagate
-                      // before handleEditPlaylist reads selectedPlaylist()
                       setTimeout(() => handleEditPlaylist(), 0);
                     }}
                     onShare={(p) => {
                       playlistManager.selectPlaylist(p);
                       setShowAllPlaylists(false);
                       setTimeout(() => setShowingShare(true), 0);
+                    }}
+                    onPlaylistAdded={(docId) => {
+                      playlistManager.selectById(docId);
+                      setShowAllPlaylists(false);
                     }}
                   />
                 </div>
