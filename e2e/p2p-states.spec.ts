@@ -21,6 +21,7 @@ import {
   evictBlob,
   setBlobFetchTimeout,
   fetchBlobBySha,
+  currentSong,
 } from "./helpers.js";
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -84,9 +85,9 @@ test("prefetch marks songs pending before fetch starts @mock", async ({ page }) 
 
   // start playback on song-00 - this triggers prefetchUpcoming for songs 1+2
   await page.getByText("song-00").dblclick();
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-00", {
-    timeout: 10000,
-  });
+  await expect
+    .poll(() => currentSong(page), { timeout: 10000 })
+    .toBe("song-00");
 
   // at least one upcoming song should show pending or downloading state while fetches are stalled
   await expect(
@@ -194,9 +195,9 @@ test("prefetch activates for upcoming songs when playback starts @mock", async (
   await mockBlobFetch(page, { type: "instant" });
 
   await page.getByText("song-00").dblclick();
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-00", {
-    timeout: 10000,
-  });
+  await expect
+    .poll(() => currentSong(page), { timeout: 10000 })
+    .toBe("song-00");
 
   // after a short wait, the upcoming songs' download states should clear
   // (instant mock means they resolve immediately - no "downloading" lingers)
@@ -236,9 +237,9 @@ test("prefetch for old playlist cancels when switching to new playlist @mock", a
 
   // start playback on playlist A song-00 (triggers prefetch for song-01, song-02)
   await page.getByText("song-00").dblclick();
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-00", {
-    timeout: 10000,
-  });
+  await expect
+    .poll(() => currentSong(page), { timeout: 10000 })
+    .toBe("song-00");
 
   // create playlist B and switch to it - this should cancel playlist A's prefetch
   await createPlaylistViaUI(page);
@@ -283,9 +284,9 @@ test("seeking forward recalculates the prefetch window @mock", async ({ page }) 
   await mockBlobFetch(page, { type: "instant" });
 
   await page.getByText("song-00").dblclick();
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-00", {
-    timeout: 10000,
-  });
+  await expect
+    .poll(() => currentSong(page), { timeout: 10000 })
+    .toBe("song-00");
 
   // seek near the end of song-00 - should re-trigger prefetchUpcoming
   await seekTo(page, 1.8);

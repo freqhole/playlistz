@@ -23,6 +23,7 @@ import {
   mockBlobFetch,
   clearMockBlobFetch,
   evictBlob,
+  currentSong,
 } from "./helpers.js";
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -45,13 +46,15 @@ test("autoplay next: seekTo near end advances to next song", async ({
     "true",
     { timeout: 10000 }
   );
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-00");
+  await expect
+    .poll(() => currentSong(page), { timeout: 8000 })
+    .toBe("song-00");
 
   await seekTo(page, 1.9); // 2s song, seek to 0.1s before end
 
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-01", {
-    timeout: 8000,
-  });
+  await expect
+    .poll(() => currentSong(page), { timeout: 8000 })
+    .toBe("song-01");
 });
 
 test("autoplay next: triggerTrackEnd advances queue", async ({ page }) => {
@@ -59,15 +62,15 @@ test("autoplay next: triggerTrackEnd advances queue", async ({ page }) => {
   await addSongs(page, 3, 2);
 
   await page.getByText("song-00").dblclick();
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-00", {
-    timeout: 10000,
-  });
+  await expect
+    .poll(() => currentSong(page), { timeout: 10000 })
+    .toBe("song-00");
 
   await triggerTrackEnd(page);
 
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-01", {
-    timeout: 8000,
-  });
+  await expect
+    .poll(() => currentSong(page), { timeout: 8000 })
+    .toBe("song-01");
 });
 
 test("end of playlist: last song ends, player stops", async ({ page }) => {
@@ -91,6 +94,8 @@ test("end of playlist: last song ends, player stops", async ({ page }) => {
   );
 });
 
+// --- audio player error states ---
+
 test("real playthrough: 2s fixture autoadvances without hooks", async ({
   page,
 }) => {
@@ -99,14 +104,14 @@ test("real playthrough: 2s fixture autoadvances without hooks", async ({
   await addSongs(page, 2, 2);
 
   await page.getByText("song-00").dblclick();
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-00", {
-    timeout: 10000,
-  });
+  await expect
+    .poll(() => currentSong(page), { timeout: 10000 })
+    .toBe("song-00");
 
   // let it play through naturally
-  await expect(page.getByTestId("now-playing-title")).toHaveText("song-01", {
-    timeout: 12000,
-  });
+  await expect
+    .poll(() => currentSong(page), { timeout: 12000 })
+    .toBe("song-01");
 });
 
 // --- audio player error states ---

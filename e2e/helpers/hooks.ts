@@ -32,6 +32,12 @@ export type MockBlobBehaviour = NonNullable<Window["__mockBlobFetch"]> extends (
 // --- time-acceleration hooks ---
 // these drive the real audio element without substituting any service boundary.
 
+// returns the title of the currently playing song, or null if nothing is playing.
+// use this instead of looking for a DOM element to assert playback state.
+export async function currentSong(page: Page): Promise<string | null> {
+  return page.evaluate(() => window.__currentSong?.() ?? null);
+}
+
 // seek the audio element to a specific time (seconds)
 export async function seekTo(page: Page, seconds: number): Promise<void> {
   await page.evaluate((t) => window.__seekTo?.(t), seconds);

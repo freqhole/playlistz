@@ -25,6 +25,7 @@ declare global {
     __seekTo?: (seconds: number) => void;
     __triggerTrackEnd?: () => void;
     __triggerAudioError?: (code?: number) => void;
+    __currentSong?: () => string | null;
 
     // blob store control
     __evictBlob?: (sha256: string) => Promise<void>;

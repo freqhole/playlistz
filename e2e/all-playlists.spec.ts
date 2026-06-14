@@ -27,9 +27,9 @@ test("hamburger opens the all-playlists panel", async ({ page }) => {
   await page.getByTestId("input-playlist-title").fill("beta");
   await page.getByTestId("input-playlist-title").blur();
 
-  // open panel again - should see the mini-header label
+  // open panel again - should see the panel
   await page.getByTestId("btn-all-playlists").click();
-  await expect(page.getByText("all playlistz").first()).toBeVisible();
+  await expect(page.getByTestId("all-playlists-panel")).toBeVisible();
 });
 
 test("escape closes the all-playlists panel", async ({ page }) => {
