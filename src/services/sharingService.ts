@@ -266,6 +266,7 @@ export async function openShareLink(input: string): Promise<string> {
       title: doc?.title || payload.t || "shared playlist",
       addedAt: Date.now(),
       source: "shared",
+      remoteNodeId: payload.n,
     });
   }
 
@@ -422,6 +423,7 @@ export async function knockOnPeer(
             title: doc?.title || "shared playlist",
             addedAt: Date.now(),
             source: "shared",
+            remoteNodeId: nodeId,
           });
         }
       } catch (err) {

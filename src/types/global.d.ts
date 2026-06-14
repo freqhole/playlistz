@@ -33,6 +33,10 @@ declare global {
     __clearMockBlobFetch?: () => void;
     __setBlobFetchTimeout?: (ms: number) => void;
     __fetchBlobBySha?: (sha256: string) => Promise<string | null>;
+
+    // docIndex test hooks (registered in src/dev-hooks.ts)
+    __getDocIndexEntries?: () => Promise<unknown[]>;
+    __patchDocIndexEntry?: (docId: string, patch: unknown) => Promise<void>;
   }
 }
 

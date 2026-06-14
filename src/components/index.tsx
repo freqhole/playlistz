@@ -72,6 +72,10 @@ function PlaylistzInner() {
     return `blur(${blur}px) contrast(${contrast}) brightness(${brightness})`;
   };
 
+  const bgSize = () => selectedPlaylist()?.bgSize ?? "cover";
+  const bgPosition = () => selectedPlaylist()?.bgPosition ?? "top";
+  const bgRepeat = () => selectedPlaylist()?.bgRepeat ?? "no-repeat";
+
   // create a wrapper that provides the necessary options to handleFileDrop
   const handleFileDropWrapper = async (e: DragEvent) => {
     await handleFileDrop(e, {
@@ -189,9 +193,12 @@ function PlaylistzInner() {
       {/* background image cover */}
       <Show when={backgroundImageUrl()}>
         <div
-          class="absolute inset-0 bg-cover bg-top bg-no-repeat transition-opacity duration-1000 ease-out"
+          class="absolute inset-0 bg-no-repeat transition-opacity duration-1000 ease-out"
           style={{
             "background-image": `url(${backgroundImageUrl()})`,
+            "background-size": bgSize(),
+            "background-position": bgPosition(),
+            "background-repeat": bgRepeat(),
             filter: bgFilter(),
             "z-index": "0",
           }}

@@ -4,21 +4,15 @@ import {
   deletePlaylist,
   setPlaylistCoverImage,
   clearPlaylistCoverImage,
+  forkPlaylist,
 } from "../services/playlistDocService.js";
 import {
   processPlaylistCover,
   validateImageFile,
   createImageUrlFromData,
 } from "../services/imageService.js";
-import {
-  buildShareLink,
-  ensureSharingReady,
-} from "../services/sharingService.js";
-import {
-  initSharingState,
-  sharingReady,
-  pendingKnockCount,
-} from "../services/sharingState.js";
+import { ensureSharingReady, knockOnPeer } from "../services/sharingService.js";
+import { initSharingState } from "../services/sharingState.js";
 import { downloadPlaylistAsZip } from "../services/playlistDownloadService.js";
 import { usePlaylistzManager } from "../context/PlaylistzContext.js";
 import type { Playlist, Song } from "../types/playlist.js";
@@ -29,6 +23,7 @@ interface PlaylistEditPanelProps {
   onClose: () => void;
   onSave: (updatedPlaylist: Playlist) => void;
   onDelete?: () => void;
+  onFork?: (newDocId: string) => void;
 }
 
 export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
@@ -41,44 +36,6 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
   const [error, setError] = createSignal<string | null>(null);
   const [isDownloading, setIsDownloading] = createSignal(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = createSignal(false);
-
-  // p2p share column state
-  const [enablingP2p, setEnablingP2p] = createSignal(false);
-  const [shareUrl, setShareUrl] = createSignal<string | null>(null);
-  const [shareCopied, setShareCopied] = createSignal(false);
-
-  // build the share link once the endpoint is ready
-  createEffect(() => {
-    if (!sharingReady() || shareUrl()) return;
-    void buildShareLink(props.playlist.id, props.playlist.title)
-      .then(({ url }) => setShareUrl(url))
-      .catch((err) => console.warn("share link failed:", err));
-  });
-
-  const handleEnableSharing = async () => {
-    if (enablingP2p()) return;
-    setEnablingP2p(true);
-    try {
-      await ensureSharingReady();
-    } catch (err) {
-      setError("could not start p2p sharing");
-      console.warn("enable sharing failed:", err);
-    } finally {
-      setEnablingP2p(false);
-    }
-  };
-
-  const handleCopyShareUrl = async () => {
-    const url = shareUrl();
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2000);
-    } catch (err) {
-      console.warn("clipboard write failed:", err);
-    }
-  };
 
   onMount(() => {
     initSharingState();
@@ -210,6 +167,51 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
     }
   };
 
+  // fork/collaborate state (only relevant for subscribed remote playlists)
+  const [isForkingOrCollab, setIsForkingOrCollab] = createSignal(false);
+  const [forkCollabStatus, setForkCollabStatus] = createSignal<string | null>(
+    null
+  );
+
+  const isSubscribed = () =>
+    !!props.playlist.remoteNodeId && !props.playlist.isForked;
+
+  const handleFork = async () => {
+    try {
+      setIsForkingOrCollab(true);
+      setForkCollabStatus(null);
+      const forked = await forkPlaylist(props.playlist.id);
+      props.onFork?.(forked.id);
+      props.onClose();
+    } catch (err) {
+      setForkCollabStatus("fork failed");
+      console.error("fork error:", err);
+    } finally {
+      setIsForkingOrCollab(false);
+    }
+  };
+
+  const handleRequestCollaboration = async () => {
+    const nodeId = props.playlist.remoteNodeId;
+    if (!nodeId) return;
+    try {
+      setIsForkingOrCollab(true);
+      setForkCollabStatus(null);
+      await ensureSharingReady();
+      await knockOnPeer(
+        nodeId,
+        "requesting collaboration access to: " +
+          (props.playlist.title || "playlist")
+      );
+      setForkCollabStatus("knock sent - waiting for owner to accept");
+    } catch (err) {
+      setForkCollabStatus("knock failed");
+      console.error("collab knock error:", err);
+    } finally {
+      setIsForkingOrCollab(false);
+    }
+  };
+
   const songsWithArt = () =>
     props.playlistSongs.filter((s) => s.imageType || s.imageFilePath);
 
@@ -231,6 +233,38 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
     props.playlist.coverFilterBlur ?? 3
   );
 
+  // background image layout settings
+  const [bgSize, setBgSize] = createSignal(props.playlist.bgSize ?? "cover");
+  const [bgPosition, setBgPosition] = createSignal(
+    props.playlist.bgPosition ?? "top"
+  );
+  const [bgRepeat, setBgRepeat] = createSignal(
+    props.playlist.bgRepeat ?? "no-repeat"
+  );
+
+  const BG_SIZE_OPTIONS = [
+    "cover",
+    "contain",
+    "auto",
+    "100% 100%",
+    "50%",
+  ] as const;
+  const BG_POSITION_OPTIONS = [
+    "top",
+    "center",
+    "bottom",
+    "left",
+    "right",
+    "left top",
+    "right top",
+  ] as const;
+  const BG_REPEAT_OPTIONS = [
+    "no-repeat",
+    "repeat",
+    "repeat-x",
+    "repeat-y",
+  ] as const;
+
   const saveFilterUpdates = async (updates: Partial<typeof props.playlist>) => {
     try {
       await updatePlaylist(props.playlist.id, {
@@ -240,6 +274,9 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         bgFilterBrightness: updates.bgFilterBrightness,
         coverFilterEnabled: updates.coverFilterEnabled,
         coverFilterBlur: updates.coverFilterBlur,
+        bgSize: updates.bgSize,
+        bgPosition: updates.bgPosition,
+        bgRepeat: updates.bgRepeat,
       });
     } catch (err) {
       setError("failed to save filter settings");
@@ -284,7 +321,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           middle. order utilities keep the image on top for the mobile column.
           on lg+ a third share column appears on the right; below lg the share
           section spans the full width under the other two columns */}
-      <div class="p-4 border-none grid grid-cols-1 min-w-0 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] lg:grid-cols-[minmax(0,440px)_min(30%,22rem)_minmax(0,1fr)] sm:justify-between gap-6">
+      <div class="p-4 border-none grid grid-cols-1 min-w-0 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] sm:justify-between gap-6">
         {/* image + upload buttons */}
         <div class="flex flex-col gap-3 min-w-0 sm:order-2">
           {/* image sizes naturally at its own aspect ratio (no gray bars);
@@ -372,6 +409,42 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
 
         {/* filter controls + playlist info */}
         <div class="flex flex-col gap-5 min-w-0 sm:order-1">
+          {/* subscribed playlist: fork or request collaboration */}
+          <Show when={isSubscribed()}>
+            <div class="space-y-2 border border-gray-700 p-3">
+              <p class="text-xs text-gray-400">
+                this is a subscribed playlist from{" "}
+                <span class="text-gray-200">
+                  {props.playlist.remoteName ||
+                    props.playlist.remoteNodeId?.slice(0, 8) + "..."}
+                </span>
+                . you can make your own editable copy or request edit access
+                from the owner.
+              </p>
+              <div class="flex gap-2">
+                <button
+                  data-testid="btn-fork-playlist"
+                  onClick={() => void handleFork()}
+                  disabled={isForkingOrCollab()}
+                  class="flex-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm transition-colors"
+                >
+                  make my own copy
+                </button>
+                <button
+                  data-testid="btn-request-collaboration"
+                  onClick={() => void handleRequestCollaboration()}
+                  disabled={isForkingOrCollab()}
+                  class="flex-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm transition-colors"
+                >
+                  request collaboration
+                </button>
+              </div>
+              <Show when={forkCollabStatus()}>
+                <p class="text-xs text-gray-400">{forkCollabStatus()}</p>
+              </Show>
+            </div>
+          </Show>
+
           {/* background image filter */}
           <div class="space-y-3">
             <div class="flex items-center gap-2">
@@ -544,8 +617,82 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
             </div>
           </div>
 
-          {/* playlist info - mt-auto pushes this (and everything after) to the
-              bottom so the column stretches to match the image column height */}
+          {/* background image layout */}
+          <div class="space-y-3">
+            <div class="flex items-center gap-2">
+              <label class="text-sm font-medium text-gray-300">
+                background image
+              </label>
+              <button
+                onClick={() => {
+                  setBgSize("cover");
+                  setBgPosition("top");
+                  setBgRepeat("no-repeat");
+                  const defaults = {
+                    bgSize: "cover",
+                    bgPosition: "top",
+                    bgRepeat: "no-repeat",
+                  };
+                  previewFilter(defaults);
+                  void saveFilterUpdates(defaults);
+                }}
+                class="ml-auto px-2 py-0.5 text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 transition-colors"
+              >
+                reset
+              </button>
+            </div>
+            <div class="grid grid-cols-[5rem_1fr] items-center gap-2">
+              <label class="text-xs text-gray-400">size</label>
+              <select
+                value={bgSize()}
+                onChange={(e) => {
+                  const v = e.currentTarget.value;
+                  setBgSize(v);
+                  previewFilter({ bgSize: v });
+                  void saveFilterUpdates({ bgSize: v });
+                }}
+                class="bg-black text-white text-xs border border-gray-700 px-2 py-1 focus:outline-none focus:border-magenta-500"
+              >
+                {BG_SIZE_OPTIONS.map((o) => (
+                  <option value={o}>{o}</option>
+                ))}
+              </select>
+            </div>
+            <div class="grid grid-cols-[5rem_1fr] items-center gap-2">
+              <label class="text-xs text-gray-400">position</label>
+              <select
+                value={bgPosition()}
+                onChange={(e) => {
+                  const v = e.currentTarget.value;
+                  setBgPosition(v);
+                  previewFilter({ bgPosition: v });
+                  void saveFilterUpdates({ bgPosition: v });
+                }}
+                class="bg-black text-white text-xs border border-gray-700 px-2 py-1 focus:outline-none focus:border-magenta-500"
+              >
+                {BG_POSITION_OPTIONS.map((o) => (
+                  <option value={o}>{o}</option>
+                ))}
+              </select>
+            </div>
+            <div class="grid grid-cols-[5rem_1fr] items-center gap-2">
+              <label class="text-xs text-gray-400">repeat</label>
+              <select
+                value={bgRepeat()}
+                onChange={(e) => {
+                  const v = e.currentTarget.value;
+                  setBgRepeat(v);
+                  previewFilter({ bgRepeat: v });
+                  void saveFilterUpdates({ bgRepeat: v });
+                }}
+                class="bg-black text-white text-xs border border-gray-700 px-2 py-1 focus:outline-none focus:border-magenta-500"
+              >
+                {BG_REPEAT_OPTIONS.map((o) => (
+                  <option value={o}>{o}</option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           {/* playlist info - mt-auto pushes this (and everything after) to the
               bottom so the column stretches to match the image column height */}
@@ -643,59 +790,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           </Show>
         </div>
 
-        {/* p2p share column */}
-        <div class="flex flex-col gap-3 min-w-0 sm:order-3 sm:col-span-2 lg:col-span-1">
-          <label class="text-sm font-medium text-gray-300">
-            share<span class="text-magenta-500">z</span>
-          </label>
-          <Show
-            when={sharingReady()}
-            fallback={
-              <div class="space-y-2">
-                <p class="text-xs text-gray-500">
-                  share this playlist directly with other people over p2p. no
-                  server involved - your browser syncs with theirs.
-                </p>
-                <button
-                  onClick={() => void handleEnableSharing()}
-                  disabled={enablingP2p()}
-                  class="w-full px-3 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white text-sm font-medium transition-colors"
-                >
-                  {enablingP2p()
-                    ? "starting p2p node..."
-                    : "enable p2p sharing"}
-                </button>
-              </div>
-            }
-          >
-            <div class="space-y-2">
-              <p class="text-xs text-gray-500">
-                anyone with this link can open and sync this playlist:
-              </p>
-              <input
-                type="text"
-                readonly
-                value={shareUrl() ?? "building share link..."}
-                onClick={(e) => e.currentTarget.select()}
-                class="w-full bg-black text-magenta-400 px-3 py-2 text-xs border border-magenta-200 focus:border-magenta-500 focus:outline-none truncate"
-              />
-              <button
-                onClick={() => void handleCopyShareUrl()}
-                disabled={!shareUrl()}
-                class="w-full px-3 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:bg-gray-700 text-white text-sm font-medium transition-colors"
-              >
-                {shareCopied() ? "copied!" : "copy share link"}
-              </button>
-              <Show when={pendingKnockCount() > 0}>
-                <p class="text-xs text-magenta-400">
-                  {pendingKnockCount()} pending knock request
-                  {pendingKnockCount() === 1 ? "" : "z"} - open the share panel
-                  in the sidebar to respond
-                </p>
-              </Show>
-            </div>
-          </Show>
-        </div>
+        {/* p2p share column removed - use the share panel (sidebar) instead */}
       </div>
     </div>
   );

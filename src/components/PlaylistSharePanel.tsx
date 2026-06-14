@@ -19,6 +19,8 @@ import {
   onKnocksChanged,
   type ShareSettings,
 } from "../services/sharingService.js";
+import { findPlaylistDoc, flushDoc } from "../services/automergeRepo.js";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import {
   getIdentity,
   isLeader,
@@ -28,7 +30,6 @@ import {
 import { getIrohAdapter } from "../services/automergeRepo.js";
 import {
   sharingReady,
-  endpointEnabled,
   toggleEndpoint,
   hasP2pIdentity,
 } from "../services/sharingState.js";
@@ -126,7 +127,21 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
   // initialise on mount: load settings, check if p2p already enabled
   createEffect(() => {
     void (async () => {
-      setSettings(await getShareSettings());
+      const globalSettings = await getShareSettings();
+      // override mode from the playlist's own doc if it has one
+      try {
+        const handle = await findPlaylistDoc(
+          props.playlist().id as AutomergeUrl
+        );
+        const raw = handle.doc() as Record<string, unknown> | undefined;
+        const docMode = raw?.sharingMode as string | undefined;
+        if (docMode === "public" || docMode === "knock") {
+          globalSettings.mode = docMode;
+        }
+      } catch {
+        /* doc not yet loaded - use global default */
+      }
+      setSettings(globalSettings);
       await refreshKnocks();
       const identity = getIdentity();
       if (identity?.node_id) {
@@ -164,7 +179,6 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
     setStarting(true);
     setError(null);
     try {
-      // route through toggleEndpoint so endpointEnabled stays in sync
       await toggleEndpoint();
       setLeader(isLeader());
       await rebuildShareLink();
@@ -179,6 +193,20 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
     const next = { ...settings(), ...update };
     setSettings(next);
     await saveShareSettings(next);
+    // also write sharingMode to the playlist's automerge doc when it changes
+    if (update.mode !== undefined) {
+      try {
+        const handle = await findPlaylistDoc(
+          props.playlist().id as AutomergeUrl
+        );
+        handle.change((d: Record<string, unknown>) => {
+          d.sharingMode = update.mode;
+        });
+        await flushDoc(props.playlist().id as AutomergeUrl);
+      } catch (err) {
+        log.warn("share.panel", "failed to write sharingMode to doc:", err);
+      }
+    }
   };
 
   const handleCopyLink = async () => {
@@ -220,85 +248,6 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       data-testid="share-panel"
       class="px-4 pb-6 pt-2 space-y-5 font-mono text-white overflow-x-hidden min-w-0"
     >
-      {/* display name pill + avatar - always shown at the top */}
-      <div class="flex items-center gap-2">
-        {/* avatar circle: image if set, colored initial fallback */}
-        <button
-          type="button"
-          class="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden border border-gray-700 hover:border-magenta-500 transition-colors focus:outline-none"
-          title="click to change avatar"
-          onClick={() => avatarFileInput.click()}
-        >
-          <Show
-            when={settings().avatarDataUrl}
-            fallback={
-              <div
-                class="w-full h-full flex items-center justify-center text-white text-sm font-bold"
-                style={{
-                  "background-color": avatarColor(settings().name || "?"),
-                }}
-              >
-                {(settings().name?.[0] ?? "?").toUpperCase()}
-              </div>
-            }
-          >
-            <img
-              src={settings().avatarDataUrl}
-              alt="avatar"
-              class="w-full h-full object-cover"
-            />
-          </Show>
-        </button>
-        <input
-          ref={avatarFileInput}
-          type="file"
-          accept="image/*"
-          class="hidden"
-          onChange={handleAvatarUpload}
-        />
-
-        {/* name pill / inline edit */}
-        <Show
-          when={editingName()}
-          fallback={
-            <button
-              type="button"
-              class="px-2 py-0.5 text-sm bg-black border border-gray-700 hover:border-magenta-500 text-white truncate max-w-[180px] transition-colors"
-              onClick={() => setEditingName(true)}
-              title="click to edit display name"
-            >
-              {settings().name || <span class="text-gray-500">anonymous</span>}
-            </button>
-          }
-        >
-          <div class="flex items-center gap-1 flex-1 min-w-0">
-            <input
-              data-testid="input-node-name"
-              type="text"
-              value={settings().name}
-              placeholder="anonymous"
-              autofocus
-              onInput={(e) =>
-                void handleSaveSettings({ name: e.currentTarget.value })
-              }
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === "Escape")
-                  setEditingName(false);
-              }}
-              class="flex-1 min-w-0 bg-black text-white px-2 py-0.5 text-sm border border-magenta-500 focus:outline-none"
-            />
-            <button
-              type="button"
-              class="flex-shrink-0 text-gray-400 hover:text-white px-1"
-              onClick={() => setEditingName(false)}
-              aria-label="close name editor"
-            >
-              &#x2715;
-            </button>
-          </div>
-        </Show>
-      </div>
-
       <Show when={error()}>
         <div
           data-testid="share-link-error"
@@ -343,22 +292,85 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
             </span>
           </div>
         </Show>
-        {/* endpoint on/off toggle - persists across page loads */}
-        <div class="flex items-center justify-between mt-2">
-          <span class="bg-black px-1 text-xs text-gray-500">endpoint</span>
+        {/* display name + avatar */}
+        <div class="flex items-center gap-2 mt-2">
+          {/* avatar circle: image if set, colored initial fallback */}
           <button
-            data-testid="btn-toggle-endpoint"
-            onClick={() => hasP2pIdentity() && void toggleEndpoint()}
-            disabled={!hasP2pIdentity()}
-            class={`px-3 py-1 text-xs border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-              endpointEnabled()
-                ? "border-magenta-500 text-magenta-400 hover:bg-magenta-500/20"
-                : "border-gray-600 text-gray-500 hover:bg-gray-800"
-            }`}
-            title={endpointEnabled() ? "disable endpoint" : "enable endpoint"}
+            type="button"
+            class="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden border border-gray-700 hover:border-magenta-500 transition-colors focus:outline-none"
+            title="click to change avatar"
+            onClick={() => avatarFileInput.click()}
           >
-            {endpointEnabled() ? "on" : "off"}
+            <Show
+              when={settings().avatarDataUrl}
+              fallback={
+                <div
+                  class="w-full h-full flex items-center justify-center text-white text-sm font-bold"
+                  style={{
+                    "background-color": avatarColor(settings().name || "?"),
+                  }}
+                >
+                  {(settings().name?.[0] ?? "?").toUpperCase()}
+                </div>
+              }
+            >
+              <img
+                src={settings().avatarDataUrl}
+                alt="avatar"
+                class="w-full h-full object-cover"
+              />
+            </Show>
           </button>
+          <input
+            ref={avatarFileInput}
+            type="file"
+            accept="image/*"
+            class="hidden"
+            onChange={handleAvatarUpload}
+          />
+
+          {/* name pill / inline edit */}
+          <Show
+            when={editingName()}
+            fallback={
+              <button
+                type="button"
+                class="px-2 py-0.5 text-sm bg-black border border-gray-700 hover:border-magenta-500 text-white truncate max-w-[180px] transition-colors"
+                onClick={() => setEditingName(true)}
+                title="click to edit display name"
+              >
+                {settings().name || (
+                  <span class="text-gray-500">anonymous</span>
+                )}
+              </button>
+            }
+          >
+            <div class="flex items-center gap-1 flex-1 min-w-0">
+              <input
+                data-testid="input-node-name"
+                type="text"
+                value={settings().name}
+                placeholder="anonymous"
+                autofocus
+                onInput={(e) =>
+                  void handleSaveSettings({ name: e.currentTarget.value })
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "Escape")
+                    setEditingName(false);
+                }}
+                class="flex-1 min-w-0 bg-black text-white px-2 py-0.5 text-sm border border-magenta-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                class="flex-shrink-0 text-gray-400 hover:text-white px-1"
+                onClick={() => setEditingName(false)}
+                aria-label="close name editor"
+              >
+                &#x2715;
+              </button>
+            </div>
+          </Show>
         </div>
       </div>
 

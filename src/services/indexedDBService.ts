@@ -76,6 +76,12 @@ export interface DocIndexEntry {
   title: string;
   addedAt: number; // unix ms timestamp
   source: "local" | "shared" | "freqhole";
+  // set when this playlist was received from a remote peer.
+  // absent for locally-created playlists.
+  remoteNodeId?: string;
+  remoteName?: string;
+  // true once the user has forked to a local editable copy
+  isForked?: boolean;
 }
 
 // inbound or outbound knock request record for the knock inbox/outbox ui.

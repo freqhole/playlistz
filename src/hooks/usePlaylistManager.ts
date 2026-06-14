@@ -120,7 +120,12 @@ export function usePlaylistManager() {
             );
             const raw = handle.doc();
             const doc = parsePlaylistDoc(raw ?? {});
-            return await docToPlaylistAsync(entry.docId, doc);
+            const playlist = await docToPlaylistAsync(entry.docId, doc);
+            // overlay docIndex remote-source metadata
+            playlist.remoteNodeId = entry.remoteNodeId;
+            playlist.remoteName = entry.remoteName;
+            playlist.isForked = entry.isForked;
+            return playlist;
           } catch {
             // doc not yet available - use entry metadata as placeholder
             return {
@@ -130,6 +135,9 @@ export function usePlaylistManager() {
               createdAt: entry.addedAt,
               updatedAt: entry.addedAt,
               songIds: [],
+              remoteNodeId: entry.remoteNodeId,
+              remoteName: entry.remoteName,
+              isForked: entry.isForked,
             } as Playlist;
           }
         })

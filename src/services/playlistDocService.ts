@@ -31,6 +31,7 @@ import {
   addDocIndexEntry,
   removeDocIndexEntry,
   getAllDocIndexEntries,
+  getDocIndexEntry,
 } from "./docIndexService.js";
 import { calculateSHA256 } from "../utils/hashUtils.js";
 import { triggerSpecificSongUpdate } from "./songReactivity.js";
@@ -121,6 +122,9 @@ export function docToPlaylist(docId: string, doc: PlaylistDoc): Playlist {
     bgFilterBrightness: doc.bgFilterBrightness,
     coverFilterEnabled: doc.coverFilterEnabled,
     coverFilterBlur: doc.coverFilterBlur,
+    bgSize: doc.bgSize,
+    bgPosition: doc.bgPosition,
+    bgRepeat: doc.bgRepeat,
   } as Playlist;
 }
 
@@ -357,6 +361,9 @@ export async function updatePlaylist(
     bgFilterBrightness?: number;
     coverFilterEnabled?: boolean;
     coverFilterBlur?: number;
+    bgSize?: string;
+    bgPosition?: string;
+    bgRepeat?: string;
   }
 ): Promise<void> {
   log.trace("playlist.doc", "updatePlaylist", docId);
@@ -367,9 +374,7 @@ export async function updatePlaylist(
   // update docIndex title if title changed
   if (fields.title !== undefined) {
     log.trace("playlist.doc", "updatePlaylist: title changed, updating docIndex");
-    const existing = await import("./docIndexService.js").then((m) =>
-      m.getDocIndexEntry(docId)
-    );
+    const existing = await getDocIndexEntry(docId);
     if (existing) {
       await addDocIndexEntry({ ...existing, title: fields.title });
     }
@@ -440,6 +445,56 @@ export async function deletePlaylist(docId: string): Promise<void> {
 
 // add a song to a playlist doc.
 // audio bytes are stored in the blob store; the doc carries only metadata + sha256.
+export async function forkPlaylist(docId: string): Promise<Playlist> {
+  const sourceHandle = await findPlaylistDoc(docId as AutomergeUrl);
+  const raw = sourceHandle.doc();
+  const sourceDoc = parsePlaylistDoc(raw ?? {});
+
+  // build a fresh doc from the snapshot - strip peer/acl maps so it's fully local.
+  // filter out undefined fields so automerge doesn't reject them (it does not
+  // allow undefined values; emptyPlaylistDoc's defaults fill any gaps).
+  const overrides = Object.fromEntries(
+    Object.entries({
+      title: sourceDoc.title,
+      description: sourceDoc.description,
+      images: sourceDoc.images,
+      urls: sourceDoc.urls,
+      songs: sourceDoc.songs,
+      order: sourceDoc.order,
+      bgFilterEnabled: sourceDoc.bgFilterEnabled,
+      bgFilterBlur: sourceDoc.bgFilterBlur,
+      bgFilterContrast: sourceDoc.bgFilterContrast,
+      bgFilterBrightness: sourceDoc.bgFilterBrightness,
+      coverFilterEnabled: sourceDoc.coverFilterEnabled,
+      coverFilterBlur: sourceDoc.coverFilterBlur,
+      bgSize: sourceDoc.bgSize,
+      bgPosition: sourceDoc.bgPosition,
+      bgRepeat: sourceDoc.bgRepeat,
+      // do not copy peers/acl/sharingMode - this is a local fork
+    }).filter(([, v]) => v !== undefined)
+  );
+  const seed = emptyPlaylistDoc(overrides);
+  const { docId: newDocId, handle } = createPlaylistDoc(seed);
+
+  await addDocIndexEntry({
+    docId: newDocId,
+    title: sourceDoc.title || "forked playlist",
+    addedAt: Date.now(),
+    source: "local",
+  });
+
+  // mark the original docIndex entry as forked so the UI knows
+  const existing = await getDocIndexEntry(docId);
+  if (existing) {
+    await addDocIndexEntry({ ...existing, isForked: true });
+  }
+
+  const newDoc = parsePlaylistDoc(handle.doc() ?? {});
+  await flushDoc(newDocId as AutomergeUrl);
+  registerDocSongs(newDocId, newDoc);
+  return docToPlaylist(newDocId, newDoc);
+}
+
 export async function addSongToPlaylist(
   docId: string,
   file: File,

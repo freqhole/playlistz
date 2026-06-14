@@ -23,6 +23,7 @@ import {
   openShareLink,
   queryPeerPlaylists,
   ensureSharingReady,
+  knockOnPeer,
   type PeerPlaylistListing,
 } from "../services/sharingService.js";
 import { decodeShareToken } from "freqhole-api-client/playlistz";
@@ -52,6 +53,11 @@ export function AllPlaylistsPanel(props: Props) {
   const [searchStatus, setSearchStatus] = createSignal<string | null>(null);
   const [peerListing, setPeerListing] =
     createSignal<PeerPlaylistListing | null>(null);
+
+  // knock-with-message state (shown when knockRequired)
+  const [knockMessage, setKnockMessage] = createSignal("");
+  const [isKnocking, setIsKnocking] = createSignal(false);
+  const [knockStatus, setKnockStatus] = createSignal<string | null>(null);
 
   // detect if a string is a hex iroh node id (64 lowercase hex chars)
   const isNodeId = (s: string) => /^[0-9a-f]{64}$/i.test(s.trim());
@@ -173,10 +179,47 @@ export function AllPlaylistsPanel(props: Props) {
           </div>
         </Show>
         <Show when={peerListing()?.knockRequired}>
-          <div class="mt-1 text-xs text-yellow-500 px-1">
-            <span class="bg-black/80 px-1">
+          <div class="mt-2 px-3 space-y-1.5">
+            <p class="text-xs text-yellow-500 bg-black/80 px-1">
               this peer requires a knock to view their playlistz
-            </span>
+            </p>
+            <textarea
+              data-testid="input-knock-message"
+              value={knockMessage()}
+              onInput={(e) => setKnockMessage(e.currentTarget.value)}
+              placeholder="say who you are and why you're knocking..."
+              rows={2}
+              class="w-full bg-black/60 text-white px-2 py-1.5 text-xs border border-white/10 focus:border-magenta-500 focus:outline-none placeholder-gray-600 resize-none"
+            />
+            <button
+              data-testid="btn-send-knock"
+              onClick={async () => {
+                const nodeId = query().trim();
+                if (!nodeId || isKnocking()) return;
+                setIsKnocking(true);
+                setKnockStatus(null);
+                try {
+                  await ensureSharingReady();
+                  await knockOnPeer(nodeId, knockMessage() || undefined);
+                  setKnockStatus("knock sent - waiting for owner to accept");
+                } catch (err) {
+                  setKnockStatus(
+                    err instanceof Error ? err.message : "knock failed"
+                  );
+                } finally {
+                  setIsKnocking(false);
+                }
+              }}
+              disabled={isKnocking()}
+              class="w-full px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white text-xs transition-colors border border-white/10"
+            >
+              {isKnocking() ? "knocking..." : "send knock"}
+            </button>
+            <Show when={knockStatus()}>
+              <p class="text-xs text-magenta-400 bg-black/80 px-1">
+                {knockStatus()}
+              </p>
+            </Show>
           </div>
         </Show>
       </div>
@@ -473,6 +516,12 @@ function PlaylistRow(props: {
           <span class="text-xs text-gray-500 px-1 bg-black">
             {relativeTime.signal()}
           </span>
+          <Show when={props.playlist.remoteName}>
+            <span class="text-xs text-gray-700 bg-black px-0.5">·</span>
+            <span class="text-xs text-gray-500 px-1 bg-black">
+              {props.playlist.remoteName}
+            </span>
+          </Show>
         </div>
       </div>
 

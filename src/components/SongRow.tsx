@@ -279,6 +279,7 @@ export function SongRow(props: SongRowProps) {
 
           return (
             <div
+              data-testid="song-row"
               class={`group relative flex items-center p-3 group-hover:bg-opacity-70 hover:bg-magenta-500 transition-all duration-200 overflow-hidden ${
                 isCurrentlyPlaying() || isCurrentlySelected()
                   ? "bg-black"

@@ -61,6 +61,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     setBackgroundOverride,
   } = playlistManager;
 
+  // read-only mode: playlist is subscribed from a remote peer and not yet forked
+  const isSubscribed = () =>
+    !!props.playlist().remoteNodeId && !props.playlist().isForked;
+
   const {
     handleEditSong,
     handleEditPlaylist,
@@ -412,7 +416,8 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                         title: e.currentTarget.value,
                       });
                     }}
-                    class="text-3xl font-bold text-white bg-transparent border-none outline-none focus:bg-gray-800 px-2 py-1 rounded w-full"
+                    disabled={isSubscribed()}
+                    class="text-3xl font-bold text-white bg-transparent border-none outline-none focus:bg-gray-800 px-2 py-1 rounded w-full disabled:opacity-60 disabled:cursor-not-allowed"
                     placeholder="playlist title"
                   />
                 </div>
@@ -427,7 +432,8 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                         description: e.currentTarget.value,
                       });
                     }}
-                    class="text-white bg-transparent border-none focus:bg-gray-800 px-2 py-1 rounded w-full"
+                    disabled={isSubscribed()}
+                    class="text-white bg-transparent border-none focus:bg-gray-800 px-2 py-1 rounded w-full disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -535,6 +541,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   data-testid="btn-edit-playlist"
                   aria-expanded={editingPlaylist()}
                   onClick={() => {
+                    if (showAllPlaylists()) setShowAllPlaylists(false);
                     if (showingShare()) closeShare();
                     editingPlaylist()
                       ? handleCloseEdit()
@@ -569,6 +576,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     if (showingShare()) {
                       closeShare();
                     } else {
+                      if (showAllPlaylists()) setShowAllPlaylists(false);
                       if (editingPlaylist()) handleCloseEdit();
                       setShowingShare(true);
                     }
@@ -963,6 +971,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     onSave={(updated) =>
                       playlistManager.selectPlaylist(updated)
                     }
+                    onFork={(newDocId) => {
+                      playlistManager.selectById(newDocId);
+                      handleCloseEdit();
+                    }}
                   />
                 </div>
               </Show>
@@ -1049,12 +1061,14 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                             <SongRow
                               songId={songId}
                               index={index()}
-                              showRemoveButton={true}
+                              showRemoveButton={!isSubscribed()}
                               onRemove={handleRemoveSong}
                               onPlay={handlePlaySongWithPlaylist}
                               onPause={handlePauseSong}
                               onEdit={handleEditSong}
-                              onReorder={handleReorderSongs}
+                              onReorder={
+                                isSubscribed() ? undefined : handleReorderSongs
+                              }
                             />
                           </div>
                         </div>
