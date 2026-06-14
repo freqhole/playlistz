@@ -36,7 +36,7 @@ import { PlaylistEditPanel } from "../PlaylistEditPanel.js";
 import { SongEditPanel } from "../SongEditPanel.js";
 import { PlaylistSharePanel } from "../PlaylistSharePanel.js";
 import { AllPlaylistsPanel } from "../AllPlaylistsPanel.js";
-import { PanelMiniHeader } from "./PanelMiniHeader.js";
+
 import { log } from "../../utils/log.js";
 
 export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
@@ -280,14 +280,12 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     return {};
   };
 
-  // header collapses completely (out of layout) when editing a song, when
-  // the share panel is open, or when the all-playlists panel is open.
-  // stays visible in playlist edit mode (where the song panel is secondary).
+  // header collapses out of layout only when editing a specific song (and not
+  // in playlist edit mode). stays visible for share, all-playlists, and
+  // playlist edit mode.
   // overflow:hidden only applied while collapsing so it doesn't clip mobile content.
   const headerStyle = () =>
-    (editingSong() && !editingPlaylist()) ||
-    showingShare() ||
-    showAllPlaylists()
+    editingSong() && !editingPlaylist()
       ? {
           transition: "max-height 350ms ease, opacity 300ms ease",
           "max-height": "0px",
@@ -327,35 +325,12 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     <div
       class={`flex-1 flex flex-col min-h-0 [overflow-x:clip] ${isMobile() ? "p-2" : "p-6"}`}
     >
-      {/* all-playlists mini header */}
-      <Show when={showAllPlaylists()}>
-        <PanelMiniHeader
-          playlist={props.playlist()}
-          label="all playlistz"
-          isMobile={isMobile()}
-          style={panelEntryStyle()}
-          onClose={() => setShowAllPlaylists(false)}
-          closeTitle="close all playlists"
-        />
-      </Show>
-
-      {/* share panel mini header */}
-      <Show when={showingShare()}>
-        <PanelMiniHeader
-          playlist={props.playlist()}
-          label="share"
-          isMobile={isMobile()}
-          style={panelEntryStyle()}
-          onClose={closeShare}
-          closeTitle="close share panel"
-        />
-      </Show>
-
       {(() => {
-        // playlist header - animates up/out when editing a specific song or
-        // when the share panel is open. on mobile it renders inside the
-        // scroll container (below) so the cover image + title scroll away,
-        // while the player controls bar stays sticky at the top
+        // playlist header - animates up/out only when editing a specific song
+        // (not in playlist edit mode). stays visible for share, all-playlists,
+        // and playlist edit mode. on mobile it renders inside the scroll
+        // container so the cover image + title scroll with content, while the
+        // player controls bar stays sticky at the top
         const headerSection = () => (
           <div
             style={headerStyle()}
