@@ -35,16 +35,17 @@ test("hamburger opens the all-playlists panel", async ({ page }) => {
 test("escape closes the all-playlists panel", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTestId("btn-all-playlists").click();
-  await expect(page.getByTestId("btn-close-panel")).toBeVisible();
+  await expect(page.getByTestId("all-playlists-panel")).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible();
+  await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible();
 });
 
-test("close button closes the all-playlists panel", async ({ page }) => {
+test("hamburger button closes the all-playlists panel when open", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTestId("btn-all-playlists").click();
-  await page.getByTestId("btn-close-panel").click();
-  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible();
+  await expect(page.getByTestId("all-playlists-panel")).toBeVisible();
+  await page.getByTestId("btn-all-playlists").click();
+  await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible();
 });
 
 // --- row contents ---
@@ -123,9 +124,9 @@ test("clicking a row selects the playlist and closes the panel", async ({ page }
   await page.getByTestId("btn-all-playlists").click();
   await page.getByText("first").first().click();
 
-  // panel should close (no close button visible)
-  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible();
-  // "first" should now be the selected playlist shown in the mini header / title area
+  // panel should close
+  await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible();
+  // "first" should now be the selected playlist shown in the title area
   await expect(page.getByTestId("input-playlist-title").or(page.getByText("first").first())).toBeVisible();
 });
 
@@ -154,7 +155,7 @@ test("edit button in row opens edit panel for that playlist", async ({ page }) =
   await panel.getByTestId("btn-edit-playlist-row").click();
 
   // panel closes, edit panel opens for "edit me"
-  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible();
+  await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible();
   // the edit input should show "edit me"
   await expect(page.getByTestId("input-playlist-title")).toHaveValue("edit me");
 });
@@ -181,7 +182,7 @@ test("share button in row opens share panel for that playlist", async ({ page })
   await panel.getByTestId("btn-share-playlist-row").click();
 
   // share panel should be open
-  await expect(page.getByTestId("btn-close-panel")).toBeVisible();
+  await expect(page.getByTestId("share-panel")).toBeVisible();
 });
 
 // --- new playlist ---
@@ -193,7 +194,7 @@ test("new playlist row creates a playlist and closes the panel", async ({ page }
   await page.getByTestId("btn-new-playlist").click();
 
   // panel should close and new playlist edit mode should be open
-  await expect(page.getByTestId("btn-close-panel")).not.toBeVisible();
+  await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible();
   await expect(page.getByTestId("btn-edit-playlist")).toBeVisible();
   await expect(page.getByTestId("input-playlist-title")).toHaveValue("new playlist");
 });

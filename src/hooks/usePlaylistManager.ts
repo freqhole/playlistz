@@ -44,6 +44,9 @@ import {
 import { getImageUrlForContext } from "../services/imageService.js";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { DocIndexEntry } from "../services/indexedDBService.js";
+import { saveSetting, loadSetting } from "../services/indexedDBService.js";
+
+const SETTING_SELECTED_PLAYLIST = "selectedPlaylistId";
 
 export function usePlaylistManager() {
   const [playlists, setPlaylists] = createSignal<Playlist[]>([]);
@@ -62,6 +65,14 @@ export function usePlaylistManager() {
   const [playlistSongs, setPlaylistSongs] = createSignal<Song[]>([]);
   const [isInitialized, setIsInitialized] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+
+  // persist selection to idb whenever it changes so it survives a reload.
+  // the effect only runs after the signal has a non-null value so we don't
+  // overwrite a saved selection with null during the initial startup sync.
+  createEffect(() => {
+    const id = selectedPlaylistId();
+    if (id) void saveSetting(SETTING_SELECTED_PLAYLIST, id);
+  });
 
   // modal and UI state
   const [showImageModal, setShowImageModal] = createSignal(false);
@@ -134,8 +145,11 @@ export function usePlaylistManager() {
         if (!stillExists) {
           setSelectedPlaylistId(resolved.length > 0 ? resolved[0]!.id : null);
         }
-      } else if (resolved.length > 0) {
-        setSelectedPlaylistId(resolved[0]!.id);
+      } else {
+        // no in-memory selection yet - try to restore from idb, fall back to first
+        const savedId = await loadSetting<string>(SETTING_SELECTED_PLAYLIST);
+        const target = savedId ? resolved.find((p) => p.id === savedId) : null;
+        setSelectedPlaylistId(target ? target.id : resolved.length > 0 ? resolved[0]!.id : null);
       }
     } catch (err) {
       log.error("playlist.sync", "error syncing playlists from doc index:", err);

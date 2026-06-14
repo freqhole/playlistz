@@ -254,7 +254,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
   return (
     <div
       data-testid="share-panel"
-      class="px-4 pb-6 pt-2 space-y-5 font-mono text-white"
+      class="px-4 pb-6 pt-2 space-y-5 font-mono text-white overflow-x-hidden min-w-0"
     >
       <Show when={error()}>
         <div

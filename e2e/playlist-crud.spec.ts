@@ -93,3 +93,33 @@ test("playlist cover image persists across reload", async ({ page }) => {
     timeout: 10000,
   });
 });
+
+test("selected playlist is restored after a page reload", async ({ page }) => {
+  // create two playlists and select the second one, then reload.
+  // the app should re-select the second playlist rather than defaulting
+  // to the first one.
+  await createPlaylistViaUI(page);
+  await page.getByTestId("input-playlist-title").fill("first");
+  await page.getByTestId("input-playlist-title").blur();
+
+  // create a second playlist via the all-playlists panel
+  await page.getByTestId("btn-all-playlists").click();
+  await page.getByTestId("btn-new-playlist").click();
+  await page.getByTestId("btn-edit-playlist").waitFor({ timeout: 5000 });
+  await page.getByTestId("input-playlist-title").fill("second");
+  await page.getByTestId("input-playlist-title").blur();
+
+  // "second" is currently selected
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("second");
+
+  // wait a moment for the saveSetting idb write to complete
+  await page.waitForTimeout(300);
+
+  await page.reload();
+  await waitForApp(page);
+
+  // should restore "second", not fall back to "first"
+  await expect(page.getByTestId("input-playlist-title")).toHaveValue("second", {
+    timeout: 10000,
+  });
+});

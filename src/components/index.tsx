@@ -229,8 +229,8 @@ function PlaylistzInner() {
           playlistz
         </h1>
         {/* full-width playlist content */}
-        <div class="relative flex h-full" style={{ "z-index": "2" }}>
-          <div class="flex-1 flex flex-col min-h-0">
+        <div class="relative flex h-full min-w-0" style={{ "z-index": "2" }}>
+          <div class="flex-1 flex flex-col min-h-0 min-w-0">
             <Show
               when={selectedPlaylist()}
               fallback={

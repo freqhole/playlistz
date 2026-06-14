@@ -35,8 +35,8 @@ test("share panel opens and closes from the playlist header", async ({
   await expect(page.getByTestId("btn-enable-sharing")).toBeVisible();
   await expect(page.getByText("no pending knockz")).toBeVisible();
 
-  await page.getByTestId("btn-close-panel").click();
-  await expect(page.getByTestId("btn-enable-sharing")).toHaveCount(0);
+  await page.getByTestId("btn-share-playlist").click();
+  await expect(page.getByTestId("share-panel")).not.toBeVisible();
 });
 
 test("share settings persist across panel reopen and reload", async ({
@@ -51,7 +51,7 @@ test("share settings persist across panel reopen and reload", async ({
   await page.waitForTimeout(300);
 
   // reopen
-  await page.getByTestId("btn-close-panel").click();
+  await page.getByTestId("btn-share-playlist").click();
   await openSharePanel(page);
   await expect(page.getByTestId("input-node-name")).toHaveValue(
     "doomlord"
@@ -174,11 +174,11 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
     });
     logTs("[e2e] peer b: playlist added");
 
-    // the synced playlist auto-selects, which collapses the sidebar and can
-    // unmount the share panel - only close it if it's still on screen
-    const closeBtn = pageB.getByTestId("btn-close-panel");
-    if (await closeBtn.isVisible().catch(() => false)) {
-      await closeBtn.click({ timeout: 5_000 }).catch(() => {});
+    // the synced playlist auto-selects, which can unmount the share panel -
+    // only close it if it's still on screen
+    const sharePanel = pageB.getByTestId("share-panel");
+    if (await sharePanel.isVisible().catch(() => false)) {
+      await pageB.getByTestId("btn-share-playlist").click({ timeout: 5_000 }).catch(() => {});
     }
 
     // peer b: the shared playlist shows up in the sidebar

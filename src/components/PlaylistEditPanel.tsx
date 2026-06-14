@@ -278,15 +278,15 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
   };
 
   return (
-    <div data-testid="edit-panel" class="bg-black/40 overflow-hidden">
+    <div data-testid="edit-panel" class="bg-black/40 overflow-hidden min-w-0">
       {/* on sm+: form controls left (clamped to 500px), image right.
           justify-between pushes the columns apart so spare width sits in the
           middle. order utilities keep the image on top for the mobile column.
           on lg+ a third share column appears on the right; below lg the share
           section spans the full width under the other two columns */}
-      <div class="p-4 border-none grid grid-cols-1 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] lg:grid-cols-[minmax(0,440px)_min(30%,22rem)_minmax(0,1fr)] sm:justify-between gap-6">
+      <div class="p-4 border-none grid grid-cols-1 min-w-0 sm:grid-cols-[minmax(0,500px)_min(40%,24rem)] lg:grid-cols-[minmax(0,440px)_min(30%,22rem)_minmax(0,1fr)] sm:justify-between gap-6">
         {/* image + upload buttons */}
-        <div class="flex flex-col gap-3 sm:order-2">
+        <div class="flex flex-col gap-3 min-w-0 sm:order-2">
           {/* image sizes naturally at its own aspect ratio (no gray bars);
               the gray square only shows as the no-image fallback */}
           <Show
@@ -371,7 +371,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         </div>
 
         {/* filter controls + playlist info */}
-        <div class="flex flex-col gap-5 sm:order-1">
+        <div class="flex flex-col gap-5 min-w-0 sm:order-1">
           {/* background image filter */}
           <div class="space-y-3">
             <div class="flex items-center gap-2">
@@ -598,7 +598,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                     <button
                       onClick={handleDeletePlaylist}
                       disabled={isLoading()}
-                      class="flex-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium transition-colors whitespace-nowrap"
+                      class="flex-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium transition-colors"
                     >
                       yes, delete
                     </button>
@@ -644,7 +644,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         </div>
 
         {/* p2p share column */}
-        <div class="flex flex-col gap-3 sm:order-3 sm:col-span-2 lg:col-span-1">
+        <div class="flex flex-col gap-3 min-w-0 sm:order-3 sm:col-span-2 lg:col-span-1">
           <label class="text-sm font-medium text-gray-300">
             share<span class="text-magenta-500">z</span>
           </label>
