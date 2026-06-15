@@ -95,6 +95,17 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
   >({});
   const [error, setError] = createSignal<string | null>(null);
   const [editingName, setEditingName] = createSignal(false);
+  // per-playlist collaborative editing flag (stored in the automerge doc)
+  const [collaborative, setCollaborative] = createSignal(false);
+  // whether this playlist is subscribed from a remote peer (not our own / not forked)
+  const isSubscribed = () =>
+    !!props.playlist().remoteNodeId && !props.playlist().isForked;
+  // collab access request state (only relevant when isSubscribed())
+  const [collabRequestMessage, setCollabRequestMessage] = createSignal("");
+  const [collabRequestStatus, setCollabRequestStatus] = createSignal<
+    string | null
+  >(null);
+  const [requestingCollab, setRequestingCollab] = createSignal(false);
 
   // reactive flag for per-peer online status in the granted peers list.
   // we mirror connSummary() changes by re-reading the adapter each time.
@@ -197,6 +208,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
         if (docMode === "public" || docMode === "knock") {
           globalSettings.mode = docMode;
         }
+        setCollaborative(!!raw?.collaborative);
       } catch {
         /* doc not yet loaded - use global default */
       }
@@ -265,6 +277,51 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       } catch (err) {
         log.warn("share.panel", "failed to write sharingMode to doc:", err);
       }
+    }
+  };
+
+  const handleToggleCollaborative = async () => {
+    const next = !collaborative();
+    setCollaborative(next);
+    try {
+      const handle = await findPlaylistDoc(props.playlist().id as AutomergeUrl);
+      handle.change((d: Record<string, unknown>) => {
+        d.collaborative = next;
+      });
+      await flushDoc(props.playlist().id as AutomergeUrl);
+    } catch (err) {
+      log.warn("share.panel", "failed to write collaborative to doc:", err);
+      setCollaborative(!next); // revert on failure
+    }
+  };
+
+  const handleRequestCollabAccess = async () => {
+    if (requestingCollab()) return;
+    const ownerNodeId = props.playlist().remoteNodeId;
+    if (!ownerNodeId) return;
+    setRequestingCollab(true);
+    setCollabRequestStatus(null);
+    try {
+      const result = await knockForDocAccess(
+        ownerNodeId,
+        props.playlist().id,
+        collabRequestMessage(),
+        props.playlist().title
+      );
+      if (result.status === "accepted") {
+        setCollabRequestStatus("access granted - you can now collaborate");
+      } else if (result.status === "denied") {
+        setCollabRequestStatus("access denied");
+      } else {
+        setCollabRequestStatus("request sent - waiting for owner approval");
+      }
+    } catch (err) {
+      setCollabRequestStatus(
+        err instanceof Error ? err.message : "request failed"
+      );
+    } finally {
+      setRequestingCollab(false);
+      await refreshKnocks();
     }
   };
 
@@ -494,6 +551,45 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
         </Show>
       </div>
 
+      {/* request collaboration access - shown when viewing a subscribed playlist */}
+      <Show when={isSubscribed() && p2pEnabled()}>
+        <div>
+          <label class="block text-xs mb-1">
+            <span class="bg-black px-1 text-gray-400">
+              request collaboration access
+            </span>
+          </label>
+          <div class="space-y-2">
+            <input
+              data-testid="input-collab-request-message"
+              type="text"
+              placeholder="optional message to the owner"
+              value={collabRequestMessage()}
+              onInput={(e) => setCollabRequestMessage(e.currentTarget.value)}
+              class="w-full bg-black text-white px-2 py-1.5 text-xs border border-gray-700 focus:border-magenta-500 focus:outline-none"
+            />
+            <button
+              data-testid="btn-request-collab-access"
+              onClick={() => void handleRequestCollabAccess()}
+              disabled={requestingCollab()}
+              class="w-full px-3 py-2 text-sm border border-gray-600 hover:border-magenta-500 text-gray-300 hover:text-white disabled:opacity-50 transition-colors"
+            >
+              {requestingCollab()
+                ? "sending request..."
+                : "request edit access"}
+            </button>
+            <Show when={collabRequestStatus()}>
+              <p
+                data-testid="collab-request-status"
+                class="text-xs px-1 text-magenta-400"
+              >
+                {collabRequestStatus()}
+              </p>
+            </Show>
+          </div>
+        </div>
+      </Show>
+
       {/* share link for this playlist */}
       <Show when={p2pEnabled()}>
         <div>
@@ -538,7 +634,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
         <div>
           <label class="block text-xs mb-1">
             <span class="bg-black px-1 text-gray-400">
-              who can browse my playlistz?
+              who can browse this playlist?
             </span>
           </label>
           <div class="flex gap-2">
@@ -557,6 +653,22 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
               class={`flex-1 px-3 py-2 text-sm border ${settings().mode === "knock" ? "border-magenta-500 bg-magenta-500/20 text-white" : "border-gray-600 text-gray-400"}`}
             >
               knock first
+            </button>
+          </div>
+          <div class="mt-2">
+            <button
+              data-testid="btn-toggle-collaborative"
+              type="button"
+              aria-pressed={collaborative()}
+              onClick={() => void handleToggleCollaborative()}
+              class={`w-full px-3 py-2 text-sm border transition-colors ${
+                collaborative()
+                  ? "border-magenta-500 bg-magenta-500/20 text-white"
+                  : "border-gray-600 text-gray-400"
+              }`}
+              title="when on, peers with access can edit without a separate approval"
+            >
+              collaborative editing {collaborative() ? "(on)" : "(off)"}
             </button>
           </div>
         </div>

@@ -889,8 +889,22 @@ async function handleProtocolMessage(
       const existing = await getAccessGrant(msg.nodeId);
 
       if (isDocAccessKnock && msg.docId) {
-        // doc_access knock: check if this peer already has a grant covering this doc
-        if (existing && (!existing.docIds || existing.docIds.includes(msg.docId))) {
+        // doc_access knock: auto-accept only if the doc has collaborative editing
+        // enabled. in public mode any peer qualifies; in knock mode the peer must
+        // already have an accepted grant covering this doc.
+        let isCollaborative = false;
+        try {
+          const handle = await findPlaylistDoc(msg.docId as AutomergeUrl);
+          const doc = handle.doc() as Record<string, unknown> | undefined;
+          isCollaborative = !!(doc?.collaborative);
+        } catch { /* doc not available */ }
+
+        const peerQualifies =
+          settings.mode === "public" ||
+          (existing &&
+            (!existing.docIds || existing.docIds.includes(msg.docId)));
+
+        if (isCollaborative && peerQualifies) {
           await sendMessage(stream, {
             v: 1,
             type: "knock_status",

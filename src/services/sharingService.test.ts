@@ -485,13 +485,51 @@ describe("sharingService", () => {
       });
     });
 
-    it("answers accepted for doc_access knock when peer has a grant covering that doc", async () => {
+    it("queues doc_access knock as pending even when peer has a grant (no collaborative flag)", async () => {
+      makeDoc(DOC_ID);
       await upsertAccessGrant({
         nodeId: "peer-a",
         name: "",
         grantedAt: 1,
         docIds: [DOC_ID],
       });
+      const stream = new MockStream("peer-a", [
+        { v: 1, type: "knock", nodeId: "peer-a", knockType: "doc_access", docId: DOC_ID },
+      ]);
+
+      await handlePlaylistzStream(stream);
+
+      // without collaborative flag the owner must approve explicitly
+      expect(stream.sent[0]).toMatchObject({ type: "knock_status", status: "pending" });
+      const knocks = await getInboundKnocks();
+      expect(knocks[0]).toMatchObject({ knockType: "doc_access", requestedDocId: DOC_ID, status: "pending" });
+    });
+
+    it("auto-accepts doc_access knock when collaborative is true and peer has a grant", async () => {
+      makeDoc(DOC_ID, { collaborative: true });
+      await upsertAccessGrant({
+        nodeId: "peer-a",
+        name: "",
+        grantedAt: 1,
+        docIds: [DOC_ID],
+      });
+      const stream = new MockStream("peer-a", [
+        { v: 1, type: "knock", nodeId: "peer-a", knockType: "doc_access", docId: DOC_ID },
+      ]);
+
+      await handlePlaylistzStream(stream);
+
+      expect(stream.sent[0]).toEqual({
+        v: 1,
+        type: "knock_status",
+        status: "accepted",
+        grantedDocIds: [DOC_ID],
+      });
+    });
+
+    it("auto-accepts doc_access knock when collaborative is true and mode is public", async () => {
+      await saveShareSettings({ name: "", mode: "public" });
+      makeDoc(DOC_ID, { collaborative: true });
       const stream = new MockStream("peer-a", [
         { v: 1, type: "knock", nodeId: "peer-a", knockType: "doc_access", docId: DOC_ID },
       ]);

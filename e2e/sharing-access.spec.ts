@@ -150,3 +150,56 @@ test("escape key closes the share panel", async ({ page }) => {
 });
 
 // browse a peer section was moved to the all-playlists search bar
+
+// --- collaborative editing toggle ---
+
+test("collaborative toggle is present in share panel", async ({ page }) => {
+  await createPlaylistViaUI(page);
+  await openSharePanel(page);
+
+  await expect(page.getByTestId("btn-toggle-collaborative")).toBeVisible();
+});
+
+test("collaborative editing is off by default", async ({ page }) => {
+  await createPlaylistViaUI(page);
+  await openSharePanel(page);
+
+  await expect(page.getByTestId("btn-toggle-collaborative")).toHaveAttribute(
+    "aria-pressed",
+    "false"
+  );
+});
+
+test("clicking collaborative toggle turns it on", async ({ page }) => {
+  await createPlaylistViaUI(page);
+  await openSharePanel(page);
+
+  await page.getByTestId("btn-toggle-collaborative").click();
+
+  await expect(page.getByTestId("btn-toggle-collaborative")).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+});
+
+test("collaborative toggle persists after close and reopen", async ({
+  page,
+}) => {
+  await createPlaylistViaUI(page);
+  await openSharePanel(page);
+
+  await page.getByTestId("btn-toggle-collaborative").click();
+  await expect(page.getByTestId("btn-toggle-collaborative")).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+
+  // close and reopen
+  await page.getByTestId("btn-share-playlist").click();
+  await openSharePanel(page);
+
+  await expect(page.getByTestId("btn-toggle-collaborative")).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+});

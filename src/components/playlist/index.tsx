@@ -450,7 +450,6 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     onFork={(newDocId) => {
                       playlistManager.selectById(newDocId);
                     }}
-                    onOpenEditPanel={() => handleEditPlaylist()}
                   />
                 </Show>
 
@@ -1155,7 +1154,6 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
 function SubscribedBanner(props: {
   playlist: Playlist;
   onFork: (newDocId: string) => void;
-  onOpenEditPanel: () => void;
 }) {
   const [forking, setForking] = createSignal(false);
   const [forkError, setForkError] = createSignal<string | null>(null);
@@ -1187,22 +1185,6 @@ function SubscribedBanner(props: {
     >
       <span class="text-yellow-500/80 font-medium">read only</span>
       <span class="text-gray-600">·</span>
-      <Show
-        when={props.playlist.remoteAvatarDataUrl}
-        fallback={
-          <span class="inline-flex items-center justify-center w-3.5 h-3.5 bg-magenta-700/60 text-white text-[8px] font-bold rounded-full overflow-hidden">
-            {(props.playlist.remoteName || props.playlist.remoteNodeId || "")
-              .slice(0, 1)
-              .toUpperCase()}
-          </span>
-        }
-      >
-        <img
-          src={props.playlist.remoteAvatarDataUrl}
-          alt={props.playlist.remoteName || "peer"}
-          class="w-3.5 h-3.5 rounded-full object-cover"
-        />
-      </Show>
       <span class="text-gray-500">from {displayName()}</span>
       <div class="flex items-center gap-2 ml-auto">
         <button
@@ -1212,14 +1194,6 @@ function SubscribedBanner(props: {
           disabled={forking()}
         >
           {forking() ? "forking..." : "fork my copy"}
-        </button>
-        <button
-          data-testid="btn-request-edit-banner"
-          class="px-2 py-0.5 text-gray-300 hover:text-white border border-gray-700 hover:border-gray-500 transition-colors"
-          onClick={() => props.onOpenEditPanel()}
-          title="request collaboration access"
-        >
-          request edit
         </button>
       </div>
       <Show when={forkError()}>

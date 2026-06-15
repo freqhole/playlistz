@@ -295,7 +295,22 @@ export function usePlaylistManager() {
             const updated = await docToPlaylistAsync(playlistId, doc);
 
             setPlaylists((prev) =>
-              prev.map((p) => (p.id === playlistId ? updated : p))
+              prev.map((p) => {
+                if (p.id !== playlistId) return p;
+                // carry forward remote-source metadata from the previous entry:
+                // docToPlaylistAsync reads the automerge doc which has no
+                // remoteNodeId/remoteName/remoteAvatarDataUrl/isForked fields -
+                // those live only in the docIndex overlay done in
+                // syncPlaylistsFromDocIndex. preserving them here ensures they
+                // survive doc-change refreshes (e.g. when the sharer adds a song).
+                return {
+                  ...updated,
+                  remoteNodeId: p.remoteNodeId,
+                  remoteName: p.remoteName,
+                  remoteAvatarDataUrl: p.remoteAvatarDataUrl,
+                  isForked: p.isForked,
+                };
+              })
             );
             // selectedPlaylist() auto-updates from playlists() via memo - no setSelectedPlaylist needed
 
