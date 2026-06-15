@@ -36,7 +36,7 @@ const LEVEL_NUM: Record<LogLevel, number> = {
 
 function resolveLevel(): number {
   const override =
-    typeof localStorage !== "undefined"
+    typeof localStorage !== "undefined" && typeof localStorage.getItem === "function"
       ? (localStorage.getItem("logLevel") as LogLevel | null)
       : null;
   // VITE_LOG_LEVEL is injected at build time; fall back to debug in dev, warn in prod
@@ -48,7 +48,7 @@ function resolveLevel(): number {
 
 function resolveFilter(): string[] {
   const override =
-    typeof localStorage !== "undefined"
+    typeof localStorage !== "undefined" && typeof localStorage.getItem === "function"
       ? localStorage.getItem("logFilter")
       : null;
   const env = import.meta.env.VITE_LOG_FILTER as string | undefined;

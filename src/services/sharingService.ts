@@ -65,6 +65,53 @@ export async function saveShareSettings(
   settings: ShareSettings
 ): Promise<void> {
   await saveSetting(SETTINGS_KEY, settings);
+  // fire-and-forget: tell connected peers about our updated identity
+  void notifyPeersOfIdentityUpdate(settings);
+}
+
+/**
+ * open a stream to every currently-connected peer and send our current
+ * name + avatar so they can update their docIndex entries without waiting
+ * for the next explicit hello exchange.
+ */
+async function notifyPeersOfIdentityUpdate(
+  settings: ShareSettings
+): Promise<void> {
+  if (!protocolHandlerRegistered) return;
+  let adapter: ReturnType<typeof getIrohAdapter>;
+  try {
+    adapter = getIrohAdapter();
+  } catch {
+    return;
+  }
+  const entries = await getAllDocIndexEntries().catch(() => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>);
+  const seen = new Set<string>();
+  const myNodeId = getIdentity()?.node_id ?? "";
+  for (const entry of entries) {
+    const nodeId = entry.remoteNodeId;
+    if (!nodeId || nodeId === myNodeId || seen.has(nodeId)) continue;
+    seen.add(nodeId);
+    if (!adapter.isConnected(nodeId)) continue;
+    void (async () => {
+      try {
+        const stream = await openPlaylistzStream(nodeId);
+        try {
+          await sendMessage(stream, {
+            v: 1,
+            type: "identity_update",
+            ...(settings.name ? { name: settings.name } : {}),
+            ...(settings.avatarDataUrl
+              ? { avatarDataUrl: settings.avatarDataUrl }
+              : {}),
+          });
+        } finally {
+          stream.close();
+        }
+      } catch {
+        // peer unreachable - they'll get fresh data on next hello
+      }
+    })();
+  }
 }
 
 // --- p2p bootstrap for sharing ---
@@ -72,6 +119,8 @@ export async function saveShareSettings(
 let protocolHandlerRegistered = false;
 let reconnectDone = false;
 let leadershipWatched = false;
+// interval id for the periodic reconnect timer (cleared on reset)
+let reconnectIntervalId: ReturnType<typeof setInterval> | null = null;
 
 // listeners notified when the knock inbox changes (new knock arrived)
 const knockListeners = new Set<() => void>();
@@ -115,6 +164,11 @@ export async function ensureSharingReady(): Promise<void> {
       if (leader && !reconnectDone) {
         reconnectDone = true;
         void reconnectKnownPeers();
+        // periodic reconnect: re-dial known peers every 90s so automerge
+        // can sync changes that arrived while the connection was down
+        if (!reconnectIntervalId) {
+          reconnectIntervalId = setInterval(() => void reconnectKnownPeers(), 90_000);
+        }
       }
     });
   }
@@ -137,8 +191,70 @@ export async function resumeSharingIfEnabled(): Promise<void> {
 }
 
 /**
+ * do a quick hello exchange with a known peer and refresh their name +
+ * avatar in docIndex entries and access grant record. silently ignores
+ * errors (peer may be offline).
+ */
+async function refreshPeerIdentity(nodeId: string): Promise<void> {
+  const identity = getIdentity();
+  const settings = await getShareSettings().catch(
+    () => ({ name: "", mode: "knock" as const })
+  );
+  let peerName: string | undefined;
+  let peerAvatarDataUrl: string | undefined;
+  try {
+    const stream = await openPlaylistzStream(nodeId);
+    try {
+      await sendMessage(stream, {
+        v: 1,
+        type: "hello",
+        nodeId: identity?.node_id ?? "",
+        ...(settings.name ? { name: settings.name } : {}),
+      });
+      const reply = await readMessage(stream);
+      if (reply?.type === "hello_ok") {
+        peerName = reply.name;
+        peerAvatarDataUrl = reply.avatarDataUrl;
+      }
+    } finally {
+      stream.close();
+    }
+  } catch {
+    return; // peer offline or unreachable
+  }
+
+  if (!peerName && !peerAvatarDataUrl) return;
+
+  // update all docIndex entries that reference this peer
+  const entries = await getAllDocIndexEntries().catch(
+    () => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>
+  );
+  for (const entry of entries) {
+    if (entry.remoteNodeId !== nodeId) continue;
+    await addDocIndexEntry({
+      ...entry,
+      ...(peerName ? { remoteName: peerName } : {}),
+      ...(peerAvatarDataUrl ? { remoteAvatarDataUrl: peerAvatarDataUrl } : {}),
+    }).catch(() => {});
+  }
+
+  // update access grant if we have one for this peer
+  const grant = await getAccessGrant(nodeId).catch(() => undefined);
+  if (grant) {
+    await upsertAccessGrant({
+      ...grant,
+      ...(peerName ? { name: peerName } : {}),
+      ...(peerAvatarDataUrl ? { avatarDataUrl: peerAvatarDataUrl } : {}),
+    }).catch(() => {});
+  }
+}
+
+/**
  * connect to every peer recorded in the peers map of any indexed doc.
  * also warms the repo's docPeerCache so sharePolicy can announce docs.
+ * pre-seeds the cache from docIndex entries before doc handles resolve
+ * to close the timing window where a peer reconnects before the cache
+ * is populated from the doc.
  */
 export async function reconnectKnownPeers(): Promise<void> {
   const identity = getIdentity();
@@ -146,6 +262,15 @@ export async function reconnectKnownPeers(): Promise<void> {
   const adapter = getIrohAdapter();
   const entries = await getAllDocIndexEntries();
   const seen = new Set<string>();
+
+  // fast pass: pre-authorize known remote peers from the docIndex before
+  // waiting on doc handles. this prevents sharePolicy from rejecting a
+  // reconnecting peer during the async doc-load window.
+  for (const entry of entries) {
+    if (entry.remoteNodeId && entry.remoteNodeId !== myNodeId) {
+      authorizePeerForDoc(entry.docId as AutomergeUrl, entry.remoteNodeId);
+    }
+  }
 
   for (const entry of entries) {
     try {
@@ -155,7 +280,10 @@ export async function reconnectKnownPeers(): Promise<void> {
       for (const nodeId of Object.keys(doc.peers ?? {})) {
         if (nodeId && nodeId !== myNodeId && !seen.has(nodeId)) {
           seen.add(nodeId);
-          adapter.addPeer(nodeId).catch((err) => {
+          void adapter.addPeer(nodeId).then(async () => {
+            // refresh the peer's identity in docIndex + grant after connecting
+            void refreshPeerIdentity(nodeId);
+          }).catch((err) => {
             log.warn("p2p.reconnect", "reconnect to peer failed:", nodeId.slice(0, 16), err);
           });
         }
@@ -168,9 +296,23 @@ export async function reconnectKnownPeers(): Promise<void> {
 
 // --- share links ---
 
+// discriminated result of opening a share link.
+// "synced"         - doc is now local (direct access or already present)
+// "knock_required" - owner is in knock mode; call knockForDocAccess to proceed
+export type OpenShareLinkResult =
+  | { status: "synced"; docId: string }
+  | {
+      status: "knock_required";
+      ownerNodeId: string;
+      ownerName?: string;
+      docId: string;
+      title?: string;
+    };
+
 /**
  * build a share link for a playlist doc. requires a running node (the
- * link embeds our node id so the recipient can dial us).
+ * link embeds our node id so the recipient can dial us). embeds the
+ * current sharing mode so recipients know if a knock is required.
  */
 export async function buildShareLink(
   docId: string,
@@ -183,11 +325,13 @@ export async function buildShareLink(
       "p2p node is not running - cannot create a share link without a node id"
     );
   }
+  const settings = await getShareSettings();
   const payload: SharePayloadV1 = {
     v: 1,
     n: identity.node_id,
     d: docId,
     ...(title ? { t: title } : {}),
+    ...(settings.mode === "knock" ? { m: "knock" } : {}),
   };
   const token = encodeShareToken(payload);
   const fragment = shareFragment(payload);
@@ -196,32 +340,48 @@ export async function buildShareLink(
 }
 
 /**
- * open a share link (or raw token): connect to the peer, sync the doc,
- * record ourselves in the doc's peers map, and index the playlist.
- * returns the docId on success.
+ * perform the actual automerge doc sync for a share payload.
+ * dials the peer, finds the doc, records peers in the doc, and indexes it.
+ * does a quick hello exchange to capture the peer's name and avatar.
  */
-export async function openShareLink(input: string): Promise<string> {
-  const payload = decodeShareToken(input);
-  if (!payload) {
-    throw new Error("invalid share link");
-  }
-
-  await ensureSharingReady();
+async function syncSharedDoc(
+  payload: SharePayloadV1
+): Promise<{ status: "synced"; docId: string }> {
   const identity = getIdentity();
   const adapter = getIrohAdapter();
+  const mySettings = await getShareSettings();
 
-  // pre-authorize the sharing peer for this doc. sharePolicy only trusts
-  // peers recorded in the doc, but we don't have the doc yet - without
-  // this seed, repo.find would never request it from the peer
+  // pre-authorize the sharing peer so sharePolicy trusts them before the doc
+  // arrives (the doc can't arrive if the policy already rejects the peer)
   authorizePeerForDoc(payload.d as AutomergeUrl, payload.n);
 
-  // if the doc is already in the local index, skip the peer dial - it's local
-  const alreadyLocal = await getDocIndexEntry(payload.d).catch(() => null);
+  // fetch name + avatar from the sharer via a hello exchange.
+  // best-effort: failures are silently ignored so the main sync still proceeds.
+  let peerName: string | undefined;
+  let peerAvatarDataUrl: string | undefined;
+  try {
+    const stream = await openPlaylistzStream(payload.n);
+    try {
+      await sendMessage(stream, {
+        v: 1,
+        type: "hello",
+        nodeId: identity?.node_id ?? "",
+        ...(mySettings.name ? { name: mySettings.name } : {}),
+      });
+      const reply = await readMessage(stream);
+      if (reply?.type === "hello_ok") {
+        peerName = reply.name;
+        peerAvatarDataUrl = reply.avatarDataUrl;
+      }
+    } finally {
+      stream.close();
+    }
+  } catch {
+    // peer may be offline or reject hello - not fatal
+  }
 
+  const alreadyLocal = await getDocIndexEntry(payload.d).catch(() => null);
   if (!alreadyLocal) {
-    // dial the sharing peer first so repo.find can fetch the doc. discovery
-    // records (pkarr/dns) can lag for a freshly-booted peer, so retry the
-    // dial a few times before giving up
     for (let attempt = 0; ; attempt++) {
       try {
         await adapter.addPeer(payload.n);
@@ -229,7 +389,6 @@ export async function openShareLink(input: string): Promise<string> {
       } catch (err) {
         if (attempt >= 5) {
           log.warn("p2p.connect", "could not connect to sharing peer:", err);
-          // continue anyway - the doc may already be local or another peer has it
           break;
         }
         await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -240,10 +399,6 @@ export async function openShareLink(input: string): Promise<string> {
   const handle = await findPlaylistDoc(payload.d as AutomergeUrl);
   const doc = handle.doc();
 
-  // record ourselves AND the sharing peer in the doc's peers map. ourselves
-  // so the owner's sharePolicy announces this doc to us on reconnect; the
-  // sharer so our own policy keeps trusting them after the cache is rebuilt
-  // from the doc (and so reconnectKnownPeers can redial them after reload)
   const myNodeId = identity?.node_id;
   if (doc) {
     const peers = doc.peers ?? {};
@@ -258,7 +413,6 @@ export async function openShareLink(input: string): Promise<string> {
     }
   }
 
-  // index the playlist for the sidebar
   const existing = await getDocIndexEntry(payload.d);
   if (!existing) {
     await addDocIndexEntry({
@@ -267,24 +421,68 @@ export async function openShareLink(input: string): Promise<string> {
       addedAt: Date.now(),
       source: "shared",
       remoteNodeId: payload.n,
+      remoteName: peerName,
+      remoteAvatarDataUrl: peerAvatarDataUrl,
+    });
+  } else if (peerName || peerAvatarDataUrl) {
+    // update name/avatar if we got fresher data
+    await addDocIndexEntry({
+      ...existing,
+      ...(peerName ? { remoteName: peerName } : {}),
+      ...(peerAvatarDataUrl ? { remoteAvatarDataUrl: peerAvatarDataUrl } : {}),
     });
   }
 
-  return payload.d;
+  return { status: "synced", docId: payload.d };
+}
+
+/**
+ * open a share link (or raw token).
+ * - if the link embeds `m: "knock"`, returns knock_required without syncing.
+ *   call knockForDocAccess() once the user confirms, then the doc syncs.
+ * - otherwise syncs the doc immediately and returns { status: "synced" }.
+ */
+export async function openShareLink(
+  input: string
+): Promise<OpenShareLinkResult> {
+  const payload = decodeShareToken(input);
+  if (!payload) {
+    throw new Error("invalid share link");
+  }
+
+  await ensureSharingReady();
+
+  // if already local, skip re-sync
+  const alreadyLocal = await getDocIndexEntry(payload.d).catch(() => null);
+  if (alreadyLocal) {
+    return { status: "synced", docId: payload.d };
+  }
+
+  // knock mode encoded in the link: gate sync behind a knock
+  if (payload.m === "knock") {
+    return {
+      status: "knock_required",
+      ownerNodeId: payload.n,
+      docId: payload.d,
+      title: payload.t,
+    };
+  }
+
+  return syncSharedDoc(payload);
 }
 
 /**
  * check location.hash for a #share/ fragment. if present, open it and
- * clear the fragment. returns the docId if a share link was opened.
+ * clear the fragment. returns an OpenShareLinkResult or null.
  */
-export async function handleShareFragment(): Promise<string | null> {
+export async function handleShareFragment(): Promise<OpenShareLinkResult | null> {
   const hash = window.location.hash;
   if (!hash.startsWith("#share/")) return null;
   try {
-    const docId = await openShareLink(hash);
+    const result = await openShareLink(hash);
     // clear the fragment so reloads don't re-trigger
     history.replaceState(null, "", window.location.pathname);
-    return docId;
+    return result;
   } catch (err) {
     log.error("share.fragment", "failed to open share link:", err);
     history.replaceState(null, "", window.location.pathname);
@@ -297,6 +495,7 @@ export async function handleShareFragment(): Promise<string | null> {
 export interface PeerPlaylistListing {
   nodeId: string;
   name?: string;
+  avatarDataUrl?: string;
   public: boolean;
   items: { docId: string; title: string; songCount: number }[];
   knockRequired: boolean;
@@ -343,6 +542,7 @@ export async function queryPeerPlaylists(
       return {
         nodeId,
         name: helloReply.name,
+        avatarDataUrl: helloReply.avatarDataUrl,
         public: helloReply.public,
         items: listReply.items,
         knockRequired: false,
@@ -352,6 +552,7 @@ export async function queryPeerPlaylists(
       return {
         nodeId,
         name: helloReply.name,
+        avatarDataUrl: helloReply.avatarDataUrl,
         public: helloReply.public,
         items: [],
         knockRequired: true,
@@ -435,7 +636,62 @@ export async function knockOnPeer(
   return { status: reply.status, docIds };
 }
 
-// --- knock responder (inbox side) ---
+/**
+ * send a doc_access knock to a specific peer for a specific playlist doc.
+ * used after openShareLink returns knock_required.
+ * when accepted, syncs the doc and indexes it automatically.
+ */
+export async function knockForDocAccess(
+  ownerNodeId: string,
+  docId: string,
+  message: string,
+  titleHint?: string
+): Promise<{ status: "pending" | "accepted" | "denied" }> {
+  const identity = getIdentity();
+  const settings = await getShareSettings();
+  const stream = await openPlaylistzStream(ownerNodeId);
+  let reply: Message | null;
+  try {
+    await sendMessage(stream, {
+      v: 1,
+      type: "knock",
+      nodeId: identity?.node_id ?? "",
+      ...(settings.name ? { name: settings.name } : {}),
+      ...(message ? { message } : {}),
+      knockType: "doc_access",
+      docId,
+    });
+    reply = await readMessage(stream);
+  } finally {
+    stream.close();
+  }
+
+  if (reply?.type !== "knock_status") {
+    throw new Error("peer did not answer knock");
+  }
+
+  await upsertKnock({
+    id: `out:${ownerNodeId}:doc:${docId}`,
+    nodeId: ownerNodeId,
+    direction: "outbound",
+    name: "",
+    message,
+    status: reply.status === "denied" ? "rejected" : reply.status,
+    createdAt: Date.now(),
+    knockType: "doc_access",
+    requestedDocId: docId,
+    ...(reply.status !== "pending" ? { processedAt: Date.now() } : {}),
+  });
+
+  if (reply.status === "accepted") {
+    const granted = reply.grantedDocIds ?? [docId];
+    if (granted.includes(docId)) {
+      await syncSharedDoc({ v: 1, n: ownerNodeId, d: docId, ...(titleHint ? { t: titleHint } : {}) });
+    }
+  }
+
+  return { status: reply.status };
+}
 
 /**
  * accept an inbound knock: persist the grant, record the peer in each
@@ -449,11 +705,18 @@ export async function acceptKnock(
   const knock = knocks.find((k) => k.id === knockId);
   if (!knock) throw new Error("knock not found");
 
+  // try to get the peer's avatar from any docIndex entry we already have
+  const allEntries = await getAllDocIndexEntries().catch(() => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>);
+  const peerEntry = allEntries.find((e) => e.remoteNodeId === knock.nodeId);
+
   await upsertAccessGrant({
     nodeId: knock.nodeId,
     name: knock.name,
     grantedAt: Date.now(),
     docIds,
+    ...(peerEntry?.remoteAvatarDataUrl
+      ? { avatarDataUrl: peerEntry.remoteAvatarDataUrl }
+      : {}),
   });
   await upsertKnock({
     ...knock,
@@ -476,6 +739,29 @@ export async function acceptKnock(
 
   const adapter = getIrohAdapter();
   await adapter.addPeer(knock.nodeId).catch(() => {});
+
+  // fire-and-forget: notify the peer they've been accepted so they don't
+  // have to poll. if the peer is offline this fails silently.
+  const identity = getIdentity();
+  void (async () => {
+    try {
+      const stream = await openPlaylistzStream(knock.nodeId);
+      try {
+        await sendMessage(stream, {
+          v: 1,
+          type: "knock_notify",
+          status: "accepted",
+          docIds,
+          ownerNodeId: identity?.node_id ?? "",
+        });
+      } finally {
+        stream.close();
+      }
+    } catch {
+      // peer offline or unreachable - they'll get the status on their next knock
+    }
+  })();
+
   notifyKnocksChanged();
 }
 
@@ -497,6 +783,14 @@ export async function getInboundKnocks(): Promise<KnockRecord[]> {
   const knocks = await getAllKnocks();
   return knocks
     .filter((k) => k.direction === "inbound")
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** list outbound knocks (sent by us) for the pending-access UI. */
+export async function getOutboundKnocks(): Promise<KnockRecord[]> {
+  const knocks = await getAllKnocks();
+  return knocks
+    .filter((k) => k.direction === "outbound")
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
@@ -563,6 +857,7 @@ async function handleProtocolMessage(
         type: "hello_ok",
         nodeId: identity?.node_id ?? "",
         ...(settings.name ? { name: settings.name } : {}),
+        ...(settings.avatarDataUrl ? { avatarDataUrl: settings.avatarDataUrl } : {}),
         public: settings.mode === "public",
       });
       break;
@@ -590,8 +885,22 @@ async function handleProtocolMessage(
     }
 
     case "knock": {
+      const isDocAccessKnock = msg.knockType === "doc_access" && !!msg.docId;
       const existing = await getAccessGrant(msg.nodeId);
-      if (existing) {
+
+      if (isDocAccessKnock && msg.docId) {
+        // doc_access knock: check if this peer already has a grant covering this doc
+        if (existing && (!existing.docIds || existing.docIds.includes(msg.docId))) {
+          await sendMessage(stream, {
+            v: 1,
+            type: "knock_status",
+            status: "accepted",
+            grantedDocIds: [msg.docId],
+          });
+          break;
+        }
+      } else if (existing) {
+        // browse knock: check if any grant exists
         await sendMessage(stream, {
           v: 1,
           type: "knock_status",
@@ -600,10 +909,16 @@ async function handleProtocolMessage(
         });
         break;
       }
-      // record the knock for the inbox if we haven't seen it
+
+      // check for a prior knock of the same type from this node
       const knocks = await getAllKnocks();
       const prior = knocks.find(
-        (k) => k.direction === "inbound" && k.nodeId === msg.nodeId
+        (k) =>
+          k.direction === "inbound" &&
+          k.nodeId === msg.nodeId &&
+          (isDocAccessKnock
+            ? k.knockType === "doc_access" && k.requestedDocId === msg.docId
+            : k.knockType !== "doc_access")
       );
       if (prior?.status === "rejected") {
         await sendMessage(stream, {
@@ -622,6 +937,8 @@ async function handleProtocolMessage(
           message: msg.message ?? "",
           status: "pending",
           createdAt: Date.now(),
+          knockType: isDocAccessKnock ? "doc_access" : "browse",
+          ...(isDocAccessKnock && msg.docId ? { requestedDocId: msg.docId } : {}),
         });
         notifyKnocksChanged();
       }
@@ -649,6 +966,75 @@ async function handleProtocolMessage(
       break;
     }
 
+    case "knock_notify": {
+      // the peer owner has accepted our knock and is notifying us proactively.
+      // update our outbound knock record and sync the granted docs.
+      const myNodeId = getIdentity()?.node_id ?? "";
+      for (const docId of msg.docIds) {
+        try {
+          const handle = await findPlaylistDoc(docId as AutomergeUrl);
+          const doc = handle.doc();
+          if (myNodeId && doc && !(myNodeId in (doc.peers ?? {}))) {
+            handle.change((d) => addPeerToDoc(d, myNodeId));
+            await flushDoc(docId as AutomergeUrl);
+          }
+          if (!(await getDocIndexEntry(docId))) {
+            await addDocIndexEntry({
+              docId,
+              title: doc?.title || "shared playlist",
+              addedAt: Date.now(),
+              source: "shared",
+              remoteNodeId: msg.ownerNodeId,
+            });
+          }
+        } catch (err) {
+          log.warn("p2p.knock", "failed to sync granted doc from notify:", docId, err);
+        }
+      }
+      // mark any matching outbound knock as accepted
+      const allKnocks = await getAllKnocks();
+      for (const k of allKnocks) {
+        if (k.direction === "outbound" && k.nodeId === peerNodeId && k.status === "pending") {
+          await upsertKnock({ ...k, status: "accepted", processedAt: Date.now() });
+        }
+      }
+      notifyKnocksChanged();
+      break;
+    }
+
+    case "identity_update": {
+      // peer changed their name or avatar - update all our docIndex entries
+      // and access grant records that reference this peer
+      const updates: Promise<void>[] = [];
+      const entries = await getAllDocIndexEntries();
+      for (const entry of entries) {
+        if (entry.remoteNodeId !== peerNodeId) continue;
+        const updated = {
+          ...entry,
+          ...(msg.name !== undefined ? { remoteName: msg.name } : {}),
+          ...(msg.avatarDataUrl !== undefined
+            ? { remoteAvatarDataUrl: msg.avatarDataUrl }
+            : {}),
+        };
+        updates.push(addDocIndexEntry(updated));
+      }
+      // also update the access grant record if we have one for this peer
+      const grant = await getAccessGrant(peerNodeId).catch(() => undefined);
+      if (grant) {
+        updates.push(
+          upsertAccessGrant({
+            ...grant,
+            ...(msg.name !== undefined ? { name: msg.name } : {}),
+            ...(msg.avatarDataUrl !== undefined
+              ? { avatarDataUrl: msg.avatarDataUrl }
+              : {}),
+          })
+        );
+      }
+      await Promise.allSettled(updates);
+      break;
+    }
+
     default: {
       await sendMessage(stream, {
         v: 1,
@@ -665,5 +1051,9 @@ export function _resetSharingForTests(): void {
   protocolHandlerRegistered = false;
   reconnectDone = false;
   leadershipWatched = false;
+  if (reconnectIntervalId !== null) {
+    clearInterval(reconnectIntervalId);
+    reconnectIntervalId = null;
+  }
   knockListeners.clear();
 }

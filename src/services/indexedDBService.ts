@@ -80,6 +80,7 @@ export interface DocIndexEntry {
   // absent for locally-created playlists.
   remoteNodeId?: string;
   remoteName?: string;
+  remoteAvatarDataUrl?: string;
   // true once the user has forked to a local editable copy
   isForked?: boolean;
 }
@@ -94,6 +95,8 @@ export interface KnockRecord {
   status: "pending" | "accepted" | "rejected";
   createdAt: number;
   processedAt?: number;
+  knockType?: "browse" | "doc_access"; // browse = list playlists; doc_access = specific playlist
+  requestedDocId?: string; // set when knockType is "doc_access"
 }
 
 // access grant written when an inbound knock is accepted.
@@ -102,6 +105,7 @@ export interface AccessGrantRecord {
   name: string;
   grantedAt: number;
   docIds?: string[]; // docs this grant covers; undefined = all listed playlists
+  avatarDataUrl?: string; // their avatar at time of last contact
 }
 
 // database schema definition - v1 contains only non-doc state

@@ -11,7 +11,7 @@ import {
   validateImageFile,
   createImageUrlFromData,
 } from "../services/imageService.js";
-import { ensureSharingReady, knockOnPeer } from "../services/sharingService.js";
+import { ensureSharingReady } from "../services/sharingService.js";
 import { initSharingState } from "../services/sharingState.js";
 import { downloadPlaylistAsZip } from "../services/playlistDownloadService.js";
 import { usePlaylistzManager } from "../context/PlaylistzContext.js";
@@ -172,6 +172,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
   const [forkCollabStatus, setForkCollabStatus] = createSignal<string | null>(
     null
   );
+  const [collabMessage, setCollabMessage] = createSignal("");
 
   const isSubscribed = () =>
     !!props.playlist.remoteNodeId && !props.playlist.isForked;
@@ -198,12 +199,24 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
       setIsForkingOrCollab(true);
       setForkCollabStatus(null);
       await ensureSharingReady();
-      await knockOnPeer(
-        nodeId,
-        "requesting collaboration access to: " +
-          (props.playlist.title || "playlist")
+      const { knockForDocAccess } = await import(
+        "../services/sharingService.js"
       );
-      setForkCollabStatus("knock sent - waiting for owner to accept");
+      const result = await knockForDocAccess(
+        nodeId,
+        props.playlist.id,
+        collabMessage() ||
+          "requesting collaboration access to: " +
+            (props.playlist.title || "playlist"),
+        props.playlist.title
+      );
+      if (result.status === "accepted") {
+        setForkCollabStatus("access granted - you can now collaborate");
+      } else if (result.status === "pending") {
+        setForkCollabStatus("knock sent - waiting for owner to accept");
+      } else {
+        setForkCollabStatus("request denied by owner");
+      }
     } catch (err) {
       setForkCollabStatus("knock failed");
       console.error("collab knock error:", err);
@@ -439,6 +452,15 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                   request collaboration
                 </button>
               </div>
+              <textarea
+                data-testid="input-collab-message"
+                value={collabMessage()}
+                onInput={(e) => setCollabMessage(e.currentTarget.value)}
+                placeholder="optional message to the owner..."
+                rows="2"
+                disabled={isForkingOrCollab()}
+                class="w-full bg-black text-white text-xs border border-gray-700 px-2 py-1.5 focus:outline-none focus:border-magenta-500 resize-none disabled:opacity-50"
+              />
               <Show when={forkCollabStatus()}>
                 <p class="text-xs text-gray-400">{forkCollabStatus()}</p>
               </Show>

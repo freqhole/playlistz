@@ -1,4 +1,3 @@
-
 // p2p sharing panel: endpoint setup, node status, share link paste,
 // and the knock inbox. opened from the sidebar header.
 import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";
@@ -146,10 +145,16 @@ export function SharePanel(props: SharePanelProps) {
     setPasteStatus("opening...");
     setError(null);
     try {
-      const docId = await openShareLink(input);
+      const result = await openShareLink(input);
+      if (result.status === "knock_required") {
+        setPasteStatus(
+          "this playlist requires a knock - the owner has enabled 'knock first' mode"
+        );
+        return;
+      }
       setPasteStatus("playlist added!");
       setPasteValue("");
-      props.onPlaylistAdded?.(docId);
+      props.onPlaylistAdded?.(result.docId);
       setTimeout(() => setPasteStatus(null), 2000);
     } catch (err) {
       setPasteStatus(null);
@@ -455,7 +460,7 @@ export function SharePanel(props: SharePanelProps) {
                             onClick={() =>
                               void (async () => {
                                 try {
-                                  const docId = await openShareLink(
+                                  const result = await openShareLink(
                                     // build a minimal token from the listing
                                     `#share/${btoa(
                                       JSON.stringify({
@@ -469,7 +474,9 @@ export function SharePanel(props: SharePanelProps) {
                                       .replace(/\//g, "_")
                                       .replace(/=/g, "")}`
                                   );
-                                  props.onPlaylistAdded?.(docId);
+                                  if (result.status === "synced") {
+                                    props.onPlaylistAdded?.(result.docId);
+                                  }
                                 } catch (err) {
                                   setError(
                                     err instanceof Error

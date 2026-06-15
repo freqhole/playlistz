@@ -22,6 +22,7 @@ import {
   initSharingState,
   sharingReady,
   pendingKnockCount,
+  outboundPendingCount,
   connectedPeerCount,
   isTransferring,
 } from "../../services/sharingState.js";
@@ -36,6 +37,7 @@ import { PlaylistEditPanel } from "../PlaylistEditPanel.js";
 import { SongEditPanel } from "../SongEditPanel.js";
 import { PlaylistSharePanel } from "../PlaylistSharePanel.js";
 import { AllPlaylistsPanel } from "../AllPlaylistsPanel.js";
+import { forkPlaylist } from "../../services/playlistDocService.js";
 
 import { log } from "../../utils/log.js";
 
@@ -126,6 +128,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   // share panel state - declared before isEditing so the memo can reference it
   const [showingShare, setShowingShare] = createSignal(false);
   const [showAllPlaylists, setShowAllPlaylists] = createSignal(false);
+  // when set, AllPlaylistsPanel opens with this peer nodeId pre-searched
+  const [allPlaylistsPeerQuery, setAllPlaylistsPeerQuery] = createSignal<
+    string | undefined
+  >(undefined);
 
   const closeShare = () => {
     setShowingShare(false);
@@ -437,6 +443,17 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   />
                 </div>
 
+                {/* read-only banner for subscribed playlists */}
+                <Show when={isSubscribed()}>
+                  <SubscribedBanner
+                    playlist={props.playlist()}
+                    onFork={(newDocId) => {
+                      playlistManager.selectById(newDocId);
+                    }}
+                    onOpenEditPanel={() => handleEditPlaylist()}
+                  />
+                </Show>
+
                 {/* player + action buttons grid - inline here on desktop, a
                 sticky bar inside the scroll container on mobile */}
                 <Show when={!isMobile()}>{playerControls()}</Show>
@@ -474,6 +491,45 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 class="flex items-center justify-end text-sm gap-0"
                 style={{ "grid-area": "info" }}
               >
+                {/* sharer identity pill - shown when playlist is subscribed from a remote peer */}
+                <Show when={props.playlist().remoteNodeId}>
+                  <button
+                    data-testid="btn-browse-sharer"
+                    class="flex items-center gap-1 bg-black/80 px-1.5 py-2 text-xs text-gray-400 hover:text-magenta-300 hover:bg-black transition-colors"
+                    title={`browse ${props.playlist().remoteName || props.playlist().remoteNodeId?.slice(0, 16)}'s playlistz`}
+                    onClick={() => {
+                      if (showingShare()) closeShare();
+                      if (editingPlaylist() || editingSong()) handleCloseEdit();
+                      setAllPlaylistsPeerQuery(props.playlist().remoteNodeId);
+                      setShowAllPlaylists(true);
+                    }}
+                  >
+                    <Show
+                      when={props.playlist().remoteAvatarDataUrl}
+                      fallback={
+                        <span class="inline-flex items-center justify-center w-4 h-4 bg-magenta-700/60 text-white text-[9px] font-bold shrink-0 overflow-hidden rounded-full">
+                          {(
+                            props.playlist().remoteName ||
+                            props.playlist().remoteNodeId ||
+                            ""
+                          )
+                            .slice(0, 1)
+                            .toUpperCase()}
+                        </span>
+                      }
+                    >
+                      <img
+                        src={props.playlist().remoteAvatarDataUrl}
+                        alt={props.playlist().remoteName || "peer"}
+                        class="w-4 h-4 rounded-full object-cover shrink-0"
+                      />
+                    </Show>
+                    <span class="truncate max-w-[6rem]">
+                      {props.playlist().remoteName ||
+                        props.playlist().remoteNodeId?.slice(0, 8)}
+                    </span>
+                  </button>
+                </Show>
                 <span
                   data-testid="playlist-song-count"
                   class="bg-black bg-opacity-80 p-2"
@@ -651,9 +707,11 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                       }
                     />
                   </svg>
-                  <Show when={pendingKnockCount() > 0}>
+                  <Show
+                    when={pendingKnockCount() > 0 || outboundPendingCount() > 0}
+                  >
                     <span class="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-magenta-500 text-white text-[9px] leading-[14px] text-center font-bold">
-                      {pendingKnockCount()}
+                      {pendingKnockCount() + outboundPendingCount()}
                     </span>
                   </Show>
                 </button>
@@ -932,21 +990,28 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               <Show when={showAllPlaylists() && rowsGone()}>
                 <div style={panelEntryStyle()}>
                   <AllPlaylistsPanel
-                    onClose={() => setShowAllPlaylists(false)}
+                    onClose={() => {
+                      setShowAllPlaylists(false);
+                      setAllPlaylistsPeerQuery(undefined);
+                    }}
                     onEdit={(p) => {
                       playlistManager.selectPlaylist(p);
                       setShowAllPlaylists(false);
+                      setAllPlaylistsPeerQuery(undefined);
                       setTimeout(() => handleEditPlaylist(), 0);
                     }}
                     onShare={(p) => {
                       playlistManager.selectPlaylist(p);
                       setShowAllPlaylists(false);
+                      setAllPlaylistsPeerQuery(undefined);
                       setTimeout(() => setShowingShare(true), 0);
                     }}
                     onPlaylistAdded={(docId) => {
                       playlistManager.selectById(docId);
                       setShowAllPlaylists(false);
+                      setAllPlaylistsPeerQuery(undefined);
                     }}
+                    initialQuery={allPlaylistsPeerQuery()}
                   />
                 </div>
               </Show>
@@ -1081,6 +1146,85 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
           </>
         );
       })()}
+    </div>
+  );
+}
+
+// compact read-only banner shown below the title/description for subscribed playlists.
+// provides quick access to fork (local copy) and the full edit panel (for collab request).
+function SubscribedBanner(props: {
+  playlist: Playlist;
+  onFork: (newDocId: string) => void;
+  onOpenEditPanel: () => void;
+}) {
+  const [forking, setForking] = createSignal(false);
+  const [forkError, setForkError] = createSignal<string | null>(null);
+
+  const handleFork = async () => {
+    if (forking()) return;
+    setForking(true);
+    setForkError(null);
+    try {
+      const forked = await forkPlaylist(props.playlist.id);
+      props.onFork(forked.id);
+    } catch (err) {
+      setForkError("fork failed");
+      console.error("fork error:", err);
+    } finally {
+      setForking(false);
+    }
+  };
+
+  const displayName = () =>
+    props.playlist.remoteName ||
+    props.playlist.remoteNodeId?.slice(0, 16) ||
+    "peer";
+
+  return (
+    <div
+      data-testid="subscribed-banner"
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 bg-black/70 border-t border-gray-800 text-xs"
+    >
+      <span class="text-yellow-500/80 font-medium">read only</span>
+      <span class="text-gray-600">·</span>
+      <Show
+        when={props.playlist.remoteAvatarDataUrl}
+        fallback={
+          <span class="inline-flex items-center justify-center w-3.5 h-3.5 bg-magenta-700/60 text-white text-[8px] font-bold rounded-full overflow-hidden">
+            {(props.playlist.remoteName || props.playlist.remoteNodeId || "")
+              .slice(0, 1)
+              .toUpperCase()}
+          </span>
+        }
+      >
+        <img
+          src={props.playlist.remoteAvatarDataUrl}
+          alt={props.playlist.remoteName || "peer"}
+          class="w-3.5 h-3.5 rounded-full object-cover"
+        />
+      </Show>
+      <span class="text-gray-500">from {displayName()}</span>
+      <div class="flex items-center gap-2 ml-auto">
+        <button
+          data-testid="btn-fork-playlist-banner"
+          class="px-2 py-0.5 text-gray-300 hover:text-white border border-gray-700 hover:border-gray-500 disabled:opacity-50 transition-colors"
+          onClick={() => void handleFork()}
+          disabled={forking()}
+        >
+          {forking() ? "forking..." : "fork my copy"}
+        </button>
+        <button
+          data-testid="btn-request-edit-banner"
+          class="px-2 py-0.5 text-gray-300 hover:text-white border border-gray-700 hover:border-gray-500 transition-colors"
+          onClick={() => props.onOpenEditPanel()}
+          title="request collaboration access"
+        >
+          request edit
+        </button>
+      </div>
+      <Show when={forkError()}>
+        <span class="w-full text-red-400">{forkError()}</span>
+      </Show>
     </div>
   );
 }

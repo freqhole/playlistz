@@ -19,6 +19,7 @@ import {
   resetAppState,
   createPlaylistViaUI,
   addSongs,
+  makePng,
   logTs,
   getDocIndexEntries,
   patchDocIndexEntry,
@@ -571,3 +572,152 @@ test(
     }
   }
 );
+
+// -----------------------------------------------------------------------
+// blob transfer: audio + image
+// -----------------------------------------------------------------------
+// peer A creates a playlist with songs (each has an embedded image), shares it.
+// peer B opens the share link, syncs the doc, then uses "save offline" to pull
+// all blobs via the freqhole-playlistz/1 blob_request / blob_ready exchange.
+// verifies that:
+//   - song audio blobs arrive (song rows exit pending/downloading state)
+//   - image blobs arrive (cover image becomes visible on B)
+//   - all transfers complete without errors (no "error" download state on any row)
+//   - playing a song on B works after blobs are local (no second-attempt needed)
+
+test("peer B fetches audio and image blobs from peer A @p2p", async ({ browser }) => {
+  test.setTimeout(600_000);
+
+  const ctxA = await browser.newContext();
+  const ctxB = await browser.newContext();
+  const pageA = await ctxA.newPage();
+  const pageB = await ctxB.newPage();
+
+  const fwd = (tag: string) => (msg: import("@playwright/test").ConsoleMessage) => {
+    logTs(`[${tag}] ${msg.text()}`);
+  };
+  pageA.on("console", fwd("peerA"));
+  pageB.on("console", fwd("peerB"));
+  pageA.on("pageerror", (e) => logTs(`[peerA error] ${e}`));
+  pageB.on("pageerror", (e) => logTs(`[peerB error] ${e}`));
+
+  try {
+    // --- peer A: create playlist with songs + cover images ---
+    await resetAppState(pageA);
+    await createPlaylistViaUI(pageA);
+    await pageA.getByTestId("input-playlist-title").fill("blob-transfer-test");
+    await pageA.getByTestId("input-playlist-title").blur();
+    await pageA.waitForTimeout(300);
+
+    // 3 songs so we exercise parallel prefetch
+    await addSongs(pageA, 3);
+    await expect(pageA.getByTestId("song-row")).toHaveCount(3, { timeout: 10_000 });
+
+    // add a cover image to the first song via the song edit panel
+    const pngBytes = await makePng(pageA, { color: "#ff00ff", label: "cover" });
+    const firstRow = pageA.getByTestId("song-row").first();
+    await firstRow.hover();
+    await pageA.getByTestId("btn-edit-song").first().click();
+    await pageA.getByTestId("song-edit-panel").waitFor({ timeout: 5000 });
+    // drop the image onto the song edit panel drop zone
+    await pageA.evaluate(
+      async ({ b64 }: { b64: string }) => {
+        const bin = atob(b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        const file = new File([arr], "cover.png", { type: "image/png" });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const panel = document.querySelector('[data-testid="song-edit-panel"]') ?? document.body;
+        panel.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      },
+      { b64: Buffer.from(pngBytes).toString("base64") }
+    );
+    await pageA.waitForTimeout(500);
+    await pageA.keyboard.press("Escape");
+
+    // --- peer A: enable p2p and set public mode ---
+    logTs("[e2e] peerA: enabling p2p...");
+    await pageA.getByTestId("btn-share-playlist").click();
+    await pageA.getByTestId("btn-enable-sharing").click();
+    await expect(pageA.getByTestId("btn-copy-share-link")).toBeEnabled({ timeout: 180_000 });
+
+    await pageA.getByText("anyone (public)").click();
+    await pageA.waitForTimeout(300);
+
+    const shareUrl = await pageA.locator("input[readonly]").first().inputValue();
+    expect(shareUrl).toContain("#share/");
+    logTs(`[e2e] peerA: share url built: ${shareUrl.slice(0, 60)}...`);
+    await pageA.getByTestId("btn-share-playlist").click();
+
+    // --- peer B: boot p2p and open share link ---
+    await resetAppState(pageB);
+    await createPlaylistViaUI(pageB);
+    await pageB.getByTestId("btn-share-playlist").click();
+    logTs("[e2e] peerB: enabling p2p...");
+    await pageB.getByTestId("btn-enable-sharing").click();
+    await expect(pageB.getByTestId("sharing-status")).toBeVisible({ timeout: 180_000 });
+    await pageB.getByTestId("btn-share-playlist").click();
+    logTs("[e2e] peerB: p2p online");
+
+    await pageB.getByTestId("btn-all-playlists").click();
+    await pageB.getByTestId("input-search-playlists").fill(shareUrl);
+    logTs("[e2e] peerB: opening share link...");
+    await expect(pageB.getByTestId("all-playlists-panel")).not.toBeVisible({ timeout: 120_000 });
+
+    // confirm doc metadata arrived
+    await expect(pageB.getByTestId("input-playlist-title")).toHaveValue(
+      "blob-transfer-test",
+      { timeout: 30_000 }
+    );
+    await expect(pageB.getByTestId("song-row")).toHaveCount(3, { timeout: 30_000 });
+    logTs("[e2e] peerB: doc synced - 3 song rows visible");
+
+    // --- peer B: trigger "save offline" to pull all blobs ---
+    // open share panel to reach the p2p save button
+    await pageB.getByTestId("btn-share-playlist").click();
+    await pageB.getByTestId("share-panel").waitFor({ timeout: 5000 });
+    await pageB.getByTestId("btn-share-playlist").click();
+
+    // the p2p save button is visible only if blobs are missing
+    const saveBtn = pageB.getByTestId("btn-p2p-save-offline");
+    if (await saveBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      logTs("[e2e] peerB: triggering save offline...");
+      await saveBtn.click();
+      // wait for the button to disappear (all blobs cached = button hidden)
+      await expect(saveBtn).not.toBeVisible({ timeout: 180_000 });
+      logTs("[e2e] peerB: save offline complete");
+    } else {
+      logTs("[e2e] peerB: blobs already local (skip save offline)");
+    }
+
+    // no song rows should be in error state
+    const errorRows = pageB.locator("[data-testid='song-duration'][data-download-state='error']");
+    await expect(errorRows).toHaveCount(0, { timeout: 5000 });
+    logTs("[e2e] peerB: no song rows in error state");
+
+    // all 3 songs should have no pending/downloading state (blobs cached)
+    await expect(
+      pageB.locator("[data-testid='song-duration'][data-download-state]")
+    ).toHaveCount(0, { timeout: 10_000 });
+    logTs("[e2e] peerB: all song blobs cached locally");
+
+    // --- play first song on B - should work on first attempt ---
+    await pageB.getByText("song-00").dblclick();
+    // audio player should show the song title within a few seconds
+    // (if the blob fetch needed a second attempt the title flickers, which
+    // is what we're guarding against)
+    await expect(pageB.getByTestId("audio-player")).toBeVisible({ timeout: 5000 });
+    logTs("[e2e] peerB: first song playing");
+
+    // --- cover image on B ---
+    // the first song row should have an image thumbnail visible
+    const firstSongRow = pageB.getByTestId("song-row").first();
+    const thumb = firstSongRow.locator("img");
+    await expect(thumb).toBeVisible({ timeout: 10_000 });
+    logTs("[e2e] peerB: song cover image visible");
+  } finally {
+    await Promise.allSettled([ctxA.close(), ctxB.close()]);
+  }
+});
+

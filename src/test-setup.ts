@@ -422,6 +422,9 @@ global.Audio = vi.fn(() => {
 Object.defineProperty(global, "document", {
   value: {
     ...global.document,
+    addEventListener: global.document.addEventListener.bind(global.document),
+    removeEventListener: global.document.removeEventListener.bind(global.document),
+    dispatchEvent: global.document.dispatchEvent.bind(global.document),
     title: "Test Page",
     querySelector: vi.fn(() => null),
     querySelectorAll: vi.fn(() => []),

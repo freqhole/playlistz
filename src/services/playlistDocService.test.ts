@@ -73,6 +73,9 @@ vi.mock("freqhole-api-client/storage", () => ({
       created_at: 0,
     };
   }),
+  deleteBlob: vi.fn(async (id: string) => {
+    blobStore.delete(id);
+  }),
 }));
 
 import {

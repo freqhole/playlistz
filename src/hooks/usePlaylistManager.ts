@@ -124,6 +124,7 @@ export function usePlaylistManager() {
             // overlay docIndex remote-source metadata
             playlist.remoteNodeId = entry.remoteNodeId;
             playlist.remoteName = entry.remoteName;
+            playlist.remoteAvatarDataUrl = entry.remoteAvatarDataUrl;
             playlist.isForked = entry.isForked;
             return playlist;
           } catch {
@@ -137,6 +138,7 @@ export function usePlaylistManager() {
               songIds: [],
               remoteNodeId: entry.remoteNodeId,
               remoteName: entry.remoteName,
+              remoteAvatarDataUrl: entry.remoteAvatarDataUrl,
               isForked: entry.isForked,
             } as Playlist;
           }

@@ -174,6 +174,42 @@ export interface BlobFetchProgress {
   fraction: number; // 0..1
 }
 
+// max concurrent outbound playlistz streams per peer. QUIC peers can reject
+// streams if too many are opened simultaneously - keep this conservative.
+const MAX_CONCURRENT_STREAMS_PER_PEER = 2;
+
+// per-peer active stream count + queued waiters
+const peerStreamCounts = new Map<string, number>();
+const peerStreamWaiters = new Map<string, Array<() => void>>();
+
+function acquirePeerStream(peerNodeId: string): Promise<void> {
+  const count = peerStreamCounts.get(peerNodeId) ?? 0;
+  if (count < MAX_CONCURRENT_STREAMS_PER_PEER) {
+    peerStreamCounts.set(peerNodeId, count + 1);
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    let waiters = peerStreamWaiters.get(peerNodeId);
+    if (!waiters) {
+      waiters = [];
+      peerStreamWaiters.set(peerNodeId, waiters);
+    }
+    waiters.push(resolve);
+  });
+}
+
+function releasePeerStream(peerNodeId: string): void {
+  const waiters = peerStreamWaiters.get(peerNodeId);
+  if (waiters && waiters.length > 0) {
+    const next = waiters.shift()!;
+    // count stays the same - the waiter takes the slot
+    next();
+    return;
+  }
+  const count = peerStreamCounts.get(peerNodeId) ?? 1;
+  peerStreamCounts.set(peerNodeId, Math.max(0, count - 1));
+}
+
 // in-flight fetches deduped by sha256
 const inflight = new Map<string, Promise<string | null>>();
 
@@ -227,6 +263,8 @@ async function fetchBlobFromPeer(
   let blake3: string;
   let size: number;
 
+  // throttle concurrent streams to avoid overwhelming the QUIC connection
+  await acquirePeerStream(peerNodeId);
   // ask the peer to stage the blob for verified download
   const stream = (await node.open_bi(
     peerNodeId,
@@ -242,6 +280,7 @@ async function fetchBlobFromPeer(
     size = reply.size;
   } finally {
     stream.close();
+    releasePeerStream(peerNodeId);
   }
 
   // verified streaming download over the iroh-blobs ALPN
@@ -346,20 +385,29 @@ export async function fetchBlobForDoc(
     });
 
     for (const peer of peers) {
-      try {
-        const result = await fetchBlobFromPeer(
-          peer,
-          sha256,
-          mimeType,
-          onProgress
-        );
-        if (result) return result;
-      } catch (err) {
-        console.warn(
-          "[blobs] fetch from peer failed:",
-          peer.slice(0, 16),
-          err
-        );
+      // try each peer up to 2 times with a short delay on first failure
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const result = await fetchBlobFromPeer(
+            peer,
+            sha256,
+            mimeType,
+            onProgress
+          );
+          if (result) return result;
+          break; // null result (peer doesn't have it) - no point retrying
+        } catch (err) {
+          if (attempt === 0) {
+            // brief pause before retry - transient QUIC stream errors often clear
+            await new Promise((r) => setTimeout(r, 500));
+          } else {
+            console.warn(
+              "[blobs] fetch from peer failed (giving up):",
+              peer.slice(0, 16),
+              err
+            );
+          }
+        }
       }
     }
     return null;
@@ -546,18 +594,21 @@ export async function playlistHasMissingBlobs(
 }
 
 // gather every blob a playlist references (song audio, song images,
-// playlist covers), deduped, and return the subset missing locally
+// playlist covers), deduped, and return the subset missing locally.
+// cover images come first so the playlist looks good as soon as possible.
 async function collectMissingBlobs(
   playlist: Playlist
 ): Promise<{ sha: string; mime: string; title: string }[]> {
   const docId = playlist.id;
-  const wanted: { sha: string; mime: string; title: string }[] = [];
+  const coverItems: { sha: string; mime: string; title: string }[] = [];
+  const audioItems: { sha: string; mime: string; title: string }[] = [];
+  const imageItems: { sha: string; mime: string; title: string }[] = [];
 
   const songs = await getSongsForPlaylist(docId).catch(() => [] as Song[]);
   for (const song of songs) {
     const sha = song.sha ?? song.sha256;
     if (sha) {
-      wanted.push({
+      audioItems.push({
         sha,
         mime: song.mimeType || "audio/mpeg",
         title: song.title,
@@ -565,7 +616,7 @@ async function collectMissingBlobs(
     }
     for (const img of song.images ?? []) {
       if (img.blobId) {
-        wanted.push({
+        imageItems.push({
           sha: img.blobId,
           mime: "image/jpeg",
           title: `${song.title} (image)`,
@@ -574,13 +625,13 @@ async function collectMissingBlobs(
     }
   }
 
-  // playlist cover images
+  // playlist cover images - fetched before song audio for fast visual loading
   try {
     const handle = await findPlaylistDoc(docId as AutomergeUrl);
     const doc = handle.doc();
     for (const img of doc?.images ?? []) {
       if (img.blobId) {
-        wanted.push({
+        coverItems.push({
           sha: img.blobId,
           mime: "image/jpeg",
           title: "playlist cover",
@@ -591,7 +642,8 @@ async function collectMissingBlobs(
     // doc unavailable - song list already covers most blobs
   }
 
-  // dedupe and drop already-local blobs
+  // dedupe: covers → song images → audio
+  const wanted = [...coverItems, ...imageItems, ...audioItems];
   const seen = new Set<string>();
   const missing: typeof wanted = [];
   for (const item of wanted) {

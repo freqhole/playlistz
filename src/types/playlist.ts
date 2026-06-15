@@ -28,6 +28,7 @@ export interface Playlist {
   // remote source metadata: set for playlists received from a remote peer
   remoteNodeId?: string; // iroh node id of the peer who shared this
   remoteName?: string; // their display name at time of sync
+  remoteAvatarDataUrl?: string; // their avatar data url at time of sync
   isForked?: boolean; // true once the user has forked to a local editable copy
 }
 

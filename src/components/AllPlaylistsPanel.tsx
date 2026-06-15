@@ -27,6 +27,7 @@ import {
   type PeerPlaylistListing,
 } from "../services/sharingService.js";
 import { decodeShareToken } from "freqhole-api-client/playlistz";
+import { ShareLinkKnockPanel } from "./ShareLinkKnockPanel.js";
 
 interface Props {
   onClose: () => void;
@@ -36,6 +37,8 @@ interface Props {
   onShare: (p: Playlist) => void;
   // called when a share link is successfully opened from the search bar
   onPlaylistAdded?: (docId: string) => void;
+  // pre-fill search with a peer nodeId and trigger peer browse on open
+  initialQuery?: string;
 }
 
 export function AllPlaylistsPanel(props: Props) {
@@ -49,10 +52,18 @@ export function AllPlaylistsPanel(props: Props) {
 
   const [isCreating, setIsCreating] = createSignal(false);
   const [allSongs, setAllSongs] = createSignal<Record<string, Song[]>>({});
-  const [query, setQuery] = createSignal("");
+  const [query, setQuery] = createSignal(props.initialQuery ?? "");
   const [searchStatus, setSearchStatus] = createSignal<string | null>(null);
   const [peerListing, setPeerListing] =
     createSignal<PeerPlaylistListing | null>(null);
+
+  // knock modal state for knock-gated share links pasted into the search bar
+  const [searchKnockRequired, setSearchKnockRequired] = createSignal<{
+    ownerNodeId: string;
+    docId: string;
+    title?: string;
+    ownerName?: string;
+  } | null>(null);
 
   // knock-with-message state (shown when knockRequired)
   const [knockMessage, setKnockMessage] = createSignal("");
@@ -90,11 +101,17 @@ export function AllPlaylistsPanel(props: Props) {
     if (isShareLink(trimmed)) {
       setSearchStatus("opening...");
       try {
-        const docId = await openShareLink(trimmed);
+        const result = await openShareLink(trimmed);
+        if (result.status === "knock_required") {
+          setSearchStatus(null);
+          setQuery("");
+          setSearchKnockRequired(result);
+          return;
+        }
         setQuery("");
         setSearchStatus(null);
-        selectById(docId);
-        props.onPlaylistAdded?.(docId);
+        selectById(result.docId);
+        props.onPlaylistAdded?.(result.docId);
         props.onClose();
       } catch (err) {
         setSearchStatus(
@@ -120,6 +137,11 @@ export function AllPlaylistsPanel(props: Props) {
   };
 
   onMount(() => {
+    // if a peer nodeId was provided, trigger the peer browse immediately
+    if (props.initialQuery) {
+      void handleSearchInput(props.initialQuery);
+    }
+
     const visible = otherPlaylists();
     void Promise.allSettled(
       visible.map(async (p) => {
@@ -156,6 +178,22 @@ export function AllPlaylistsPanel(props: Props) {
 
   return (
     <div class="flex flex-col h-full" data-testid="all-playlists-panel">
+      {/* knock modal for knock-gated share links pasted into search */}
+      <Show when={searchKnockRequired()}>
+        <ShareLinkKnockPanel
+          ownerNodeId={searchKnockRequired()!.ownerNodeId}
+          docId={searchKnockRequired()!.docId}
+          title={searchKnockRequired()!.title}
+          ownerName={searchKnockRequired()!.ownerName}
+          onAccepted={(docId) => {
+            setSearchKnockRequired(null);
+            selectById(docId);
+            props.onPlaylistAdded?.(docId);
+            props.onClose();
+          }}
+          onDismiss={() => setSearchKnockRequired(null)}
+        />
+      </Show>
       {/* always-visible search input */}
       <div class="px-3 pt-2 pb-1 flex-shrink-0">
         <input
@@ -240,6 +278,10 @@ export function AllPlaylistsPanel(props: Props) {
                       onPlay={handlePlay}
                       onEdit={props.onEdit}
                       onShare={props.onShare}
+                      onBrowsePeer={(nodeId) => {
+                        setQuery(nodeId);
+                        void handleSearchInput(nodeId);
+                      }}
                     />
                   )}
                 </For>
@@ -346,8 +388,8 @@ function PeerPlaylistRow(props: {
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
         .replace(/=/g, "");
-      const docId = await openShareLink(`#share/${token}`);
-      await props.onAdd(docId);
+      const result = await openShareLink(`#share/${token}`);
+      if (result.status === "synced") await props.onAdd(result.docId);
     } catch (err) {
       props.onError(
         err instanceof Error ? err.message : "failed to add playlist"
@@ -395,6 +437,8 @@ function PlaylistRow(props: {
   onPlay: (p: Playlist) => void;
   onEdit: (p: Playlist) => void;
   onShare: (p: Playlist) => void;
+  // called when user clicks the sharer identity pill
+  onBrowsePeer?: (nodeId: string) => void;
 }) {
   const isPlaying = () =>
     audioState.isPlaying() &&
@@ -516,11 +560,43 @@ function PlaylistRow(props: {
           <span class="text-xs text-gray-500 px-1 bg-black">
             {relativeTime.signal()}
           </span>
-          <Show when={props.playlist.remoteName}>
+          <Show when={props.playlist.remoteNodeId}>
             <span class="text-xs text-gray-700 bg-black px-0.5">·</span>
-            <span class="text-xs text-gray-500 px-1 bg-black">
-              {props.playlist.remoteName}
-            </span>
+            <button
+              data-testid="btn-browse-sharer"
+              class="flex items-center gap-0.5 text-xs text-gray-500 px-1 bg-black hover:text-magenta-400 transition-colors"
+              title={`browse ${props.playlist.remoteName || props.playlist.remoteNodeId?.slice(0, 16)}'s playlistz`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (props.playlist.remoteNodeId)
+                  props.onBrowsePeer?.(props.playlist.remoteNodeId);
+              }}
+            >
+              <Show
+                when={props.playlist.remoteAvatarDataUrl}
+                fallback={
+                  <span class="inline-flex items-center justify-center w-3 h-3 bg-magenta-700/60 text-white text-[7px] font-bold rounded-full overflow-hidden">
+                    {(
+                      props.playlist.remoteName ||
+                      props.playlist.remoteNodeId ||
+                      ""
+                    )
+                      .slice(0, 1)
+                      .toUpperCase()}
+                  </span>
+                }
+              >
+                <img
+                  src={props.playlist.remoteAvatarDataUrl}
+                  alt={props.playlist.remoteName || "peer"}
+                  class="w-3 h-3 rounded-full object-cover"
+                />
+              </Show>
+              <span>
+                {props.playlist.remoteName ||
+                  props.playlist.remoteNodeId?.slice(0, 8)}
+              </span>
+            </button>
           </Show>
         </div>
       </div>
