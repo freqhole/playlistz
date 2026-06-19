@@ -325,7 +325,7 @@ describe("Playlist Download Service", () => {
     });
 
     it("should include metadata when option is enabled", async () => {
-      const options = { includeMetadata: true };
+      const options = { includeImages: true };
 
       await downloadPlaylistAsZip(mockPlaylist, options);
 
@@ -628,7 +628,6 @@ describe("Playlist Download Service", () => {
       );
 
       const options = {
-        includeMetadata: true,
         generateM3U: true,
         includeImages: true,
         includeHTML: true,

@@ -40,6 +40,8 @@ import {
 import {
   initializeAllStandalonePlaylists,
   clearStandaloneLoadingProgress,
+  enrichSongsWithStandalonePaths,
+  enrichPlaylistWithStandalonePaths,
 } from "../services/standaloneService.js";
 import { getImageUrlForContext } from "../services/imageService.js";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
@@ -146,7 +148,7 @@ export function usePlaylistManager() {
       );
 
       log.debug("playlist.sync", "syncPlaylists #", String(syncId), "resolved", String(resolved.length));
-      setPlaylists(resolved);
+      setPlaylists(resolved.map(enrichPlaylistWithStandalonePaths));
 
       // update selection id only: selectedPlaylist() will auto-derive from playlists()
       const currentId = selectedPlaylistId();
@@ -297,19 +299,13 @@ export function usePlaylistManager() {
             setPlaylists((prev) =>
               prev.map((p) => {
                 if (p.id !== playlistId) return p;
-                // carry forward remote-source metadata from the previous entry:
-                // docToPlaylistAsync reads the automerge doc which has no
-                // remoteNodeId/remoteName/remoteAvatarDataUrl/isForked fields -
-                // those live only in the docIndex overlay done in
-                // syncPlaylistsFromDocIndex. preserving them here ensures they
-                // survive doc-change refreshes (e.g. when the sharer adds a song).
-                return {
+                return enrichPlaylistWithStandalonePaths({
                   ...updated,
                   remoteNodeId: p.remoteNodeId,
                   remoteName: p.remoteName,
                   remoteAvatarDataUrl: p.remoteAvatarDataUrl,
                   isForked: p.isForked,
-                };
+                });
               })
             );
             // selectedPlaylist() auto-updates from playlists() via memo - no setSelectedPlaylist needed
@@ -317,7 +313,7 @@ export function usePlaylistManager() {
             // use the handle we already have - avoids a redundant repo.find()
             const songs = await getSongsFromHandle(playlistId, handle);
             if (!disposed) {
-              setPlaylistSongs(songs);
+              setPlaylistSongs(enrichSongsWithStandalonePaths(songs));
             }
           } catch (err) {
             log.error("playlist.select", "error refreshing selected playlist doc:", err);
@@ -508,7 +504,6 @@ export function usePlaylistManager() {
     try {
       setError(null);
       await downloadPlaylistAsZip(playlist, {
-        includeMetadata: true,
         includeImages: true,
         generateM3U: true,
         includeHTML: true,

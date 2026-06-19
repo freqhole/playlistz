@@ -54,6 +54,16 @@ export { standaloneLoadingProgress, setStandaloneLoadingProgress };
 // populated during initializeStandalonePlaylist, used by loadStandaloneSongAudioData
 const standalonePathRegistry = new Map<string, string>();
 
+// module-level registry: songId -> { imageFilePath, imageType }
+// populated during initializeStandalonePlaylist, used to re-attach image metadata
+// when the doc-change reactive subscription refreshes songs from the automerge doc.
+const standaloneImageRegistry = new Map<string, { imageFilePath: string; imageType?: string }>();
+
+// module-level registry: docId -> { imageFilePath, imageType }
+// populated during initializeStandalonePlaylist; used to re-attach image metadata
+// to playlists rebuilt from the automerge doc (which has no view-layer image fields).
+const standalonePlaylistImageRegistry = new Map<string, { imageFilePath?: string; imageType?: string }>();
+
 // for testing: register a standalone path for a song
 export function registerStandalonePath(songId: string, path: string): void {
   standalonePathRegistry.set(songId, path);
@@ -62,6 +72,37 @@ export function registerStandalonePath(songId: string, path: string): void {
 // for testing: clear all registered paths between test runs
 export function clearStandaloneRegistry(): void {
   standalonePathRegistry.clear();
+  standaloneImageRegistry.clear();
+  standalonePlaylistImageRegistry.clear();
+}
+
+// re-attach standaloneFilePath and imageFilePath to songs fetched from the
+// automerge doc. the doc has no knowledge of these view-layer fields, so any
+// reactive refresh via getSongsFromHandle loses them. call this after every
+// doc-sourced song list to restore them from the registries.
+export function enrichSongsWithStandalonePaths(songs: Song[]): Song[] {
+  return songs.map((s) => {
+    const imgReg = standaloneImageRegistry.get(s.id);
+    return {
+      ...s,
+      standaloneFilePath: s.standaloneFilePath ?? standalonePathRegistry.get(s.id),
+      imageFilePath: s.imageFilePath ?? imgReg?.imageFilePath,
+      imageType: s.imageType ?? imgReg?.imageType,
+    };
+  });
+}
+
+// re-attach image metadata to a playlist rebuilt from the automerge doc.
+// the doc has no imageFilePath/imageType fields; they live only in the zip
+// data layer. call this after every doc-sourced playlist to restore them.
+export function enrichPlaylistWithStandalonePaths(playlist: Playlist): Playlist {
+  const reg = standalonePlaylistImageRegistry.get(playlist.id);
+  if (!reg) return playlist;
+  return {
+    ...playlist,
+    imageFilePath: playlist.imageFilePath ?? reg.imageFilePath,
+    imageType: playlist.imageType ?? reg.imageType,
+  };
 }
 
 // shape stored in settings store for idempotency tracking
@@ -72,7 +113,7 @@ interface StandaloneRecord {
 
 // resolve the data file path for a standalone song entry
 function resolveStandalonePath(songData: FreqholePlaylistSong): string {
-  return `data/${songData.safeFilename ?? songData.originalFilename}`;
+  return songData.filePath ?? `data/${songData.safeFilename ?? songData.originalFilename}`;
 }
 
 // create an automerge doc from standalone playlist data.
@@ -161,6 +202,10 @@ function buildStandaloneSongs(
         ? `data/${(songData.safeFilename ?? songData.originalFilename).replace(/\.[^.]+$/, "")}-cover${songData.imageExtension}`
         : undefined);
 
+    if (imageFilePath) {
+      standaloneImageRegistry.set(songData.id, { imageFilePath, imageType: songData.imageMimeType });
+    }
+
     const song: Song = {
       id: songData.id,
       title: songData.title,
@@ -187,6 +232,20 @@ function buildStandaloneSongs(
   });
 }
 
+// pre-register playlist image metadata before async doc operations fire BroadcastChannel.
+// mirrors the path resolution logic in buildStandalonePlaylist.
+function preRegisterPlaylistImage(playlistData: StandaloneData, docId: string): void {
+  const imageFilePath =
+    playlistData.playlist.imageFilePath ??
+    (playlistData.playlist.imageExtension
+      ? `data/playlist-cover${playlistData.playlist.imageExtension}`
+      : undefined);
+  standalonePlaylistImageRegistry.set(docId, {
+    imageFilePath,
+    imageType: playlistData.playlist.imageMimeType,
+  });
+}
+
 // build the Playlist view object for standalone callbacks.
 function buildStandalonePlaylist(
   playlistData: StandaloneData,
@@ -197,6 +256,11 @@ function buildStandalonePlaylist(
     (playlistData.playlist.imageExtension
       ? `data/playlist-cover${playlistData.playlist.imageExtension}`
       : undefined);
+
+  standalonePlaylistImageRegistry.set(docId, {
+    imageFilePath,
+    imageType: playlistData.playlist.imageMimeType,
+  });
 
   return {
     id: docId,
@@ -318,6 +382,26 @@ export async function initializeStandalonePlaylist(
       throw new Error("callbacks.setPlaylistSongs is not a function");
     }
 
+    // pre-populate path/image registries synchronously before any awaits.
+    // the BroadcastChannel from addDocIndexEntry fires on the next event loop
+    // tick, causing SongRow components to render and call enrichSongsWithStandalonePaths
+    // before buildStandaloneSongs runs. pre-registering here ensures image/path
+    // data is available when those enrichment calls happen.
+    for (const songData of playlistData.songs) {
+      standalonePathRegistry.set(songData.id, resolveStandalonePath(songData));
+      const imageFilePath =
+        songData.imageFilePath ??
+        (songData.imageExtension
+          ? `data/${(songData.safeFilename ?? songData.originalFilename).replace(/\.[^.]+$/, "")}-cover${songData.imageExtension}`
+          : undefined);
+      if (imageFilePath) {
+        standaloneImageRegistry.set(songData.id, {
+          imageFilePath,
+          imageType: songData.imageMimeType,
+        });
+      }
+    }
+
     setStandaloneLoadingProgress({
       current: 0,
       total: playlistData.songs.length,
@@ -339,6 +423,9 @@ export async function initializeStandalonePlaylist(
         phase: "initializing",
       });
       docId = await createStandaloneDoc(playlistData);
+      // register immediately after docId is known - BroadcastChannel fires on
+      // the next macrotask so this runs before enrichPlaylistWithStandalonePaths
+      preRegisterPlaylistImage(playlistData, docId);
       await saveSetting(settingKey, { rev: incomingRev, docId });
     } else if (incomingRev > existing.rev) {
       setStandaloneLoadingProgress({
@@ -348,10 +435,12 @@ export async function initializeStandalonePlaylist(
         phase: "reloading",
       });
       docId = existing.docId;
+      preRegisterPlaylistImage(playlistData, docId);
       await updateStandaloneDoc(docId, playlistData);
       await saveSetting(settingKey, { rev: incomingRev, docId });
     } else {
       docId = existing.docId;
+      preRegisterPlaylistImage(playlistData, docId);
       setStandaloneLoadingProgress({
         current: 0,
         total: playlistData.songs.length,

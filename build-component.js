@@ -92,16 +92,19 @@ customElement("freqhole-playlistz", {}, () => {
 }
 
 // build standalone freqhole-playlistz.js
+const skipClear = process.argv.includes("--no-clear");
+
 async function buildStandalone() {
   console.log("building freqhole-playlistz.js...");
 
   // ensure web component entry exists
   createWebComponentEntry();
 
-  // clear and create dist directory
   const distDir = path.resolve("dist");
-  if (fs.existsSync(distDir)) {
-    fs.rmSync(distDir, { recursive: true, force: true });
+  if (!skipClear) {
+    if (fs.existsSync(distDir)) {
+      fs.rmSync(distDir, { recursive: true, force: true });
+    }
   }
   fs.mkdirSync(distDir, { recursive: true });
 

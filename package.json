@@ -1,13 +1,30 @@
 {
-  "name": "playlistz",
+  "name": "@freqhole/playlistz",
   "version": "0.0.1",
   "description": "make some music playlistz in yr browser!",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/freqhole/playlistz"
+  },
+  "exports": {
+    ".": "./src/web-component.tsx",
+    "./zip-bundle": "./src/zip-bundle/index.ts"
+  },
+  "typesVersions": {
+    "*": {
+      "zip-bundle": [
+        "./src/zip-bundle/index.ts"
+      ]
+    }
+  },
   "scripts": {
-    "dev": "vite --config config/vite.config.ts",
     "start": "vite --config config/vite.config.ts",
-    "build": "vite build --config config/vite.config.ts",
+    "dev": "npm start",
+    "build": "npm run build:app && npm run build:standalone -- --no-clear && npm run build:zip-bundle-lib",
     "build:standalone": "node build-component.js",
+    "build:app": "vite build --config config/vite.config.ts",
+    "build:zip-bundle-lib": "node build-zip-bundle-lib.js",
     "preview": "vite preview --config config/vite.config.ts",
     "test": "vitest --run --config config/vitest.config.ts",
     "test:watch": "vitest --config config/vitest.config.ts",

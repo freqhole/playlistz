@@ -13,6 +13,7 @@ const FreqholePlaylistSongSchema = z.object({
   imageExtension: z.string().optional(),
   imageMimeType: z.string().optional(),
   imageFilePath: z.string().optional(),
+  filePath: z.string().optional(),
   safeFilename: z.string().optional(),
   mimeType: z.string().optional(),
 });

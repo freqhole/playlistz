@@ -134,6 +134,7 @@ export function generateData(dir: string): void {
         album: s.album || "",
         duration: s.duration,
         originalFilename: audioFilename,
+        filePath: `data/${audioFilename}`,
         safeFilename: audioFilename,
         fileSize: fs.existsSync(audioPath) ? fs.statSync(audioPath).size : 0,
         mimeType: mimeForExt(audioExt),
