@@ -42,6 +42,8 @@ import {
   clearStandaloneLoadingProgress,
   enrichSongsWithStandalonePaths,
   enrichPlaylistWithStandalonePaths,
+  standalonePreferredDocId,
+  setStandalonePreferredDocId,
 } from "../services/standaloneService.js";
 import { getImageUrlForContext } from "../services/imageService.js";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
@@ -262,6 +264,20 @@ export function usePlaylistManager() {
     const entries = docIndexEntries();
     log.debug("playlist.docindex", "docIndex effect fired, entries:", String(entries.length));
     void syncPlaylistsFromDocIndex(entries);
+  });
+
+  // reactive effect: when a standalone playlist is initialized, select it immediately.
+  // this overrides any previously remembered selection so the current zip's
+  // playlist is always shown first when opening a standalone file:// page.
+  // clears standalonePreferredDocId after applying so subsequent playlists()
+  // updates (doc changes, sidebar refreshes) don't keep snapping the selection back.
+  createEffect(() => {
+    const preferred = standalonePreferredDocId();
+    if (!preferred) return;
+    if (playlists().some((p) => p.id === preferred)) {
+      setSelectedPlaylistId(preferred);
+      setStandalonePreferredDocId(null);
+    }
   });
 
   // reactive effect (keyed by playlist id): subscribe to the selected playlist's

@@ -64,6 +64,27 @@ const standaloneImageRegistry = new Map<string, { imageFilePath: string; imageTy
 // to playlists rebuilt from the automerge doc (which has no view-layer image fields).
 const standalonePlaylistImageRegistry = new Map<string, { imageFilePath?: string; imageType?: string }>();
 
+// reactive signal: the docId of the playlist from the current window.__PLAYLISTZ__ entry.
+// set after initializeStandalonePlaylist determines the docId so usePlaylistManager
+// can select it over any previously remembered selection.
+const [standalonePreferredDocId, setStandalonePreferredDocId] = createSignal<string | null>(null);
+export { standalonePreferredDocId, setStandalonePreferredDocId };
+
+// derive a mime type from a file path or extension string.
+// used as a fallback when imageMimeType is missing from the zip data.
+function mimeFromExtension(extOrPath: string): string | undefined {
+  const ext = extOrPath.split(".").pop()?.toLowerCase();
+  const map: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    avif: "image/avif",
+  };
+  return ext ? map[ext] : undefined;
+}
+
 // for testing: register a standalone path for a song
 export function registerStandalonePath(songId: string, path: string): void {
   standalonePathRegistry.set(songId, path);
@@ -74,6 +95,7 @@ export function clearStandaloneRegistry(): void {
   standalonePathRegistry.clear();
   standaloneImageRegistry.clear();
   standalonePlaylistImageRegistry.clear();
+  setStandalonePreferredDocId(null);
 }
 
 // re-attach standaloneFilePath and imageFilePath to songs fetched from the
@@ -203,7 +225,8 @@ function buildStandaloneSongs(
         : undefined);
 
     if (imageFilePath) {
-      standaloneImageRegistry.set(songData.id, { imageFilePath, imageType: songData.imageMimeType });
+      const imageType = songData.imageMimeType ?? mimeFromExtension(imageFilePath);
+      standaloneImageRegistry.set(songData.id, { imageFilePath, imageType });
     }
 
     const song: Song = {
@@ -224,7 +247,7 @@ function buildStandaloneSongs(
       standaloneFilePath,
       needsImageLoad: !!imageFilePath,
       imageFilePath,
-      imageType: songData.imageMimeType,
+      imageType: songData.imageMimeType ?? (imageFilePath ? mimeFromExtension(imageFilePath) : undefined),
       images: [],
     };
 
@@ -240,10 +263,8 @@ function preRegisterPlaylistImage(playlistData: StandaloneData, docId: string): 
     (playlistData.playlist.imageExtension
       ? `data/playlist-cover${playlistData.playlist.imageExtension}`
       : undefined);
-  standalonePlaylistImageRegistry.set(docId, {
-    imageFilePath,
-    imageType: playlistData.playlist.imageMimeType,
-  });
+  const imageType = playlistData.playlist.imageMimeType ?? (imageFilePath ? mimeFromExtension(imageFilePath) : undefined);
+  standalonePlaylistImageRegistry.set(docId, { imageFilePath, imageType });
 }
 
 // build the Playlist view object for standalone callbacks.
@@ -259,7 +280,7 @@ function buildStandalonePlaylist(
 
   standalonePlaylistImageRegistry.set(docId, {
     imageFilePath,
-    imageType: playlistData.playlist.imageMimeType,
+    imageType: playlistData.playlist.imageMimeType ?? (imageFilePath ? mimeFromExtension(imageFilePath) : undefined),
   });
 
   return {
@@ -272,7 +293,7 @@ function buildStandalonePlaylist(
     rev: playlistData.playlist.rev,
     needsImageLoad: !!imageFilePath,
     imageFilePath,
-    imageType: playlistData.playlist.imageMimeType,
+    imageType: playlistData.playlist.imageMimeType ?? (imageFilePath ? mimeFromExtension(imageFilePath) : undefined),
     bgFilterEnabled: playlistData.playlist.bgFilterEnabled,
     bgFilterBlur: playlistData.playlist.bgFilterBlur,
     bgFilterContrast: playlistData.playlist.bgFilterContrast,
@@ -426,6 +447,7 @@ export async function initializeStandalonePlaylist(
       // register immediately after docId is known - BroadcastChannel fires on
       // the next macrotask so this runs before enrichPlaylistWithStandalonePaths
       preRegisterPlaylistImage(playlistData, docId);
+      setStandalonePreferredDocId(docId);
       await saveSetting(settingKey, { rev: incomingRev, docId });
     } else if (incomingRev > existing.rev) {
       setStandaloneLoadingProgress({
@@ -436,11 +458,13 @@ export async function initializeStandalonePlaylist(
       });
       docId = existing.docId;
       preRegisterPlaylistImage(playlistData, docId);
+      setStandalonePreferredDocId(docId);
       await updateStandaloneDoc(docId, playlistData);
       await saveSetting(settingKey, { rev: incomingRev, docId });
     } else {
       docId = existing.docId;
       preRegisterPlaylistImage(playlistData, docId);
+      setStandalonePreferredDocId(docId);
       setStandaloneLoadingProgress({
         current: 0,
         total: playlistData.songs.length,

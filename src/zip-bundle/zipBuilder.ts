@@ -5,6 +5,21 @@ import { generateM3UContent } from "./m3u.js";
 import { generateIndexHtml, generatePlaylistzJs } from "../utils/standaloneTemplates.js";
 import { generateSwJs } from "../utils/swTemplate.js";
 
+// derive a MIME type from a file path extension.
+// used as a fallback when the caller didn't supply an explicit imageType.
+function mimeFromPath(filePath: string): string {
+  const ext = filePath.split(".").pop()?.toLowerCase();
+  const map: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    avif: "image/avif",
+  };
+  return (ext && map[ext]) ? map[ext]! : "image/jpeg";
+}
+
 // builds a self-contained playlist zip as a Blob.
 // does not trigger a browser download - callers handle delivery.
 // does not touch DOM, window, or document (except optionally fetching
@@ -95,7 +110,7 @@ export async function buildPlaylistZip(
         title: entry.playlist.title,
         description: entry.playlist.description,
         rev: entry.playlist.rev,
-        imageMimeType: entry.playlist.imageType,
+        imageMimeType: entry.playlist.imageType ?? (playlistImagePath ? mimeFromPath(playlistImagePath) : undefined),
         imageFilePath: playlistImagePath,
         safeFilename: rootName,
         bgFilterEnabled: entry.playlist.bgFilterEnabled,
@@ -117,7 +132,7 @@ export async function buildPlaylistZip(
         fileSize: r.song.fileSize ?? r.audioBytes?.byteLength ?? 0,
         mimeType: r.song.mimeType,
         sha: r.song.sha,
-        imageMimeType: r.song.imageType,
+        imageMimeType: r.song.imageType ?? (r.imagePath ? mimeFromPath(r.imagePath) : undefined),
         imageFilePath: r.imagePath,
       })),
     },
