@@ -1,8 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-import * as vm from "node:vm";
-import { FreqholePlaylistzSchema, type FreqholePlaylist, type FreqholePlaylistz } from "../utils/standaloneTemplates.js";
+import { FreqholePlaylistzSchema, generatePlaylistzJs, type FreqholePlaylist, type FreqholePlaylistz } from "../utils/standaloneTemplates.js";
 import { parseM3U, serializeM3U } from "../utils/m3u.js";
 
 // deterministic uuid v5 from a string (dns namespace)
@@ -32,9 +31,12 @@ function loadExistingPlaylistz(playlistzPath: string): FreqholePlaylistz {
   if (!fs.existsSync(playlistzPath)) return [];
   try {
     const src = fs.readFileSync(playlistzPath, "utf-8");
-    const ctx = vm.createContext({ window: {} as Record<string, unknown> });
-    vm.runInContext(src, ctx);
-    const raw = (ctx["window"] as Record<string, unknown>)["__PLAYLISTZ__"];
+    const attrMatch = src.match(/setAttribute\s*\(\s*'data-playlistz'\s*,\s*("(?:[^"\\]|\\.)*")\s*\)/);
+    if (!attrMatch) {
+      console.warn("existing playlistz.js has unrecognised format - treating as empty");
+      return [];
+    }
+    const raw = JSON.parse(JSON.parse(attrMatch[1]!));
     const parsed = FreqholePlaylistzSchema.safeParse(raw);
     if (parsed.success) return parsed.data;
     console.warn("existing playlistz.js failed schema validation - treating as empty");
@@ -174,8 +176,8 @@ export function generateData(dir: string): void {
     return;
   }
 
-  // write playlistz.js
-  const output = `window.__PLAYLISTZ__ = ${JSON.stringify(existing, null, 2)};\n`;
+  // write playlistz.js (new attribute-based format)
+  const output = generatePlaylistzJs(existing);
   fs.writeFileSync(playlistzPath, output, "utf-8");
   console.log(`\nwrote: ${playlistzPath}`);
   console.log(`  ${existing.length} playlist(s) total`);

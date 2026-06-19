@@ -1,4 +1,4 @@
-export { buildPlaylistZip } from "./zipBuilder.js";
+export { buildPlaylistZip, cleanupOpfsTempFile } from "./zipBuilder.js";
 export type {
   BlobFetcher,
   PlaylistZipEntry,

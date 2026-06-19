@@ -9,12 +9,16 @@
   },
   "exports": {
     ".": "./src/web-component.tsx",
-    "./zip-bundle": "./src/zip-bundle/index.ts"
+    "./zip-bundle": "./src/zip-bundle/index.ts",
+    "./templates": "./src/utils/standaloneTemplates.ts"
   },
   "typesVersions": {
     "*": {
       "zip-bundle": [
         "./src/zip-bundle/index.ts"
+      ],
+      "templates": [
+        "./src/utils/standaloneTemplates.ts"
       ]
     }
   },
@@ -57,6 +61,7 @@
     "@automerge/automerge-repo": "^2.5.5",
     "@automerge/automerge-repo-network-broadcastchannel": "^2.5.5",
     "@automerge/automerge-repo-storage-indexeddb": "^2.5.5",
+    "fflate": "^0.8.3",
     "freqhole-api-client": "file:../tomb/client-codegen/freqhole-api-client",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",

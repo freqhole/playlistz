@@ -1,5 +1,5 @@
 // standalone playlist ingestion and caching service.
-// ingests FreqholePlaylist data (embedded via window.__PLAYLISTZ__) into
+// ingests FreqholePlaylist data (passed via the data-playlistz attribute on
 // automerge docs and the blob store. designed for standalone zip export playback.
 
 import { createSignal } from "solid-js";
@@ -64,7 +64,7 @@ const standaloneImageRegistry = new Map<string, { imageFilePath: string; imageTy
 // to playlists rebuilt from the automerge doc (which has no view-layer image fields).
 const standalonePlaylistImageRegistry = new Map<string, { imageFilePath?: string; imageType?: string }>();
 
-// reactive signal: the docId of the playlist from the current window.__PLAYLISTZ__ entry.
+// reactive signal: the docId of the playlist from the current data-playlistz entry.
 // set after initializeStandalonePlaylist determines the docId so usePlaylistManager
 // can select it over any previously remembered selection.
 const [standalonePreferredDocId, setStandalonePreferredDocId] = createSignal<string | null>(null);

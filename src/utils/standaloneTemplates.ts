@@ -42,7 +42,7 @@ export const FreqholePlaylistSchema = z.object({
   songs: z.array(FreqholePlaylistSongSchema),
 });
 
-// schema for the full window.__PLAYLISTZ__ value (one or more playlists)
+// schema for the full playlistz prop value (one or more playlists)
 export const FreqholePlaylistzSchema = z.array(FreqholePlaylistSchema);
 
 export type FreqholePlaylistSong = z.infer<typeof FreqholePlaylistSongSchema>;
@@ -52,7 +52,12 @@ export type FreqholePlaylistz = z.infer<typeof FreqholePlaylistzSchema>;
 
 // generates the playlistz.js data file content for one or more playlists
 export function generatePlaylistzJs(playlists: FreqholePlaylistz): string {
-  return `window.__PLAYLISTZ__ = ${JSON.stringify(playlists)};\n`;
+  // set the data as a web component attribute instead of a global.
+  // playlistz.js runs before freqhole-playlistz.js (both deferred), so the
+  // <freqhole-playlistz> element is in the DOM (unupgraded). setAttribute works
+  // on unupgraded elements; the data is present when connectedCallback fires.
+  const json = JSON.stringify(JSON.stringify(playlists));
+  return `(function(){var el=document.querySelector('freqhole-playlistz');if(el)el.setAttribute('data-playlistz',${json});})();\n`;
 }
 
 // generates the minimal static index.html shell - no playlist data embedded
@@ -69,9 +74,9 @@ export function generateIndexHtml(): string {
   <meta name="theme-color" content="#000000">
 </head>
 <body>
-  <script src="playlistz.js"></script>
-  <script src="freqhole-playlistz.js"></script>
   <freqhole-playlistz></freqhole-playlistz>
+  <script src="playlistz.js" defer></script>
+  <script src="freqhole-playlistz.js" defer></script>
 </body>
 </html>
 `;

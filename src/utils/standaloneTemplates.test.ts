@@ -123,25 +123,32 @@ describe("FreqholePlaylistzSchema", () => {
 // ---- generatePlaylistzJs ----
 
 describe("generatePlaylistzJs", () => {
-  it("wraps data in window.__PLAYLISTZ__ assignment", () => {
+  it("sets data-playlistz attribute on the web component element", () => {
     const out = generatePlaylistzJs([makePlaylist()]);
-    expect(out).toMatch(/^window\.__PLAYLISTZ__ = \[/);
-    expect(out.endsWith(";\n")).toBe(true);
+    expect(out).toContain("setAttribute('data-playlistz'");
+    expect(out).toContain("freqhole-playlistz");
   });
 
   it("round-trips through JSON correctly", () => {
     const input = [makePlaylist()];
     const out = generatePlaylistzJs(input);
-    // extract the json value
-    const json = out.replace("window.__PLAYLISTZ__ = ", "").replace(/;\n$/, "");
-    const parsed = JSON.parse(json);
+    // extract the inner JSON string from the setAttribute call
+    const match = out.match(/setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/);
+    expect(match).not.toBeNull();
+    const innerJson = JSON.parse(match![1]!);
+    const parsed = JSON.parse(innerJson);
     expect(parsed[0].playlist.id).toBe("test-id");
     expect(parsed[0].songs[0].title).toBe("song one");
   });
 
   it("generates valid output for empty array", () => {
     const out = generatePlaylistzJs([]);
-    expect(out).toBe("window.__PLAYLISTZ__ = [];\n");
+    expect(out).toContain("setAttribute('data-playlistz'");
+    // the embedded JSON should be an empty array
+    const match = out.match(/setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/);
+    expect(match).not.toBeNull();
+    const innerJson = JSON.parse(match![1]!);
+    expect(JSON.parse(innerJson)).toEqual([]);
   });
 });
 

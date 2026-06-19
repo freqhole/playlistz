@@ -215,13 +215,14 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     expect(playlistzJsFile).toBeTruthy();
     const playlistzJs = await playlistzJsFile!.async("string");
 
-    // must be a valid window.__PLAYLISTZ__ assignment
-    expect(playlistzJs).toMatch(/^window\.__PLAYLISTZ__\s*=/);
+    // must set the data-playlistz attribute on the web component element
+    expect(playlistzJs).toContain("setAttribute('data-playlistz'");
 
-    // parse the JSON payload from "window.__PLAYLISTZ__ = [...];"
-    const jsonMatch = playlistzJs.match(/window\.__PLAYLISTZ__\s*=\s*(\[.*\]);?\s*$/s);
-    expect(jsonMatch).toBeTruthy();
-    const playlistzData = JSON.parse(jsonMatch![1]!) as Array<{
+    // extract and parse the JSON payload from setAttribute('data-playlistz', <json>)
+    const attrMatch = playlistzJs.match(/setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/);
+    expect(attrMatch).toBeTruthy();
+    const innerJson = JSON.parse(attrMatch![1]!);
+    const playlistzData = JSON.parse(innerJson) as Array<{
       playlist: { id: string; title: string };
       songs: Array<{ title: string; duration: number; originalFilename: string; mimeType: string }>;
     }>;
@@ -295,8 +296,10 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     // imageMimeType in playlistz.js must be a real MIME type, not "original"
     const playlistzJsFile = zip.file(/playlistz\.js$/)[0]!;
     const playlistzJs = await playlistzJsFile.async("string");
-    const jsonMatch = playlistzJs.match(/window\.__PLAYLISTZ__\s*=\s*(\[.*\]);?\s*$/s);
-    const playlistzData = JSON.parse(jsonMatch![1]!) as Array<{
+    const attrMatch = playlistzJs.match(/setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/);
+    expect(attrMatch).toBeTruthy();
+    const innerJson = JSON.parse(attrMatch![1]!);
+    const playlistzData = JSON.parse(innerJson) as Array<{
       playlist: { imageMimeType?: string };
       songs: Array<{ imageMimeType?: string }>;
     }>;

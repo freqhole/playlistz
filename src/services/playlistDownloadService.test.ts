@@ -18,7 +18,7 @@ vi.mock("freqhole-api-client/storage", () => ({
 }));
 
 vi.mock("../utils/standaloneTemplates.js", () => ({
-  generatePlaylistzJs: vi.fn(() => "window.__PLAYLISTZ__ = [];"),
+  generatePlaylistzJs: vi.fn(() => "(function(){})();\n"),
   generateIndexHtml: vi.fn(() => "<html></html>"),
 }));
 

@@ -9,7 +9,7 @@ import { findPlaylistDoc } from "./automergeRepo.js";
 import { parsePlaylistDoc } from "freqhole-api-client/playlistz";
 import JSZip from "jszip";
 import { getBlob } from "freqhole-api-client/storage";
-import { buildPlaylistZip } from "../zip-bundle/zipBuilder.js";
+import { buildPlaylistZip, cleanupOpfsTempFile } from "../zip-bundle/zipBuilder.js";
 import type { PlaylistZipEntry, PlaylistZipOptions } from "../zip-bundle/types.js";
 
 export type PlaylistDownloadOptions = PlaylistZipOptions;
@@ -57,14 +57,22 @@ function toZipEntry(playlist: Playlist, songs: Song[]): PlaylistZipEntry {
   };
 }
 
-// triggers a browser file download for the given blob.
+// triggers a browser file download for the given blob, then cleans up any
+// OPFS temp file that buildPlaylistZip may have used as its write target.
 function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // revoke after a tick so the browser has time to start the download
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    // if blob is an OPFS File, clean up the temp entry by name
+    if ("name" in blob && typeof (blob as File).name === "string") {
+      void cleanupOpfsTempFile((blob as File).name);
+    }
+  }, 1000);
 }
 
 // downloads a playlist as a zip file containing all songs, metadata, and images.

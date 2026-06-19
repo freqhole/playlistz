@@ -1,4 +1,4 @@
-import JSZip from "jszip";
+import { Zip, ZipPassThrough } from "fflate";
 import type { BlobFetcher, PlaylistZipEntry, PlaylistZipOptions } from "./types.js";
 import { sanitizeFilename, createSafeTitle, getFileExtension } from "./utils.js";
 import { generateM3UContent } from "./m3u.js";
@@ -20,10 +20,110 @@ function mimeFromPath(filePath: string): string {
   return (ext && map[ext]) ? map[ext]! : "image/jpeg";
 }
 
+const TEXT_ENC = new TextEncoder();
+
+// creates a streaming zip builder.
+//
+// in browsers (OPFS available): each file is written to an OPFS temp file
+// as its bytes are pushed. awaiting addFile() between files lets the OS
+// flush the write queue, so the prior file's bytes become eligible for GC
+// before the next file is fetched. this keeps peak memory at ~1 song at a time.
+//
+// in node/cli (no OPFS): chunks are accumulated in memory. for the cli path
+// playlists are usually small so this is acceptable.
+async function createStreamingZip(): Promise<{
+  addFile: (path: string, bytes: Uint8Array) => Promise<void>;
+  finish: () => Promise<Blob>;
+  tempName?: string;
+}> {
+  const opfsAvailable =
+    typeof navigator !== "undefined" &&
+    typeof navigator.storage?.getDirectory === "function" &&
+    // tauri webviews expose navigator.storage but lack FileSystemWritableFileStream;
+    // skip the OPFS attempt entirely and use the in-memory path + tauri IPC instead.
+    !(typeof window !== "undefined" && "__TAURI_INTERNALS__" in window);
+
+  if (opfsAvailable) {
+    try {
+      const opfsRoot = await navigator.storage.getDirectory();
+      const tempName = `playlistz-dl-${Date.now()}.zip`;
+      const tempHandle = await opfsRoot.getFileHandle(tempName, { create: true });
+      const writable = await tempHandle.createWritable();
+
+    // chain writes so they execute in order and we can await the tail
+    let pendingWrite: Promise<unknown> = Promise.resolve();
+    let resolveFinished!: () => void;
+    let rejectFinished!: (err: unknown) => void;
+    const finished = new Promise<void>((res, rej) => {
+      resolveFinished = res;
+      rejectFinished = rej;
+    });
+
+    const zip = new Zip((err, data, final) => {
+      if (err) { rejectFinished(err); return; }
+      pendingWrite = pendingWrite.then(() => writable.write(data));
+      if (final) {
+        pendingWrite
+          .then(() => writable.close())
+          .then(resolveFinished, rejectFinished);
+      }
+    });
+
+    return {
+      tempName,
+      async addFile(path, bytes) {
+        const entry = new ZipPassThrough(path);
+        zip.add(entry);
+        entry.push(bytes, true);
+        // await the write tail so OPFS has consumed the bytes before the
+        // caller fetches the next file. this lets the prior ArrayBuffer GC.
+        await pendingWrite;
+      },
+      async finish() {
+        zip.end();
+        await finished;
+        return tempHandle.getFile();
+      },
+    };
+    } catch {
+      // OPFS unavailable or createWritable not supported (e.g. Tauri WKWebView) -
+      // fall through to the in-memory path below
+    }
+  }
+
+  // in-memory fallback (node/cli or when OPFS write is unavailable)
+  const chunks: Uint8Array[] = [];
+  let resolveDone!: () => void;
+  let rejectDone!: (err: unknown) => void;
+  const done = new Promise<void>((res, rej) => { resolveDone = res; rejectDone = rej; });
+
+  const zip = new Zip((err, data, final) => {
+    if (err) { rejectDone(err); return; }
+    chunks.push(data);
+    if (final) resolveDone();
+  });
+
+  return {
+    async addFile(path, bytes) {
+      const entry = new ZipPassThrough(path);
+      zip.add(entry);
+      entry.push(bytes, true);
+    },
+    async finish() {
+      zip.end();
+      await done;
+      const total = chunks.reduce((acc, c) => acc + c.length, 0);
+      const buf = new Uint8Array(total);
+      let off = 0;
+      for (const c of chunks) { buf.set(c, off); off += c.length; }
+      return new Blob([buf], { type: "application/zip" });
+    },
+  };
+}
+
 // builds a self-contained playlist zip as a Blob.
-// does not trigger a browser download - callers handle delivery.
-// does not touch DOM, window, or document (except optionally fetching
-// the app bundle via appBundleUrl).
+// each file is fetched and streamed into the zip one at a time so that
+// prior audio bytes can be GC'd before the next song is fetched.
 export async function buildPlaylistZip(
   entry: PlaylistZipEntry,
   fetchBlob: BlobFetcher,
@@ -36,10 +136,8 @@ export async function buildPlaylistZip(
     appBundleUrl,
   } = options;
 
-  const zip = new JSZip();
   const rootName = createSafeTitle(entry.playlist.title) || "playlist";
-  const root = zip.folder(rootName)!;
-  const data = root.folder("data")!;
+  const builder = await createStreamingZip();
 
   // ---- playlist cover image ----
   let playlistImagePath: string | undefined;
@@ -48,58 +146,54 @@ export async function buildPlaylistZip(
     if (bytes) {
       const ext = getFileExtension(entry.playlist.imageType ?? "image/jpeg");
       const filename = `playlist-cover${ext}`;
-      data.file(filename, bytes);
       playlistImagePath = `data/${filename}`;
+      await builder.addFile(`${rootName}/${playlistImagePath}`, new Uint8Array(bytes));
+      // bytes GC-eligible after addFile resolves
     }
   }
 
-  // ---- songs: fetch audio + cover bytes ----
+  // ---- songs: fetch, stream, and discard bytes one at a time ----
+  // resolvedSongs holds only metadata (no byte buffers) so it stays small.
   const resolvedSongs: Array<{
     song: PlaylistZipEntry["songs"][number];
-    audioBytes?: ArrayBuffer;
-    imageBytes?: ArrayBuffer;
     audioPath: string;
     imagePath?: string;
     safeFilename: string;
-  }> = await Promise.all(
-    entry.songs.map(async (song) => {
-      const safeFilename = song.originalFilename
-        ? sanitizeFilename(song.originalFilename)
-        : sanitizeFilename(`${song.title}.${getFileExtension(song.mimeType).slice(1)}`);
-      const safeBase = safeFilename.replace(/\.[^.]+$/, "");
+    fileSize: number;
+  }> = [];
 
-      const audioBytes = song.sha ? await fetchBlob(song.sha) : undefined;
+  for (const song of entry.songs) {
+    const safeFilename = song.originalFilename
+      ? sanitizeFilename(song.originalFilename)
+      : sanitizeFilename(`${song.title}.${getFileExtension(song.mimeType).slice(1)}`);
+    const safeBase = safeFilename.replace(/\.[^.]+$/, "");
+    const audioPath = `data/${safeFilename}`;
+    let fileSize = song.fileSize ?? 0;
 
-      let imageBytes: ArrayBuffer | undefined;
-      let imagePath: string | undefined;
-      if (includeImages && song.imageSha) {
-        imageBytes = await fetchBlob(song.imageSha);
-        if (imageBytes) {
-          const ext = getFileExtension(song.imageType ?? "image/jpeg");
-          imagePath = `data/${safeBase}-cover${ext}`;
-        }
+    // fetch audio and stream it immediately
+    if (song.sha) {
+      const audioBytes = await fetchBlob(song.sha);
+      if (audioBytes) {
+        fileSize = audioBytes.byteLength;
+        await builder.addFile(`${rootName}/${audioPath}`, new Uint8Array(audioBytes));
+        // audioBytes GC-eligible after addFile resolves
       }
-
-      return {
-        song,
-        audioBytes,
-        imageBytes,
-        audioPath: `data/${safeFilename}`,
-        imagePath,
-        safeFilename,
-      };
-    }),
-  );
-
-  // ---- add audio + image files to data/ ----
-  for (const r of resolvedSongs) {
-    if (r.audioBytes) {
-      data.file(r.safeFilename, r.audioBytes);
     }
-    if (r.imageBytes && r.imagePath) {
-      const imgFilename = r.imagePath.replace("data/", "");
-      data.file(imgFilename, r.imageBytes);
+
+    // fetch cover image and stream it immediately
+    let imagePath: string | undefined;
+    if (includeImages && song.imageSha) {
+      const imageBytes = await fetchBlob(song.imageSha);
+      if (imageBytes) {
+        const ext = getFileExtension(song.imageType ?? "image/jpeg");
+        const imageFilename = `${safeBase}-cover${ext}`;
+        imagePath = `data/${imageFilename}`;
+        await builder.addFile(`${rootName}/${imagePath}`, new Uint8Array(imageBytes));
+        // imageBytes GC-eligible after addFile resolves
+      }
     }
+
+    resolvedSongs.push({ song, audioPath, imagePath, safeFilename, fileSize });
   }
 
   // ---- playlistz.js data file ----
@@ -129,7 +223,7 @@ export async function buildPlaylistZip(
         originalFilename: r.song.originalFilename,
         filePath: r.audioPath,
         safeFilename: r.safeFilename,
-        fileSize: r.song.fileSize ?? r.audioBytes?.byteLength ?? 0,
+        fileSize: r.fileSize,
         mimeType: r.song.mimeType,
         sha: r.song.sha,
         imageMimeType: r.song.imageType ?? (r.imagePath ? mimeFromPath(r.imagePath) : undefined),
@@ -137,7 +231,7 @@ export async function buildPlaylistZip(
       })),
     },
   ];
-  root.file("playlistz.js", generatePlaylistzJs(playlistzData));
+  await builder.addFile(`${rootName}/playlistz.js`, TEXT_ENC.encode(generatePlaylistzJs(playlistzData)));
 
   // ---- m3u8 file ----
   if (generateM3U) {
@@ -158,15 +252,14 @@ export async function buildPlaylistZip(
         imagePath: r.imagePath,
       })),
     );
-    data.file(`${rootName}.m3u8`, m3uContent);
+    await builder.addFile(`${rootName}/data/${rootName}.m3u8`, TEXT_ENC.encode(m3uContent));
   }
 
   // ---- static shell files ----
   if (includeHTML) {
-    root.file("index.html", generateIndexHtml());
-    root.file("sw.js", generateSwJs());
+    await builder.addFile(`${rootName}/index.html`, TEXT_ENC.encode(generateIndexHtml()));
+    await builder.addFile(`${rootName}/sw.js`, TEXT_ENC.encode(generateSwJs()));
 
-    // resolve where to fetch the app bundle from
     const bundleUrl =
       appBundleUrl !== undefined
         ? appBundleUrl
@@ -178,7 +271,7 @@ export async function buildPlaylistZip(
       try {
         const res = await fetch(bundleUrl);
         if (res.ok) {
-          root.file("freqhole-playlistz.js", await res.arrayBuffer());
+          await builder.addFile(`${rootName}/freqhole-playlistz.js`, new Uint8Array(await res.arrayBuffer()));
         } else {
           console.warn("could not fetch freqhole-playlistz.js for zip bundle:", res.status);
         }
@@ -187,7 +280,6 @@ export async function buildPlaylistZip(
       }
     }
 
-    // try fetching the cli bundle from the same origin if in a browser
     const cliUrl =
       typeof window !== "undefined"
         ? `${window.location.origin}/freqhole-playlistz-cli.mjs`
@@ -196,7 +288,7 @@ export async function buildPlaylistZip(
       try {
         const res = await fetch(cliUrl);
         if (res.ok) {
-          root.file("freqhole-playlistz-cli.mjs", await res.arrayBuffer());
+          await builder.addFile(`${rootName}/freqhole-playlistz-cli.mjs`, new Uint8Array(await res.arrayBuffer()));
         } else {
           console.warn("could not fetch freqhole-playlistz-cli.mjs:", res.status);
         }
@@ -206,5 +298,16 @@ export async function buildPlaylistZip(
     }
   }
 
-  return zip.generateAsync({ type: "blob" });
+  return builder.finish();
+}
+
+// delete an OPFS temp file created by buildPlaylistZip.
+// call this after the browser download or tauri save is complete.
+export async function cleanupOpfsTempFile(filename: string): Promise<void> {
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry(filename);
+  } catch {
+    // file may have already been removed or never existed - ignore
+  }
 }
