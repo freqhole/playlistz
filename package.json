@@ -55,7 +55,7 @@
   "author": "3dwardsharp",
   "license": "MIT",
   "bin": {
-    "freqhole-playlistz": "./dist/freqhole-playlistz-cli.mjs"
+    "freqhole-playlistz": "./dist/freqhole-playlistz.cli.mjs"
   },
   "dependencies": {
     "@automerge/automerge-repo": "^2.5.5",

@@ -11,47 +11,16 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const skipClear = process.argv.includes("--no-clear");
 
-console.log("building freqhole-playlistz.js + freqhole-playlistz-cli.mjs...");
-
-// build the node cli as a standalone esm bundle
-async function buildCli(indexHtml, swJs) {
-  console.log("building freqhole-playlistz-cli.mjs...");
-  const result = await esbuild({
-    entryPoints: [path.resolve(__dirname, "src/cli/index.ts")],
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    outfile: path.resolve("dist/freqhole-playlistz-cli.mjs"),
-    minify: true,
-    sourcemap: true,
-    banner: { js: "#!/usr/bin/env node" },
-  });
-
-  // replace placeholder strings in the written file
-  let code = fs.readFileSync(path.resolve("dist/freqhole-playlistz-cli.mjs"), "utf-8");
-  code = code.replace('"__INDEX_HTML__"', JSON.stringify(indexHtml));
-  code = code.replace('"__SW_JS__"', JSON.stringify(swJs));
-  fs.writeFileSync(path.resolve("dist/freqhole-playlistz-cli.mjs"), code, "utf-8");
-
-  // make executable
-  fs.chmodSync(path.resolve("dist/freqhole-playlistz-cli.mjs"), 0o755);
-  console.log("generated: freqhole-playlistz-cli.mjs");
-  return result;
-}
-
-// read static service worker file
 function readServiceWorker() {
   const swPath = path.resolve("public/sw.js");
-  if (fs.existsSync(swPath)) {
-    return fs.readFileSync(swPath, "utf-8");
-  }
-  console.warn("no service worker found at public/sw.js");
-  return null;
+  return fs.existsSync(swPath) ? fs.readFileSync(swPath, "utf-8") : null;
 }
 
-// generate the minimal static index.html shell
 function generateIndexHtml() {
+  // this is the dev server / standalone shell - no playlistz.js here.
+  // zip bundles get their own index.html (with playlistz.js) from standaloneTemplates.ts.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -64,205 +33,109 @@ function generateIndexHtml() {
   <meta name="theme-color" content="#000000">
 </head>
 <body>
-  <script src="freqhole-playlistz.js"></script>
   <freqhole-playlistz></freqhole-playlistz>
+  <script src="freqhole-playlistz.js" defer></script>
 </body>
 </html>
 `;
 }
 
-// create web component entry point if it doesn't exist
-function createWebComponentEntry() {
-  const webComponentPath = path.resolve("src/web-component.tsx");
-
-  if (!fs.existsSync(webComponentPath)) {
-    const webComponentCode = `
-import { customElement } from "solid-element";
-import { Playlistz } from "./components";
-import "./styles.css";
-
-customElement("freqhole-playlistz", {}, () => {
-  return <Playlistz />;
-});
-`.trim();
-
-    fs.writeFileSync(webComponentPath, webComponentCode);
-    console.log("created web component entry point");
-  }
-}
-
-// build standalone freqhole-playlistz.js
-const skipClear = process.argv.includes("--no-clear");
-
 async function buildStandalone() {
-  console.log("building freqhole-playlistz.js...");
-
-  // ensure web component entry exists
-  createWebComponentEntry();
-
   const distDir = path.resolve("dist");
   if (!skipClear) {
-    if (fs.existsSync(distDir)) {
-      fs.rmSync(distDir, { recursive: true, force: true });
-    }
+    if (fs.existsSync(distDir)) fs.rmSync(distDir, { recursive: true, force: true });
   }
   fs.mkdirSync(distDir, { recursive: true });
 
-  try {
-    await build({
-      configFile: false,
-      plugins: [
-        wasm(),
-        topLevelAwait(),
-        solid({
-          typescript: true,
-          jsx: "preserve",
-        }),
-        tailwindcss(),
-        {
-          name: "build-freqhole-playlistz",
-          // must run after vite-plugin-top-level-await (which is enforce:
-          // "post") so top-level awaits from the automerge wasm init are
-          // already transformed away before we convert the chunk to iife.
-          // post plugins run in array order, and this one comes last.
-          enforce: "post",
-          async generateBundle(_, bundle) {
-            const jsChunk = Object.values(bundle).find(
-              (file) => file.type === "chunk" && typeof file.code === "string"
-            );
+  const indexHtml = generateIndexHtml();
+  const swJs = readServiceWorker() ?? "";
 
-            const cssAsset = Object.values(bundle).find(
-              (file) =>
-                file.type === "asset" &&
-                typeof file.fileName === "string" &&
-                file.fileName.endsWith(".css")
-            );
+  // ---- browser bundle ----
+  console.log("building freqhole-playlistz.js...");
+  let browserCode = "";
+  let cssCode = "";
 
-            if (!jsChunk) {
-              console.error("no js chunk found in bundle");
-              return;
+  await build({
+    configFile: false,
+    plugins: [
+      wasm(), topLevelAwait(), solid({ typescript: true, jsx: "preserve" }), tailwindcss(),
+      {
+        name: "capture-browser-bundle",
+        enforce: "post",
+        async generateBundle(_, bundle) {
+          const jsChunk = Object.values(bundle).find(
+            (f) => f.type === "chunk" && typeof f.code === "string",
+          );
+          const cssAsset = Object.values(bundle).find(
+            (f) => f.type === "asset" && String(f.fileName).endsWith(".css"),
+          );
+          if (!jsChunk) { console.error("no js chunk found"); return; }
+          for (const [fileName, file] of Object.entries(bundle)) {
+            if (file.type === "asset" && fileName.endsWith(".wasm")) {
+              const b64 = Buffer.from(file.source).toString("base64");
+              const dataUri = `data:application/wasm;base64,${b64}`;
+              jsChunk.code = jsChunk.code.split(`/${fileName}`).join(dataUri);
+              delete bundle[fileName];
+              console.log(`  inlined wasm: ${fileName} (${(b64.length / 1024 / 1024).toFixed(1)} mb)`);
             }
-
-            // inline wasm assets as data: uris so the single-file bundle
-            // works from file:// (no separate .wasm fetch needed). the
-            // wasm init helpers in the bundle handle data: urls natively.
-            for (const [fileName, file] of Object.entries(bundle)) {
-              if (file.type === "asset" && fileName.endsWith(".wasm")) {
-                const b64 = Buffer.from(file.source).toString("base64");
-                const dataUri = `data:application/wasm;base64,${b64}`;
-                jsChunk.code = jsChunk.code.split(`/${fileName}`).join(dataUri);
-                delete bundle[fileName];
-                console.log(`inlined: ${fileName} (${(b64.length / 1024 / 1024).toFixed(1)} mb base64)`);
-              }
-            }
-
-            // inline css: minify it first via esbuild, then embed as a string injector
-            const cssCode = cssAsset ? String(cssAsset.source) : "";
-            let cssInjector = "";
-            if (cssCode) {
-              const cssMinified = (await transform(cssCode, { loader: "css", minify: true })).code.replace(/\n/g, "");
-              cssInjector = `(()=>{const s=document.createElement('style');s.textContent=${JSON.stringify(cssMinified)};document.head.appendChild(s);})();\n`;
-            }
-
-            // browser-only source: solid web component wrapped in iife.
-            // no isNode block - the cli is a separate .mjs build.
-            const source = cssInjector + jsChunk.code;
-
-            // single esbuild pass: minify everything + generate sourcemap.
-            // format:'iife' wraps the whole thing so no type="module" needed,
-            // which means it works on file:// urls without cors issues.
-            const result = await transform(source, {
-              minify: true,
-              sourcemap: true,
-              format: "iife",
-              target: "esnext",
-            });
-
-            jsChunk.code = result.code + "\n//# sourceMappingURL=freqhole-playlistz.js.map\n";
-            jsChunk.fileName = "freqhole-playlistz.js";
-
-            // rename the chunk key in the bundle
-            const oldKey = Object.keys(bundle).find((k) => bundle[k] === jsChunk);
-            if (oldKey && oldKey !== "freqhole-playlistz.js") {
-              bundle["freqhole-playlistz.js"] = jsChunk;
-              delete bundle[oldKey];
-            }
-
-            console.log("generated: freqhole-playlistz.js");
-
-            // emit sourcemap as a separate asset
-            if (result.map) {
-              this.emitFile({
-                type: "asset",
-                fileName: "freqhole-playlistz.js.map",
-                source: result.map,
-              });
-              console.log("generated: freqhole-playlistz.js.map");
-            }
-
-            // emit static index.html
-            this.emitFile({
-              type: "asset",
-              fileName: "index.html",
-              source: generateIndexHtml(),
-            });
-            console.log("generated: index.html");
-
-            // emit service worker
-            const swCode = readServiceWorker();
-            if (swCode) {
-              this.emitFile({
-                type: "asset",
-                fileName: "sw.js",
-                source: swCode,
-              });
-              console.log("generated: sw.js");
-            }
-
-            // remove css from output (inlined into js)
-            Object.keys(bundle).forEach((fileName) => {
-              if (fileName.endsWith(".css")) {
-                delete bundle[fileName];
-              }
-            });
-          },
-        },
-      ],
-      build: {
-        outDir: "dist",
-        target: "esnext",
-        minify: false,
-        sourcemap: false,
-        emptyOutDir: false,
-        rollupOptions: {
-          input: "./src/web-component.tsx",
-          output: {
-            format: "es",
-            entryFileNames: "playlistz-entry.js",
-            chunkFileNames: "playlistz-[hash].js",
-            assetFileNames: "playlistz.[ext]",
-            inlineDynamicImports: true,
-          },
-          // midden (wasm) cannot be inlined into a single-file standalone bundle.
-          // the dynamic import in p2pService catches the failure and degrades
-          // gracefully - the app works without p2p when running standalone.
-          external: ["midden"],
+          }
+          cssCode = cssAsset ? String(cssAsset.source) : "";
+          browserCode = jsChunk.code;
+          for (const key of Object.keys(bundle)) delete bundle[key];
         },
       },
-    });
+    ],
+    build: {
+      outDir: "dist", target: "esnext", minify: false, sourcemap: false, emptyOutDir: false,
+      rollupOptions: {
+        input: "./src/web-component.tsx",
+        output: {
+          format: "es", entryFileNames: "playlistz-entry.js",
+          chunkFileNames: "playlistz-[hash].js", assetFileNames: "playlistz.[ext]",
+          inlineDynamicImports: true,
+        },
+        external: ["midden"],
+      },
+    },
+  });
 
-    const indexHtml = generateIndexHtml();
-    const swJs = readServiceWorker() ?? "";
-    await buildCli(indexHtml, swJs);
-
-    console.log("build completed!");
-    console.log(`  browser: ${path.resolve("dist/freqhole-playlistz.js")}`);
-    console.log(`  cli:     ${path.resolve("dist/freqhole-playlistz-cli.mjs")}`);
-  } catch (error) {
-    console.error("error building:", error);
-    process.exit(1);
+  let cssInjector = "";
+  if (cssCode) {
+    const cssMinified = (await transform(cssCode, { loader: "css", minify: true })).code.replace(/\n/g, "");
+    cssInjector = `(()=>{const s=document.createElement('style');s.textContent=${JSON.stringify(cssMinified)};document.head.appendChild(s);})();\n`;
   }
+  const { code: browserMinified } = await transform(cssInjector + browserCode, {
+    minify: true, sourcemap: false, format: "iife", target: "esnext",
+  });
+  fs.writeFileSync(path.resolve("dist/freqhole-playlistz.js"), browserMinified, "utf-8");
+  console.log(`generated: freqhole-playlistz.js (${(browserMinified.length / 1024 / 1024).toFixed(2)} mb)`);
+
+  // ---- cli bundle ----
+  console.log("building freqhole-playlistz.cli.mjs...");
+  const cliOut = path.resolve("dist/freqhole-playlistz.cli.mjs");
+  const cliEntry = path.resolve(__dirname, "src/cli/index.ts");
+  await esbuild({
+    entryPoints: [cliEntry],
+    bundle: true, platform: "node", format: "esm", outfile: cliOut,
+    minify: true, sourcemap: false,
+    banner: { js: "#!/usr/bin/env node" },
+    define: { "import.meta.url": '"file://"' },
+  });
+  let cliCode = fs.readFileSync(cliOut, "utf-8");
+  cliCode = cliCode.replace('"__INDEX_HTML__"', JSON.stringify(indexHtml));
+  cliCode = cliCode.replace('"__SW_JS__"', JSON.stringify(swJs));
+  fs.writeFileSync(cliOut, cliCode, "utf-8");
+  fs.chmodSync(cliOut, 0o755);
+  console.log("generated: freqhole-playlistz.cli.mjs");
+
+  // ---- static assets ----
+  fs.writeFileSync(path.resolve("dist/index.html"), indexHtml, "utf-8");
+  if (swJs) fs.writeFileSync(path.resolve("dist/sw.js"), swJs, "utf-8");
+  console.log("generated: index.html, sw.js");
+
+  console.log("\nbuild completed!");
+  console.log("  browser: dist/freqhole-playlistz.js");
+  console.log("  cli:     dist/freqhole-playlistz.cli.mjs");
 }
 
-// main execution
-buildStandalone();
+buildStandalone().catch((err) => { console.error("build failed:", err); process.exit(1); });

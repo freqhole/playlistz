@@ -271,7 +271,19 @@ export async function buildPlaylistZip(
       try {
         const res = await fetch(bundleUrl);
         if (res.ok) {
-          await builder.addFile(`${rootName}/freqhole-playlistz.js`, new Uint8Array(await res.arrayBuffer()));
+          const text = await res.text();
+          // vite dev server (and other html-first servers) return the app's
+          // index.html for unknown routes. detect and skip to avoid embedding
+          // html as the js bundle. users should run `npm run build:standalone`
+          // first so dist/freqhole-playlistz.js exists for the dev server to serve.
+          if (text.trimStart().startsWith("<!")) {
+            console.warn(
+              "freqhole-playlistz.js fetch returned HTML (vite dev mode?). " +
+              "run `npm run build:standalone` first, then retry the zip download.",
+            );
+          } else {
+            await builder.addFile(`${rootName}/freqhole-playlistz.js`, TEXT_ENC.encode(text));
+          }
         } else {
           console.warn("could not fetch freqhole-playlistz.js for zip bundle:", res.status);
         }
@@ -279,23 +291,7 @@ export async function buildPlaylistZip(
         console.warn("could not include freqhole-playlistz.js in zip:", err);
       }
     }
-
-    const cliUrl =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/freqhole-playlistz-cli.mjs`
-        : null;
-    if (cliUrl) {
-      try {
-        const res = await fetch(cliUrl);
-        if (res.ok) {
-          await builder.addFile(`${rootName}/freqhole-playlistz-cli.mjs`, new Uint8Array(await res.arrayBuffer()));
-        } else {
-          console.warn("could not fetch freqhole-playlistz-cli.mjs:", res.status);
-        }
-      } catch (err) {
-        console.warn("could not include freqhole-playlistz-cli.mjs in zip:", err);
-      }
-    }
+    // note: no separate cli mjs needed - the cli is gated inside freqhole-playlistz.js
   }
 
   return builder.finish();

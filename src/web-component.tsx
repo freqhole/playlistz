@@ -4,6 +4,42 @@ import { FreqholePlaylistzSchema } from "./utils/standaloneTemplates.js";
 import { initializeStandalonePlaylist } from "./services/standaloneService.js";
 import "./styles.css";
 
+// expose a reset helper on window so devs can clear all playlistz state from
+// the browser console: await window.__playlistzReset()
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__playlistzReset =
+    async () => {
+      // tell the service worker to clear its caches
+      if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: "PLAYLISTZ_RESET",
+        });
+      }
+      // clear all playlistz IDB databases
+      const dbs = (await indexedDB.databases?.()) ?? [];
+      await Promise.all(
+        dbs
+          .filter((d) => d.name)
+          .map(
+            (d) =>
+              new Promise<void>((res, rej) => {
+                const req = indexedDB.deleteDatabase(d.name!);
+                req.onsuccess = () => res();
+                req.onerror = () => rej(req.error);
+              })
+          )
+      );
+      // clear all caches
+      if ("caches" in window) {
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
+      }
+      console.log(
+        "playlistz: all caches and IDB databases cleared. reload to restart fresh."
+      );
+    };
+}
+
 customElements.define(
   "freqhole-playlistz",
   class extends HTMLElement {
