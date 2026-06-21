@@ -61,6 +61,7 @@ export function MarqueeText(props: Props) {
   });
 
   createEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     props.text;
     requestAnimationFrame(checkOverflow);
   });

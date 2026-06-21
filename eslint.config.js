@@ -112,4 +112,27 @@ export default [
       globals: globals.node,
     },
   },
+
+  // Node scripts and e2e fixtures (plain JS/MJS)
+  {
+    files: ["scripts/**/*.{js,mjs}", "e2e/**/*.{js,mjs}"],
+    languageOptions: {
+      ecmaVersion: 2020,
+      sourceType: "module",
+      globals: globals.node,
+    },
+  },
+
+  // Service worker
+  {
+    files: ["public/sw.js"],
+    languageOptions: {
+      ecmaVersion: 2020,
+      sourceType: "script",
+      globals: {
+        ...globals.serviceworker,
+        urlsToCache: "readonly",
+      },
+    },
+  },
 ];

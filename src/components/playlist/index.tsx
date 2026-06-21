@@ -598,9 +598,11 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   onClick={() => {
                     if (showAllPlaylists()) setShowAllPlaylists(false);
                     if (showingShare()) closeShare();
-                    editingPlaylist()
-                      ? handleCloseEdit()
-                      : handleEditPlaylist();
+                    if (editingPlaylist()) {
+                      handleCloseEdit();
+                    } else {
+                      handleEditPlaylist();
+                    }
                   }}
                   class={`p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black/90 border ${editingPlaylist() ? "text-magenta-400 border-magenta-500" : "text-gray-400 border-transparent"}`}
                   title={

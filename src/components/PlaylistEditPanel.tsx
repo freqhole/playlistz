@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, onMount } from "solid-js";
+import { createSignal, createEffect, For, Show, onMount } from "solid-js";
 import {
   updatePlaylist,
   deletePlaylist,
@@ -127,7 +127,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         image?: unknown;
       };
       props.onSave({ ...rest, ...updates });
-    } catch (err) {
+    } catch (_err) {
       setError("failed to remove image");
     } finally {
       setIsLoading(false);
@@ -658,9 +658,9 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                 }}
                 class="bg-black text-white text-xs border border-gray-700 px-2 py-1 focus:outline-none focus:border-magenta-500"
               >
-                {BG_SIZE_OPTIONS.map((o) => (
-                  <option value={o}>{o}</option>
-                ))}
+                <For each={BG_SIZE_OPTIONS}>
+                  {(o) => <option value={o}>{o}</option>}
+                </For>
               </select>
             </div>
             <div class="grid grid-cols-[5rem_1fr] items-center gap-2">
@@ -675,9 +675,9 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                 }}
                 class="bg-black text-white text-xs border border-gray-700 px-2 py-1 focus:outline-none focus:border-magenta-500"
               >
-                {BG_POSITION_OPTIONS.map((o) => (
-                  <option value={o}>{o}</option>
-                ))}
+                <For each={BG_POSITION_OPTIONS}>
+                  {(o) => <option value={o}>{o}</option>}
+                </For>
               </select>
             </div>
             <div class="grid grid-cols-[5rem_1fr] items-center gap-2">
@@ -692,9 +692,9 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                 }}
                 class="bg-black text-white text-xs border border-gray-700 px-2 py-1 focus:outline-none focus:border-magenta-500"
               >
-                {BG_REPEAT_OPTIONS.map((o) => (
-                  <option value={o}>{o}</option>
-                ))}
+                <For each={BG_REPEAT_OPTIONS}>
+                  {(o) => <option value={o}>{o}</option>}
+                </For>
               </select>
             </div>
           </div>
