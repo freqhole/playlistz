@@ -548,10 +548,7 @@ async function openPlaylistzStream(nodeId: string): Promise<BiStreamLike> {
   return await Promise.race([
     node.open_bi(nodeId, PLAYLISTZ_ALPN) as unknown as Promise<BiStreamLike>,
     new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("stream open timed out")),
-        15_000
-      )
+      setTimeout(() => reject(new Error("stream open timed out")), 15_000)
     ),
   ]);
 }

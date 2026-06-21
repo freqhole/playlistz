@@ -23,7 +23,8 @@ async function enableP2PAndGetShareLink(
   await page.getByTestId("btn-share-playlist").click();
   logTs(`[e2e] ${tag}: enabling p2p...`);
   await page.getByTestId("btn-enable-sharing").click();
-  await expect(page.getByTestId("sharing-status")).toBeVisible({
+  // wait for relay address to be embedded in the share URL (more reliable than sharing-status)
+  await expect(page.getByTestId("btn-copy-share-link")).toBeEnabled({
     timeout: 180_000,
   });
   logTs(`[e2e] ${tag}: p2p node online`);
@@ -50,6 +51,9 @@ async function subscribeToPublicPlaylist(
   }
   await page.getByTestId("btn-all-playlists").click();
   await page.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
+  // give the iroh relay time to propagate this node's addresses before connecting;
+  // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
+  await page.waitForTimeout(20_000);
   await page.getByTestId("input-search-playlists").fill(shareUrl);
   logTs(`[e2e] ${tag}: opening share link...`);
   await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible({

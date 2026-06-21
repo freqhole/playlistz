@@ -190,6 +190,9 @@ test("three peers triangulate automerge changes @p2p", async ({ browser }) => {
       }
       await page.getByTestId("btn-all-playlists").click();
       await page.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
+      // give the iroh relay time to propagate this node's addresses before connecting;
+      // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
+      await page.waitForTimeout(20_000);
       await page.getByTestId("input-search-playlists").fill(shareUrl);
       logTs(`[e2e] ${tag}: opening share link...`);
       await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible({
@@ -337,6 +340,9 @@ test("cli-served zip app joins relay and syncs with peers @p2p", async ({
     }
     await pageB.getByTestId("btn-all-playlists").click();
     await pageB.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
+    // give the iroh relay time to propagate this node's addresses before connecting;
+    // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
+    await pageB.waitForTimeout(20_000);
     await pageB.getByTestId("input-search-playlists").fill(shareUrl);
     logTs("[e2e] cli peer: opening share link...");
     await expect(pageB.getByTestId("all-playlists-panel")).not.toBeVisible({
@@ -421,8 +427,12 @@ test(
       await addSongs(pageA, 3);
       logTs("[e2e] peerA: 3 songs added");
 
-      // open share panel, set mode to "public" so B's edits are accepted, enable p2p
+      // open share panel, enable p2p, then set mode to "public" so B's edits are accepted
       await pageA.getByTestId("btn-share-playlist").click();
+      await pageA.getByTestId("btn-enable-sharing").click();
+      const copyBtn = pageA.getByTestId("btn-copy-share-link");
+      await expect(copyBtn).toBeEnabled({ timeout: 180_000 });
+      logTs("[e2e] peerA: p2p node online");
       await pageA.getByTestId("btn-mode-public").click();
       await expect(pageA.getByTestId("btn-mode-public")).toHaveAttribute(
         "aria-pressed",
@@ -430,10 +440,6 @@ test(
         { timeout: 5000 }
       );
       logTs("[e2e] peerA: mode set to public");
-      await pageA.getByTestId("btn-enable-sharing").click();
-      const copyBtn = pageA.getByTestId("btn-copy-share-link");
-      await expect(copyBtn).toBeEnabled({ timeout: 180_000 });
-      logTs("[e2e] peerA: p2p node online");
 
       const shareUrl = await pageA.locator("input[readonly]").first().inputValue();
       expect(shareUrl).toContain("#share/");
@@ -469,6 +475,9 @@ test(
       ) => {
         await page.getByTestId("btn-all-playlists").click();
         await page.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
+        // give the iroh relay time to propagate this node's addresses before connecting;
+        // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
+        await page.waitForTimeout(20_000);
         await page.getByTestId("input-search-playlists").fill(shareUrl);
         logTs(`[e2e] ${tag}: opening share link...`);
         await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible({
@@ -661,6 +670,9 @@ test("peer B fetches audio and image blobs from peer A @p2p", async ({ browser }
     logTs("[e2e] peerB: p2p online");
 
     await pageB.getByTestId("btn-all-playlists").click();
+    // give the iroh relay time to propagate this node's addresses before connecting;
+    // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
+    await pageB.waitForTimeout(20_000);
     await pageB.getByTestId("input-search-playlists").fill(shareUrl);
     logTs("[e2e] peerB: opening share link...");
     await expect(pageB.getByTestId("all-playlists-panel")).not.toBeVisible({ timeout: 120_000 });

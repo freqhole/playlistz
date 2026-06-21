@@ -174,6 +174,9 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
     // search bar, which auto-detects and opens it
     await pageB.getByTestId("btn-all-playlists").click();
     await pageB.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
+    // give the iroh relay time to propagate this node's addresses before connecting;
+    // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
+    await pageB.waitForTimeout(20_000);
     await pageB
       .getByTestId("input-search-playlists")
       .fill(shareUrl);
