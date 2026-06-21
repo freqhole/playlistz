@@ -22,6 +22,22 @@
       ]
     }
   },
+  "keywords": [
+    "music-player",
+    "playlist",
+    "solid-js",
+    "web-component",
+    "indexeddb",
+    "pwa"
+  ],
+  "author": "3dwardsharp",
+  "license": "MIT",
+  "bin": {
+    "freqhole-playlistz": "./dist/freqhole-playlistz.cli.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "start": "vite --config config/vite.config.ts",
     "dev": "npm start",
@@ -49,19 +65,6 @@
     "version": "changeset version",
     "use-local": "node scripts/use-local.mjs",
     "use-published": "node scripts/use-published.mjs"
-  },
-  "keywords": [
-    "music-player",
-    "playlist",
-    "solid-js",
-    "web-component",
-    "indexeddb",
-    "pwa"
-  ],
-  "author": "3dwardsharp",
-  "license": "MIT",
-  "bin": {
-    "freqhole-playlistz": "./dist/freqhole-playlistz.cli.mjs"
   },
   "dependencies": {
     "@automerge/automerge-repo": "^2.5.5",
