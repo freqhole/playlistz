@@ -223,9 +223,7 @@ describe("sharingService", () => {
     });
 
     it("throws without a node identity", async () => {
-      p2p.getIdentity.mockReturnValue(
-        null as unknown as { node_id: string }
-      );
+      p2p.getIdentity.mockReturnValue(null as unknown as { node_id: string });
       await expect(buildShareLink(DOC_ID)).rejects.toThrow(/node id/);
     });
 
@@ -272,7 +270,12 @@ describe("sharingService", () => {
     it("skips knock gate when doc is already local", async () => {
       await saveShareSettings({ name: "", mode: "knock" });
       makeDoc(DOC_ID, { title: "mine" });
-      await addDocIndexEntry({ docId: DOC_ID, title: "mine", addedAt: 1, source: "local" });
+      await addDocIndexEntry({
+        docId: DOC_ID,
+        title: "mine",
+        addedAt: 1,
+        source: "local",
+      });
       const { token } = await buildShareLink(DOC_ID);
 
       const result = await openShareLink(token);
@@ -334,7 +337,9 @@ describe("sharingService", () => {
       window.location.hash = fragment;
       const replaceState = vi
         .spyOn(history, "replaceState")
-        .mockImplementation(() => { window.location.hash = ""; });
+        .mockImplementation(() => {
+          window.location.hash = "";
+        });
 
       const result = await handleShareFragment();
 
@@ -476,7 +481,10 @@ describe("sharingService", () => {
 
       await handlePlaylistzStream(stream);
 
-      expect(stream.sent[0]).toMatchObject({ type: "knock_status", status: "pending" });
+      expect(stream.sent[0]).toMatchObject({
+        type: "knock_status",
+        status: "pending",
+      });
       const knocks = await getInboundKnocks();
       expect(knocks[0]).toMatchObject({
         knockType: "doc_access",
@@ -494,15 +502,28 @@ describe("sharingService", () => {
         docIds: [DOC_ID],
       });
       const stream = new MockStream("peer-a", [
-        { v: 1, type: "knock", nodeId: "peer-a", knockType: "doc_access", docId: DOC_ID },
+        {
+          v: 1,
+          type: "knock",
+          nodeId: "peer-a",
+          knockType: "doc_access",
+          docId: DOC_ID,
+        },
       ]);
 
       await handlePlaylistzStream(stream);
 
       // without collaborative flag the owner must approve explicitly
-      expect(stream.sent[0]).toMatchObject({ type: "knock_status", status: "pending" });
+      expect(stream.sent[0]).toMatchObject({
+        type: "knock_status",
+        status: "pending",
+      });
       const knocks = await getInboundKnocks();
-      expect(knocks[0]).toMatchObject({ knockType: "doc_access", requestedDocId: DOC_ID, status: "pending" });
+      expect(knocks[0]).toMatchObject({
+        knockType: "doc_access",
+        requestedDocId: DOC_ID,
+        status: "pending",
+      });
     });
 
     it("auto-accepts doc_access knock when collaborative is true and peer has a grant", async () => {
@@ -514,7 +535,13 @@ describe("sharingService", () => {
         docIds: [DOC_ID],
       });
       const stream = new MockStream("peer-a", [
-        { v: 1, type: "knock", nodeId: "peer-a", knockType: "doc_access", docId: DOC_ID },
+        {
+          v: 1,
+          type: "knock",
+          nodeId: "peer-a",
+          knockType: "doc_access",
+          docId: DOC_ID,
+        },
       ]);
 
       await handlePlaylistzStream(stream);
@@ -531,7 +558,13 @@ describe("sharingService", () => {
       await saveShareSettings({ name: "", mode: "public" });
       makeDoc(DOC_ID, { collaborative: true });
       const stream = new MockStream("peer-a", [
-        { v: 1, type: "knock", nodeId: "peer-a", knockType: "doc_access", docId: DOC_ID },
+        {
+          v: 1,
+          type: "knock",
+          nodeId: "peer-a",
+          knockType: "doc_access",
+          docId: DOC_ID,
+        },
       ]);
 
       await handlePlaylistzStream(stream);
@@ -551,7 +584,13 @@ describe("sharingService", () => {
       await handlePlaylistzStream(browseStream);
 
       const docStream = new MockStream("peer-a", [
-        { v: 1, type: "knock", nodeId: "peer-a", knockType: "doc_access", docId: DOC_ID },
+        {
+          v: 1,
+          type: "knock",
+          nodeId: "peer-a",
+          knockType: "doc_access",
+          docId: DOC_ID,
+        },
       ]);
       await handlePlaylistzStream(docStream);
 
@@ -620,10 +659,7 @@ describe("sharingService", () => {
 
       await handlePlaylistzStream(stream);
 
-      expect(blobs.serveBlobRequest).toHaveBeenCalledWith(
-        stream,
-        "deadbeef"
-      );
+      expect(blobs.serveBlobRequest).toHaveBeenCalledWith(stream, "deadbeef");
     });
 
     it("rejects unexpected message types", async () => {
@@ -719,9 +755,7 @@ describe("sharingService", () => {
 
       expect(result).toEqual({ status: "pending", docIds: [] });
       const knocks = await getAllKnocks();
-      expect(knocks.find((k) => k.id === "out:peer-a")?.status).toBe(
-        "pending"
-      );
+      expect(knocks.find((k) => k.id === "out:peer-a")?.status).toBe("pending");
     });
 
     it("knockForDocAccess sends a doc_access knock and syncs on acceptance", async () => {
@@ -736,7 +770,11 @@ describe("sharingService", () => {
       ]);
       givePeerNode(stream);
 
-      const result = await knockForDocAccess("peer-a", DOC_ID, "please let me in");
+      const result = await knockForDocAccess(
+        "peer-a",
+        DOC_ID,
+        "please let me in"
+      );
 
       expect(result.status).toBe("accepted");
       const sentKnock = stream.sent[0];
@@ -775,9 +813,7 @@ describe("sharingService", () => {
 
   describe("knock inbox", () => {
     async function recordInboundKnock(nodeId: string): Promise<string> {
-      const stream = new MockStream(nodeId, [
-        { v: 1, type: "knock", nodeId },
-      ]);
+      const stream = new MockStream(nodeId, [{ v: 1, type: "knock", nodeId }]);
       await handlePlaylistzStream(stream);
       const knock = (await getInboundKnocks()).find(
         (k) => k.nodeId === nodeId

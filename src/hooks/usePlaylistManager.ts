@@ -1,4 +1,3 @@
-
 import {
   createSignal,
   createEffect,
@@ -54,7 +53,9 @@ const SETTING_SELECTED_PLAYLIST = "selectedPlaylistId";
 
 export function usePlaylistManager() {
   const [playlists, setPlaylists] = createSignal<Playlist[]>([]);
-  const [selectedPlaylistId, setSelectedPlaylistId] = createSignal<string | null>(null);
+  const [selectedPlaylistId, setSelectedPlaylistId] = createSignal<
+    string | null
+  >(null);
   // derived: always reflects the current version from playlists(), so stale
   // playlist objects from before songs/edits can never overwrite fresh state.
   const selectedPlaylist = createMemo(
@@ -63,7 +64,10 @@ export function usePlaylistManager() {
   // compat wrapper: also upserts the playlist into playlists() if not present
   // (needed for standalone mode which sets selection before the docIndex syncs)
   const setSelectedPlaylist = (p: Playlist | null) => {
-    if (p) setPlaylists((prev) => (prev.some((pl) => pl.id === p.id) ? prev : [...prev, p]));
+    if (p)
+      setPlaylists((prev) =>
+        prev.some((pl) => pl.id === p.id) ? prev : [...prev, p]
+      );
     setSelectedPlaylistId(p?.id ?? null);
   };
   const [playlistSongs, setPlaylistSongs] = createSignal<Song[]>([]);
@@ -114,14 +118,18 @@ export function usePlaylistManager() {
   ): Promise<void> {
     _syncCalls++;
     const syncId = _syncCalls;
-    log.debug("playlist.sync", "syncPlaylists #", String(syncId), "entries:", String(entries.length));
+    log.debug(
+      "playlist.sync",
+      "syncPlaylists #",
+      String(syncId),
+      "entries:",
+      String(entries.length)
+    );
     try {
       const resolved = await Promise.all(
         entries.map(async (entry) => {
           try {
-            const handle = await findPlaylistDoc(
-              entry.docId as AutomergeUrl
-            );
+            const handle = await findPlaylistDoc(entry.docId as AutomergeUrl);
             const raw = handle.doc();
             const doc = parsePlaylistDoc(raw ?? {});
             const playlist = await docToPlaylistAsync(entry.docId, doc);
@@ -149,7 +157,13 @@ export function usePlaylistManager() {
         })
       );
 
-      log.debug("playlist.sync", "syncPlaylists #", String(syncId), "resolved", String(resolved.length));
+      log.debug(
+        "playlist.sync",
+        "syncPlaylists #",
+        String(syncId),
+        "resolved",
+        String(resolved.length)
+      );
       setPlaylists(resolved.map(enrichPlaylistWithStandalonePaths));
 
       // update selection id only: selectedPlaylist() will auto-derive from playlists()
@@ -163,10 +177,16 @@ export function usePlaylistManager() {
         // no in-memory selection yet - try to restore from idb, fall back to first
         const savedId = await loadSetting<string>(SETTING_SELECTED_PLAYLIST);
         const target = savedId ? resolved.find((p) => p.id === savedId) : null;
-        setSelectedPlaylistId(target ? target.id : resolved.length > 0 ? resolved[0]!.id : null);
+        setSelectedPlaylistId(
+          target ? target.id : resolved.length > 0 ? resolved[0]!.id : null
+        );
       }
     } catch (err) {
-      log.error("playlist.sync", "error syncing playlists from doc index:", err);
+      log.error(
+        "playlist.sync",
+        "error syncing playlists from doc index:",
+        err
+      );
     }
   }
 
@@ -190,7 +210,11 @@ export function usePlaylistManager() {
             });
             delete window.DEFERRED_PLAYLIST_DATA;
           } catch (err) {
-            log.error("playlist.init", "error initializing deferred playlist:", err);
+            log.error(
+              "playlist.init",
+              "error initializing deferred playlist:",
+              err
+            );
             setError("failed to initialize playlist!");
           }
         }
@@ -201,7 +225,11 @@ export function usePlaylistManager() {
       try {
         await initializeOfflineSupport();
       } catch (offlineError) {
-        log.warn("playlist.init", "offline support initialization failed:", offlineError);
+        log.warn(
+          "playlist.init",
+          "offline support initialization failed:",
+          offlineError
+        );
       }
 
       setIsInitialized(true);
@@ -262,7 +290,11 @@ export function usePlaylistManager() {
   // reactive effect: when docIndex changes, refresh the playlists list
   createEffect(() => {
     const entries = docIndexEntries();
-    log.debug("playlist.docindex", "docIndex effect fired, entries:", String(entries.length));
+    log.debug(
+      "playlist.docindex",
+      "docIndex effect fired, entries:",
+      String(entries.length)
+    );
     void syncPlaylistsFromDocIndex(entries);
   });
 
@@ -285,83 +317,101 @@ export function usePlaylistManager() {
   // the songs list and updates the playlist entry in playlists().
   // keyed on selectedPlaylistId so the effect only re-runs when the id changes.
   createEffect(
-    on(
-      selectedPlaylistId,
-      (playlistId) => {
-        log.debug("playlist.select", "selection effect fired:", playlistId ?? "null");
-        if (docStoreCleanup) {
-          docStoreCleanup();
-          docStoreCleanup = null;
-        }
-
-        if (!playlistId) {
-          setPlaylistSongs([]);
-          return;
-        }
-
-        let disposed = false;
-
-        let _refreshCount = 0;
-        const refresh = async (
-          handle: Awaited<ReturnType<typeof findPlaylistDoc>>
-        ) => {
-          _refreshCount++;
-          log.debug("playlist.select", "selected-doc refresh #", String(_refreshCount), playlistId);
-          try {
-            const raw = handle.doc();
-            const doc = parsePlaylistDoc(raw ?? {});
-            const updated = await docToPlaylistAsync(playlistId, doc);
-
-            setPlaylists((prev) =>
-              prev.map((p) => {
-                if (p.id !== playlistId) return p;
-                return enrichPlaylistWithStandalonePaths({
-                  ...updated,
-                  remoteNodeId: p.remoteNodeId,
-                  remoteName: p.remoteName,
-                  remoteAvatarDataUrl: p.remoteAvatarDataUrl,
-                  isForked: p.isForked,
-                });
-              })
-            );
-            // selectedPlaylist() auto-updates from playlists() via memo - no setSelectedPlaylist needed
-
-            // use the handle we already have - avoids a redundant repo.find()
-            const songs = await getSongsFromHandle(playlistId, handle);
-            if (!disposed) {
-              setPlaylistSongs(enrichSongsWithStandalonePaths(songs));
-            }
-          } catch (err) {
-            log.error("playlist.select", "error refreshing selected playlist doc:", err);
-          }
-        };
-
-        void (async () => {
-          try {
-            const handle = await findPlaylistDoc(playlistId as AutomergeUrl);
-            if (disposed) return;
-
-            const onChange = () => {
-              log.debug("playlist.select", "selected-doc change event -> refresh", playlistId);
-              void refresh(handle);
-            };
-            handle.on("change", onChange);
-            docStoreCleanup = () => handle.off("change", onChange);
-
-            await refresh(handle);
-          } catch (err) {
-            log.error("playlist.select", "error subscribing to playlist doc:", err);
-            if (!disposed) {
-              setPlaylistSongs([]);
-            }
-          }
-        })();
-
-        onCleanup(() => {
-          disposed = true;
-        });
+    on(selectedPlaylistId, (playlistId) => {
+      log.debug(
+        "playlist.select",
+        "selection effect fired:",
+        playlistId ?? "null"
+      );
+      if (docStoreCleanup) {
+        docStoreCleanup();
+        docStoreCleanup = null;
       }
-    )
+
+      if (!playlistId) {
+        setPlaylistSongs([]);
+        return;
+      }
+
+      let disposed = false;
+
+      let _refreshCount = 0;
+      const refresh = async (
+        handle: Awaited<ReturnType<typeof findPlaylistDoc>>
+      ) => {
+        _refreshCount++;
+        log.debug(
+          "playlist.select",
+          "selected-doc refresh #",
+          String(_refreshCount),
+          playlistId
+        );
+        try {
+          const raw = handle.doc();
+          const doc = parsePlaylistDoc(raw ?? {});
+          const updated = await docToPlaylistAsync(playlistId, doc);
+
+          setPlaylists((prev) =>
+            prev.map((p) => {
+              if (p.id !== playlistId) return p;
+              return enrichPlaylistWithStandalonePaths({
+                ...updated,
+                remoteNodeId: p.remoteNodeId,
+                remoteName: p.remoteName,
+                remoteAvatarDataUrl: p.remoteAvatarDataUrl,
+                isForked: p.isForked,
+              });
+            })
+          );
+          // selectedPlaylist() auto-updates from playlists() via memo - no setSelectedPlaylist needed
+
+          // use the handle we already have - avoids a redundant repo.find()
+          const songs = await getSongsFromHandle(playlistId, handle);
+          if (!disposed) {
+            setPlaylistSongs(enrichSongsWithStandalonePaths(songs));
+          }
+        } catch (err) {
+          log.error(
+            "playlist.select",
+            "error refreshing selected playlist doc:",
+            err
+          );
+        }
+      };
+
+      void (async () => {
+        try {
+          const handle = await findPlaylistDoc(playlistId as AutomergeUrl);
+          if (disposed) return;
+
+          const onChange = () => {
+            log.debug(
+              "playlist.select",
+              "selected-doc change event -> refresh",
+              playlistId
+            );
+            void refresh(handle);
+          };
+          handle.on("change", onChange);
+          docStoreCleanup = () => handle.off("change", onChange);
+
+          await refresh(handle);
+        } catch (err) {
+          log.error(
+            "playlist.select",
+            "error subscribing to playlist doc:",
+            err
+          );
+          if (!disposed) {
+            setPlaylistSongs([]);
+          }
+        }
+      })();
+
+      onCleanup(() => {
+        disposed = true;
+      });
+    })
   );
 
   // update background image based on override, currently playing song, or selected playlist
@@ -477,7 +527,12 @@ export function usePlaylistManager() {
     const playlist = selectedPlaylist();
     if (!playlist) return;
 
-    log.debug("playlist.update", "handlePlaylistUpdate", playlist.id, JSON.stringify(updates));
+    log.debug(
+      "playlist.update",
+      "handlePlaylistUpdate",
+      playlist.id,
+      JSON.stringify(updates)
+    );
     try {
       setError(null);
       await updatePlaylist(playlist.id, {

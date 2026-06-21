@@ -4,25 +4,27 @@ import * as http from "node:http";
 
 const MIME: Record<string, string> = {
   ".html": "text/html",
-  ".js":   "application/javascript",
-  ".css":  "text/css",
+  ".js": "application/javascript",
+  ".css": "text/css",
   ".json": "application/json",
-  ".mp3":  "audio/mpeg",
-  ".m4a":  "audio/mp4",
-  ".wav":  "audio/wav",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".wav": "audio/wav",
   ".flac": "audio/flac",
-  ".ogg":  "audio/ogg",
+  ".ogg": "audio/ogg",
   ".webm": "audio/webm",
-  ".jpg":  "image/jpeg",
+  ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
-  ".png":  "image/png",
-  ".gif":  "image/gif",
+  ".png": "image/png",
+  ".gif": "image/gif",
   ".webp": "image/webp",
-  ".map":  "application/json",
+  ".map": "application/json",
 };
 
 function mimeFor(filePath: string): string {
-  return MIME[path.extname(filePath).toLowerCase()] ?? "application/octet-stream";
+  return (
+    MIME[path.extname(filePath).toLowerCase()] ?? "application/octet-stream"
+  );
 }
 
 export function serveHttp(dir: string): void {

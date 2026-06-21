@@ -36,6 +36,7 @@ const baseConfig = {
 };
 
 export default [
+  { ignores: ["dist/**", "coverage/**", "node_modules/**"] },
   js.configs.recommended,
 
   // TypeScript files
@@ -104,7 +105,7 @@ export default [
 
   // Build/config files
   {
-    files: ["config/**/*.ts", "build-component.js"],
+    files: ["config/**/*.ts", "build-component.js", "build-zip-bundle-lib.js"],
     ...baseConfig,
     languageOptions: {
       ...baseConfig.languageOptions,

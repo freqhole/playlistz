@@ -60,7 +60,9 @@ async function refreshKnockCount(): Promise<void> {
     const inbound = await getInboundKnocks();
     setPendingKnockCount(inbound.filter((k) => k.status === "pending").length);
     const outbound = await getOutboundKnocks();
-    setOutboundPendingCount(outbound.filter((k) => k.status === "pending").length);
+    setOutboundPendingCount(
+      outbound.filter((k) => k.status === "pending").length
+    );
   } catch {
     // idb unavailable (early boot)
   }

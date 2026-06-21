@@ -173,7 +173,12 @@ export async function findPlaylistDoc(
   if (cached) return cached;
 
   _findCalls++;
-  log.trace("automerge.repo", "findPlaylistDoc call #", String(_findCalls), docId);
+  log.trace(
+    "automerge.repo",
+    "findPlaylistDoc call #",
+    String(_findCalls),
+    docId
+  );
 
   const promise = (async () => {
     const repo = getRepo();

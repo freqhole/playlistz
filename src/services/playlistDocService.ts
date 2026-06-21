@@ -166,8 +166,7 @@ export function songEntryToSong(
 // sets imageFilePath (object url) and imageType so display components
 // (getImageUrlForContext) can render it.
 async function hydrateSongImage(song: Song): Promise<Song> {
-  const primary =
-    song.images?.find((i) => i.isPrimary) ?? song.images?.[0];
+  const primary = song.images?.find((i) => i.isPrimary) ?? song.images?.[0];
   if (!primary) return song;
   try {
     const url = await getBlobObjectURL(primary.blobId);
@@ -176,8 +175,14 @@ async function hydrateSongImage(song: Song): Promise<Song> {
       // playlist's p2p peers and re-notify when it arrives so the row
       // can re-render with the image.
       if (song.playlistId) {
-        void fetchBlobForDoc(song.playlistId, primary.blobId, primary.blobType ?? "image/jpeg")
-          .then((result) => { if (result) triggerSpecificSongUpdate(song.id); })
+        void fetchBlobForDoc(
+          song.playlistId,
+          primary.blobId,
+          primary.blobType ?? "image/jpeg"
+        )
+          .then((result) => {
+            if (result) triggerSpecificSongUpdate(song.id);
+          })
           .catch(() => {});
       }
       return song;
@@ -208,8 +213,11 @@ export async function docToPlaylistAsync(
       } else {
         // blob not local - trigger background fetch from peers; the caller
         // can re-render when the playlist update arrives via doc subscription.
-        void fetchBlobForDoc(docId, playlist._primaryImageSha, "image/jpeg")
-          .catch(() => {});
+        void fetchBlobForDoc(
+          docId,
+          playlist._primaryImageSha,
+          "image/jpeg"
+        ).catch(() => {});
       }
     } catch {
       // blob missing - leave image fields unset
@@ -235,9 +243,18 @@ export async function getSongsFromHandle(
   handle: Awaited<ReturnType<typeof findPlaylistDoc>>
 ): Promise<Song[]> {
   const raw = handle.doc();
-  if (!raw) { log.warn("playlist.doc", "getSongsFromHandle: handle.doc() returned null"); return []; }
+  if (!raw) {
+    log.warn("playlist.doc", "getSongsFromHandle: handle.doc() returned null");
+    return [];
+  }
   const doc = parsePlaylistDoc(raw);
-  log.trace("playlist.doc", "getSongsFromHandle order=", String(doc.order.length), "songs=", String(Object.keys(doc.songs).length));
+  log.trace(
+    "playlist.doc",
+    "getSongsFromHandle order=",
+    String(doc.order.length),
+    "songs=",
+    String(Object.keys(doc.songs).length)
+  );
   registerDocSongs(docId, doc);
   const songs = doc.order
     .map((id, i) => {
@@ -373,7 +390,10 @@ export async function updatePlaylist(
   await flushDoc(docId as AutomergeUrl);
   // update docIndex title if title changed
   if (fields.title !== undefined) {
-    log.trace("playlist.doc", "updatePlaylist: title changed, updating docIndex");
+    log.trace(
+      "playlist.doc",
+      "updatePlaylist: title changed, updating docIndex"
+    );
     const existing = await getDocIndexEntry(docId);
     if (existing) {
       await addDocIndexEntry({ ...existing, title: fields.title });
@@ -400,7 +420,9 @@ async function shaRefsExcluding(excludeDocId: string): Promise<Set<string>> {
             for (const img of song?.images ?? []) refs.add(img.blobId);
           }
           for (const img of doc.images ?? []) refs.add(img.blobId);
-        } catch { /* ignore unavailable docs */ }
+        } catch {
+          /* ignore unavailable docs */
+        }
       })
   );
   return refs;
@@ -421,7 +443,9 @@ export async function deletePlaylist(docId: string): Promise<void> {
       }
       for (const img of doc.images ?? []) deletedShas.push(img.blobId);
     }
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
 
   await deletePlaylistDoc(docId as AutomergeUrl);
   await removeDocIndexEntry(docId);
@@ -545,10 +569,18 @@ export async function addSongToPlaylist(
     (id) => existingDoc.songs[id]?.sha256 === sha256
   );
   if (dupId) {
-    log.debug("playlist.doc", "addSongToPlaylist: dedup, sha already in doc", sha256);
+    log.debug(
+      "playlist.doc",
+      "addSongToPlaylist: dedup, sha already in doc",
+      sha256
+    );
     const dupIndex = existingDoc.order.indexOf(dupId);
     return hydrateSongImage(
-      songEntryToSong(existingDoc.songs[dupId]!, docId, dupIndex >= 0 ? dupIndex : 0)
+      songEntryToSong(
+        existingDoc.songs[dupId]!,
+        docId,
+        dupIndex >= 0 ? dupIndex : 0
+      )
     );
   }
 
@@ -561,7 +593,11 @@ export async function addSongToPlaylist(
   registerDocSongs(docId, doc);
 
   const index = doc.order.indexOf(songId);
-  const song = songEntryToSong(entry, docId, index >= 0 ? index : doc.order.length - 1);
+  const song = songEntryToSong(
+    entry,
+    docId,
+    index >= 0 ? index : doc.order.length - 1
+  );
   triggerSpecificSongUpdate(songId);
   return song;
 }
@@ -571,7 +607,12 @@ export async function addSongToPlaylist(
 export async function updateSongInDoc(
   docId: string,
   songId: string,
-  updates: Partial<Pick<Song, "title" | "artist" | "album" | "duration" | "imageData" | "imageType">>
+  updates: Partial<
+    Pick<
+      Song,
+      "title" | "artist" | "album" | "duration" | "imageData" | "imageType"
+    >
+  >
 ): Promise<void> {
   log.trace("playlist.doc", "updateSongInDoc", docId, songId);
   const handle = await findPlaylistDoc(docId as AutomergeUrl);
@@ -622,10 +663,7 @@ export async function updateSongInDoc(
 
 // remove a song from the playlist doc.
 // the audio blob is not deleted (may be shared or still needed for export).
-export async function deleteSong(
-  docId: string,
-  songId: string
-): Promise<void> {
+export async function deleteSong(docId: string, songId: string): Promise<void> {
   const handle = await findPlaylistDoc(docId as AutomergeUrl);
   handle.change((doc) => removeSong(doc, songId));
   await flushDoc(docId as AutomergeUrl);

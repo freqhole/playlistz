@@ -4,7 +4,8 @@ import type { Playlist, Song } from "../types/playlist.js";
 // mock getImageUrlForContext so tests don't need real blob URLs
 vi.mock("../services/imageService.js", () => ({
   getImageUrlForContext: vi.fn((item: Playlist | Song) => {
-    if ("imageFilePath" in item && item.imageFilePath) return item.imageFilePath;
+    if ("imageFilePath" in item && item.imageFilePath)
+      return item.imageFilePath;
     if ("imageData" in item && item.imageData) return "blob:mock-url";
     if ("thumbnailData" in item && item.thumbnailData) return "blob:mock-thumb";
     return null;
@@ -46,7 +47,10 @@ describe("useImageModal", () => {
 
   describe("generateImageList / openImageModal (standalone mode - imageFilePath only)", () => {
     it("includes playlist cover when only imageFilePath is set (no buffer data)", () => {
-      const playlist = makePlaylist({ imageFilePath: "data/playlist-cover.jpg", imageType: "image/jpeg" });
+      const playlist = makePlaylist({
+        imageFilePath: "data/playlist-cover.jpg",
+        imageType: "image/jpeg",
+      });
       modal.openImageModal(playlist, []);
       expect(modal.showImageModal()).toBe(true);
       expect(modal.getImageCount()).toBe(1);
@@ -55,7 +59,9 @@ describe("useImageModal", () => {
     });
 
     it("includes playlist cover when imageFilePath present but imageType absent", () => {
-      const playlist = makePlaylist({ imageFilePath: "data/playlist-cover.jpg" });
+      const playlist = makePlaylist({
+        imageFilePath: "data/playlist-cover.jpg",
+      });
       modal.openImageModal(playlist, []);
       expect(modal.showImageModal()).toBe(true);
       expect(modal.getImageCount()).toBe(1);
@@ -63,7 +69,10 @@ describe("useImageModal", () => {
 
     it("includes song images when only imageFilePath is set (no buffer data)", () => {
       const playlist = makePlaylist();
-      const song = makeSong({ imageFilePath: "data/01-track-cover.jpg", imageType: "image/jpeg" });
+      const song = makeSong({
+        imageFilePath: "data/01-track-cover.jpg",
+        imageType: "image/jpeg",
+      });
       modal.openImageModal(playlist, [song]);
       expect(modal.getImageCount()).toBe(1);
       expect(modal.getCurrentImageMetadata()?.type).toBe("song");
@@ -78,7 +87,9 @@ describe("useImageModal", () => {
     });
 
     it("collects all songs with imageFilePath into the carousel", () => {
-      const playlist = makePlaylist({ imageFilePath: "data/playlist-cover.jpg" });
+      const playlist = makePlaylist({
+        imageFilePath: "data/playlist-cover.jpg",
+      });
       const songs = [
         makeSong({ id: "s1", imageFilePath: "data/s1-cover.jpg" }),
         makeSong({ id: "s2", imageFilePath: "data/s2-cover.jpg" }),
@@ -103,7 +114,10 @@ describe("useImageModal", () => {
 
     it("includes song when imageData buffer is present", () => {
       const playlist = makePlaylist();
-      const song = makeSong({ imageType: "image/jpeg", imageData: new ArrayBuffer(8) });
+      const song = makeSong({
+        imageType: "image/jpeg",
+        imageData: new ArrayBuffer(8),
+      });
       modal.openImageModal(playlist, [song]);
       expect(modal.getImageCount()).toBe(1);
       expect(modal.getCurrentImageMetadata()?.type).toBe("song");
@@ -133,7 +147,9 @@ describe("useImageModal", () => {
 
   describe("navigation", () => {
     beforeEach(() => {
-      const playlist = makePlaylist({ imageFilePath: "data/playlist-cover.jpg" });
+      const playlist = makePlaylist({
+        imageFilePath: "data/playlist-cover.jpg",
+      });
       const songs = [
         makeSong({ id: "s1", imageFilePath: "data/s1-cover.jpg" }),
         makeSong({ id: "s2", imageFilePath: "data/s2-cover.jpg" }),
@@ -142,7 +158,9 @@ describe("useImageModal", () => {
     });
 
     it("starts at requested index", () => {
-      const playlist = makePlaylist({ imageFilePath: "data/playlist-cover.jpg" });
+      const playlist = makePlaylist({
+        imageFilePath: "data/playlist-cover.jpg",
+      });
       modal.openImageModal(playlist, []);
       expect(modal.getCurrentImageMetadata()?.type).toBe("playlist");
     });

@@ -177,7 +177,7 @@ export function decodeMessage(bytes: Uint8Array): Message {
   } catch (err) {
     throw new ProtocolError(
       "decode_error",
-      `failed to decode utf-8: ${err instanceof Error ? err.message : String(err)}`,
+      `failed to decode utf-8: ${err instanceof Error ? err.message : String(err)}`
     );
   }
 
@@ -187,7 +187,7 @@ export function decodeMessage(bytes: Uint8Array): Message {
   } catch (err) {
     throw new ProtocolError(
       "parse_error",
-      `failed to parse json: ${err instanceof Error ? err.message : String(err)}`,
+      `failed to parse json: ${err instanceof Error ? err.message : String(err)}`
     );
   }
 
@@ -196,7 +196,7 @@ export function decodeMessage(bytes: Uint8Array): Message {
     const firstIssue = result.error.issues[0];
     throw new ProtocolError(
       "schema_error",
-      `invalid message: ${firstIssue?.message ?? "unknown"}`,
+      `invalid message: ${firstIssue?.message ?? "unknown"}`
     );
   }
   return result.data;
@@ -205,7 +205,7 @@ export function decodeMessage(bytes: Uint8Array): Message {
 // write a message to a BiStream
 export async function sendMessage(
   stream: BiStreamLike,
-  msg: Message,
+  msg: Message
 ): Promise<void> {
   await stream.write_message(encodeMessage(msg));
 }
@@ -214,7 +214,7 @@ export async function sendMessage(
 // returns null on clean EOF (read_message returned null).
 // throws ProtocolError on invalid data.
 export async function readMessage(
-  stream: BiStreamLike,
+  stream: BiStreamLike
 ): Promise<Message | null> {
   const bytes = await stream.read_message();
   if (bytes === null) return null;

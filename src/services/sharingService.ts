@@ -23,7 +23,12 @@ import {
   type SharePayloadV1,
 } from "../types/playlistz";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { getIrohAdapter, findPlaylistDoc, flushDoc, authorizePeerForDoc } from "./automergeRepo.js";
+import {
+  getIrohAdapter,
+  findPlaylistDoc,
+  flushDoc,
+  authorizePeerForDoc,
+} from "./automergeRepo.js";
 import {
   startP2P,
   getIdentity,
@@ -84,7 +89,9 @@ async function notifyPeersOfIdentityUpdate(
   } catch {
     return;
   }
-  const entries = await getAllDocIndexEntries().catch(() => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>);
+  const entries = await getAllDocIndexEntries().catch(
+    () => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>
+  );
   const seen = new Set<string>();
   const myNodeId = getIdentity()?.node_id ?? "";
   for (const entry of entries) {
@@ -167,7 +174,10 @@ export async function ensureSharingReady(): Promise<void> {
         // periodic reconnect: re-dial known peers every 90s so automerge
         // can sync changes that arrived while the connection was down
         if (!reconnectIntervalId) {
-          reconnectIntervalId = setInterval(() => void reconnectKnownPeers(), 90_000);
+          reconnectIntervalId = setInterval(
+            () => void reconnectKnownPeers(),
+            90_000
+          );
         }
       }
     });
@@ -197,9 +207,10 @@ export async function resumeSharingIfEnabled(): Promise<void> {
  */
 async function refreshPeerIdentity(nodeId: string): Promise<void> {
   const identity = getIdentity();
-  const settings = await getShareSettings().catch(
-    () => ({ name: "", mode: "knock" as const })
-  );
+  const settings = await getShareSettings().catch(() => ({
+    name: "",
+    mode: "knock" as const,
+  }));
   let peerName: string | undefined;
   let peerAvatarDataUrl: string | undefined;
   try {
@@ -280,12 +291,20 @@ export async function reconnectKnownPeers(): Promise<void> {
       for (const nodeId of Object.keys(doc.peers ?? {})) {
         if (nodeId && nodeId !== myNodeId && !seen.has(nodeId)) {
           seen.add(nodeId);
-          void adapter.addPeer(nodeId).then(async () => {
-            // refresh the peer's identity in docIndex + grant after connecting
-            void refreshPeerIdentity(nodeId);
-          }).catch((err) => {
-            log.warn("p2p.reconnect", "reconnect to peer failed:", nodeId.slice(0, 16), err);
-          });
+          void adapter
+            .addPeer(nodeId)
+            .then(async () => {
+              // refresh the peer's identity in docIndex + grant after connecting
+              void refreshPeerIdentity(nodeId);
+            })
+            .catch((err) => {
+              log.warn(
+                "p2p.reconnect",
+                "reconnect to peer failed:",
+                nodeId.slice(0, 16),
+                err
+              );
+            });
         }
       }
     } catch {
@@ -686,7 +705,12 @@ export async function knockForDocAccess(
   if (reply.status === "accepted") {
     const granted = reply.grantedDocIds ?? [docId];
     if (granted.includes(docId)) {
-      await syncSharedDoc({ v: 1, n: ownerNodeId, d: docId, ...(titleHint ? { t: titleHint } : {}) });
+      await syncSharedDoc({
+        v: 1,
+        n: ownerNodeId,
+        d: docId,
+        ...(titleHint ? { t: titleHint } : {}),
+      });
     }
   }
 
@@ -706,7 +730,9 @@ export async function acceptKnock(
   if (!knock) throw new Error("knock not found");
 
   // try to get the peer's avatar from any docIndex entry we already have
-  const allEntries = await getAllDocIndexEntries().catch(() => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>);
+  const allEntries = await getAllDocIndexEntries().catch(
+    () => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>
+  );
   const peerEntry = allEntries.find((e) => e.remoteNodeId === knock.nodeId);
 
   await upsertAccessGrant({
@@ -832,7 +858,7 @@ export async function handlePlaylistzStream(
       await handleProtocolMessage(stream, peerNodeId, msg);
     }
   } catch (err) {
-      log.warn("p2p.protocol", "protocol stream error:", err);
+    log.warn("p2p.protocol", "protocol stream error:", err);
   } finally {
     try {
       stream.close();
@@ -857,7 +883,9 @@ async function handleProtocolMessage(
         type: "hello_ok",
         nodeId: identity?.node_id ?? "",
         ...(settings.name ? { name: settings.name } : {}),
-        ...(settings.avatarDataUrl ? { avatarDataUrl: settings.avatarDataUrl } : {}),
+        ...(settings.avatarDataUrl
+          ? { avatarDataUrl: settings.avatarDataUrl }
+          : {}),
         public: settings.mode === "public",
       });
       break;
@@ -896,8 +924,10 @@ async function handleProtocolMessage(
         try {
           const handle = await findPlaylistDoc(msg.docId as AutomergeUrl);
           const doc = handle.doc() as Record<string, unknown> | undefined;
-          isCollaborative = !!(doc?.collaborative);
-        } catch { /* doc not available */ }
+          isCollaborative = !!doc?.collaborative;
+        } catch {
+          /* doc not available */
+        }
 
         const peerQualifies =
           settings.mode === "public" ||
@@ -952,7 +982,9 @@ async function handleProtocolMessage(
           status: "pending",
           createdAt: Date.now(),
           knockType: isDocAccessKnock ? "doc_access" : "browse",
-          ...(isDocAccessKnock && msg.docId ? { requestedDocId: msg.docId } : {}),
+          ...(isDocAccessKnock && msg.docId
+            ? { requestedDocId: msg.docId }
+            : {}),
         });
         notifyKnocksChanged();
       }
@@ -1002,14 +1034,27 @@ async function handleProtocolMessage(
             });
           }
         } catch (err) {
-          log.warn("p2p.knock", "failed to sync granted doc from notify:", docId, err);
+          log.warn(
+            "p2p.knock",
+            "failed to sync granted doc from notify:",
+            docId,
+            err
+          );
         }
       }
       // mark any matching outbound knock as accepted
       const allKnocks = await getAllKnocks();
       for (const k of allKnocks) {
-        if (k.direction === "outbound" && k.nodeId === peerNodeId && k.status === "pending") {
-          await upsertKnock({ ...k, status: "accepted", processedAt: Date.now() });
+        if (
+          k.direction === "outbound" &&
+          k.nodeId === peerNodeId &&
+          k.status === "pending"
+        ) {
+          await upsertKnock({
+            ...k,
+            status: "accepted",
+            processedAt: Date.now(),
+          });
         }
       }
       notifyKnocksChanged();

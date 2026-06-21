@@ -56,7 +56,9 @@ export async function downloadAndCacheAudio(
     // a failed check is non-fatal - proceed with the download.
     if (song.sha ?? song.sha256) {
       try {
-        const { getBlobMetadata } = await import("@freqhole/api-client/storage");
+        const { getBlobMetadata } = await import(
+          "@freqhole/api-client/storage"
+        );
         const existing = await getBlobMetadata((song.sha ?? song.sha256)!);
         if (existing) {
           return true; // already cached

@@ -145,7 +145,10 @@ describe("indexedDBService", () => {
   describe("deletePlaybackPosition", () => {
     it("deletes a record from the playbackPositions store", async () => {
       await deletePlaybackPosition("song-abc");
-      expect(mockDB.delete).toHaveBeenCalledWith("playbackPositions", "song-abc");
+      expect(mockDB.delete).toHaveBeenCalledWith(
+        "playbackPositions",
+        "song-abc"
+      );
     });
   });
 
@@ -182,7 +185,12 @@ describe("indexedDBService", () => {
   describe("compat stubs (no-ops)", () => {
     it("mutateAndNotify is a no-op that resolves without error", async () => {
       await expect(
-        mutateAndNotify({ dbName: DB_NAME, storeName: "playlists", key: "x", updateFn: () => ({} as any) })
+        mutateAndNotify({
+          dbName: DB_NAME,
+          storeName: "playlists",
+          key: "x",
+          updateFn: () => ({}) as any,
+        })
       ).resolves.not.toThrow();
     });
 

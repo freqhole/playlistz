@@ -1,4 +1,3 @@
-
 import { createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import type { Playlist } from "../types/playlist.js";
 import { log } from "../utils/log.js";
@@ -232,7 +231,10 @@ export function useDragAndDrop() {
       const { playlist: playlistData, songs: songsData } =
         await parsePlaylistZip(zipFile);
 
-      log.debug("handleZipFiles", `parsed zip: title="${playlistData.title}" songs=${songsData.length} existing playlists=${options.playlists.length}`);
+      log.debug(
+        "handleZipFiles",
+        `parsed zip: title="${playlistData.title}" songs=${songsData.length} existing playlists=${options.playlists.length}`
+      );
 
       // check if a playlist with the same name and songs already exists
       const existingPlaylist = options.playlists.find(
@@ -242,7 +244,10 @@ export function useDragAndDrop() {
       );
 
       if (existingPlaylist) {
-        log.debug("handleZipFiles", `dedup match: "${playlistData.title}" already exists`);
+        log.debug(
+          "handleZipFiles",
+          `dedup match: "${playlistData.title}" already exists`
+        );
         setError(`Playlist "${playlistData.title}" already exists`);
         setTimeout(() => setError(null), 3000);
         continue;
@@ -253,11 +258,17 @@ export function useDragAndDrop() {
         description: playlistData.description,
       });
 
-      log.debug("handleZipFiles", `created playlist ${newPlaylist.id}, adding ${songsData.length} songs`);
+      log.debug(
+        "handleZipFiles",
+        `created playlist ${newPlaylist.id}, adding ${songsData.length} songs`
+      );
 
       // and add the songz
       for (const songData of songsData) {
-        log.debug("handleZipFiles", `adding song "${songData.title}" audioData=${songData.audioData?.byteLength ?? "none"}`);
+        log.debug(
+          "handleZipFiles",
+          `adding song "${songData.title}" audioData=${songData.audioData?.byteLength ?? "none"}`
+        );
         const audioBlob = new Blob([songData.audioData!], {
           type: songData.mimeType,
         });

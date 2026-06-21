@@ -13,9 +13,9 @@ export interface PlaylistZipSong {
   duration: number;
   originalFilename: string;
   mimeType: string;
-  sha?: string;        // audio blob sha256 - BlobFetcher key
-  imageSha?: string;   // cover image sha256 - BlobFetcher key
-  imageType?: string;  // mime type of cover image
+  sha?: string; // audio blob sha256 - BlobFetcher key
+  imageSha?: string; // cover image sha256 - BlobFetcher key
+  imageType?: string; // mime type of cover image
   fileSize?: number;
   lyrics?: string;
 }
@@ -26,8 +26,8 @@ export interface PlaylistZipEntry {
     title: string;
     description?: string;
     rev?: number;
-    imageSha?: string;    // sha256 of playlist cover image blob
-    imageType?: string;   // mime type of playlist cover image
+    imageSha?: string; // sha256 of playlist cover image blob
+    imageType?: string; // mime type of playlist cover image
     bgFilterEnabled?: boolean;
     bgFilterBlur?: number;
     bgFilterContrast?: number;

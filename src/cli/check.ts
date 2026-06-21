@@ -54,16 +54,22 @@ function checkData(
     } else {
       const p = e["playlist"] as Record<string, unknown>;
       const pc = `${ctx}.playlist`;
-      validateField(p, "id",          "string", true,  pc, errors, warnings);
-      validateField(p, "title",       "string", true,  pc, errors, warnings);
-      validateField(p, "rev",         "number", false, pc, errors, warnings);
+      validateField(p, "id", "string", true, pc, errors, warnings);
+      validateField(p, "title", "string", true, pc, errors, warnings);
+      validateField(p, "rev", "number", false, pc, errors, warnings);
       validateField(p, "description", "string", false, pc, errors, warnings);
 
       // check playlist cover image
       if (p["imageExtension"]) {
-        const imgPath = path.join(baseDir, "data", `playlist-cover${p["imageExtension"]}`);
+        const imgPath = path.join(
+          baseDir,
+          "data",
+          `playlist-cover${p["imageExtension"]}`
+        );
         if (!fs.existsSync(imgPath)) {
-          warnings.push(`${pc}: cover image not found: data/playlist-cover${p["imageExtension"]}`);
+          warnings.push(
+            `${pc}: cover image not found: data/playlist-cover${p["imageExtension"]}`
+          );
         }
       }
     }
@@ -86,18 +92,32 @@ function checkData(
         continue;
       }
       const s = song as Record<string, unknown>;
-      validateField(s, "id",               "string", true,  sc, errors, warnings);
-      validateField(s, "title",            "string", true,  sc, errors, warnings);
-      validateField(s, "artist",           "string", true,  sc, errors, warnings);
-      validateField(s, "album",            "string", true,  sc, errors, warnings);
-      validateField(s, "duration",         "number", true,  sc, errors, warnings);
-      validateField(s, "originalFilename", "string", true,  sc, errors, warnings);
-      validateField(s, "fileSize",         "number", true,  sc, errors, warnings);
-      validateField(s, "sha",              "string", false, sc, errors, warnings);
+      validateField(s, "id", "string", true, sc, errors, warnings);
+      validateField(s, "title", "string", true, sc, errors, warnings);
+      validateField(s, "artist", "string", true, sc, errors, warnings);
+      validateField(s, "album", "string", true, sc, errors, warnings);
+      validateField(s, "duration", "number", true, sc, errors, warnings);
+      validateField(
+        s,
+        "originalFilename",
+        "string",
+        true,
+        sc,
+        errors,
+        warnings
+      );
+      validateField(s, "fileSize", "number", true, sc, errors, warnings);
+      validateField(s, "sha", "string", false, sc, errors, warnings);
 
       // check audio file (skip http/https)
-      const filename = (s["safeFilename"] ?? s["originalFilename"]) as string | undefined;
-      if (filename && !filename.startsWith("http://") && !filename.startsWith("https://")) {
+      const filename = (s["safeFilename"] ?? s["originalFilename"]) as
+        | string
+        | undefined;
+      if (
+        filename &&
+        !filename.startsWith("http://") &&
+        !filename.startsWith("https://")
+      ) {
         const audioPath = path.join(baseDir, "data", filename);
         if (!fs.existsSync(audioPath)) {
           errors.push(`${sc}: audio file not found: data/${filename}`);
@@ -130,7 +150,9 @@ export function checkFile(filePath: string): void {
   let data: unknown;
   try {
     const src = fs.readFileSync(resolved, "utf-8");
-    const attrMatch = src.match(/setAttribute\s*\(\s*'data-playlistz'\s*,\s*("(?:[^"\\]|\\.)*")\s*\)/);
+    const attrMatch = src.match(
+      /setAttribute\s*\(\s*'data-playlistz'\s*,\s*("(?:[^"\\]|\\.)*")\s*\)/
+    );
     if (!attrMatch) {
       console.error(`${filePath} does not set the data-playlistz attribute`);
       process.exit(1);
@@ -160,5 +182,7 @@ export function checkFile(filePath: string): void {
 
   const playlists = data as Array<{ songs: unknown[] }>;
   const totalSongs = playlists.reduce((n, p) => n + p.songs.length, 0);
-  console.log(`ok  ${playlists.length} playlist(s), ${totalSongs} song(s)${warnings.length > 0 ? ` (${warnings.length} warning(s))` : ""}`);
+  console.log(
+    `ok  ${playlists.length} playlist(s), ${totalSongs} song(s)${warnings.length > 0 ? ` (${warnings.length} warning(s))` : ""}`
+  );
 }

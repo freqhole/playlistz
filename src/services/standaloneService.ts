@@ -57,17 +57,25 @@ const standalonePathRegistry = new Map<string, string>();
 // module-level registry: songId -> { imageFilePath, imageType }
 // populated during initializeStandalonePlaylist, used to re-attach image metadata
 // when the doc-change reactive subscription refreshes songs from the automerge doc.
-const standaloneImageRegistry = new Map<string, { imageFilePath: string; imageType?: string }>();
+const standaloneImageRegistry = new Map<
+  string,
+  { imageFilePath: string; imageType?: string }
+>();
 
 // module-level registry: docId -> { imageFilePath, imageType }
 // populated during initializeStandalonePlaylist; used to re-attach image metadata
 // to playlists rebuilt from the automerge doc (which has no view-layer image fields).
-const standalonePlaylistImageRegistry = new Map<string, { imageFilePath?: string; imageType?: string }>();
+const standalonePlaylistImageRegistry = new Map<
+  string,
+  { imageFilePath?: string; imageType?: string }
+>();
 
 // reactive signal: the docId of the playlist from the current data-playlistz entry.
 // set after initializeStandalonePlaylist determines the docId so usePlaylistManager
 // can select it over any previously remembered selection.
-const [standalonePreferredDocId, setStandalonePreferredDocId] = createSignal<string | null>(null);
+const [standalonePreferredDocId, setStandalonePreferredDocId] = createSignal<
+  string | null
+>(null);
 export { standalonePreferredDocId, setStandalonePreferredDocId };
 
 // derive a mime type from a file path or extension string.
@@ -107,7 +115,8 @@ export function enrichSongsWithStandalonePaths(songs: Song[]): Song[] {
     const imgReg = standaloneImageRegistry.get(s.id);
     return {
       ...s,
-      standaloneFilePath: s.standaloneFilePath ?? standalonePathRegistry.get(s.id),
+      standaloneFilePath:
+        s.standaloneFilePath ?? standalonePathRegistry.get(s.id),
       imageFilePath: s.imageFilePath ?? imgReg?.imageFilePath,
       imageType: s.imageType ?? imgReg?.imageType,
     };
@@ -117,7 +126,9 @@ export function enrichSongsWithStandalonePaths(songs: Song[]): Song[] {
 // re-attach image metadata to a playlist rebuilt from the automerge doc.
 // the doc has no imageFilePath/imageType fields; they live only in the zip
 // data layer. call this after every doc-sourced playlist to restore them.
-export function enrichPlaylistWithStandalonePaths(playlist: Playlist): Playlist {
+export function enrichPlaylistWithStandalonePaths(
+  playlist: Playlist
+): Playlist {
   const reg = standalonePlaylistImageRegistry.get(playlist.id);
   if (!reg) return playlist;
   return {
@@ -135,7 +146,10 @@ interface StandaloneRecord {
 
 // resolve the data file path for a standalone song entry
 function resolveStandalonePath(songData: FreqholePlaylistSong): string {
-  return songData.filePath ?? `data/${songData.safeFilename ?? songData.originalFilename}`;
+  return (
+    songData.filePath ??
+    `data/${songData.safeFilename ?? songData.originalFilename}`
+  );
 }
 
 // create an automerge doc from standalone playlist data.
@@ -225,7 +239,8 @@ function buildStandaloneSongs(
         : undefined);
 
     if (imageFilePath) {
-      const imageType = songData.imageMimeType ?? mimeFromExtension(imageFilePath);
+      const imageType =
+        songData.imageMimeType ?? mimeFromExtension(imageFilePath);
       standaloneImageRegistry.set(songData.id, { imageFilePath, imageType });
     }
 
@@ -247,7 +262,9 @@ function buildStandaloneSongs(
       standaloneFilePath,
       needsImageLoad: !!imageFilePath,
       imageFilePath,
-      imageType: songData.imageMimeType ?? (imageFilePath ? mimeFromExtension(imageFilePath) : undefined),
+      imageType:
+        songData.imageMimeType ??
+        (imageFilePath ? mimeFromExtension(imageFilePath) : undefined),
       images: [],
     };
 
@@ -257,13 +274,18 @@ function buildStandaloneSongs(
 
 // pre-register playlist image metadata before async doc operations fire BroadcastChannel.
 // mirrors the path resolution logic in buildStandalonePlaylist.
-function preRegisterPlaylistImage(playlistData: StandaloneData, docId: string): void {
+function preRegisterPlaylistImage(
+  playlistData: StandaloneData,
+  docId: string
+): void {
   const imageFilePath =
     playlistData.playlist.imageFilePath ??
     (playlistData.playlist.imageExtension
       ? `data/playlist-cover${playlistData.playlist.imageExtension}`
       : undefined);
-  const imageType = playlistData.playlist.imageMimeType ?? (imageFilePath ? mimeFromExtension(imageFilePath) : undefined);
+  const imageType =
+    playlistData.playlist.imageMimeType ??
+    (imageFilePath ? mimeFromExtension(imageFilePath) : undefined);
   standalonePlaylistImageRegistry.set(docId, { imageFilePath, imageType });
 }
 
@@ -280,7 +302,9 @@ function buildStandalonePlaylist(
 
   standalonePlaylistImageRegistry.set(docId, {
     imageFilePath,
-    imageType: playlistData.playlist.imageMimeType ?? (imageFilePath ? mimeFromExtension(imageFilePath) : undefined),
+    imageType:
+      playlistData.playlist.imageMimeType ??
+      (imageFilePath ? mimeFromExtension(imageFilePath) : undefined),
   });
 
   return {
@@ -293,7 +317,9 @@ function buildStandalonePlaylist(
     rev: playlistData.playlist.rev,
     needsImageLoad: !!imageFilePath,
     imageFilePath,
-    imageType: playlistData.playlist.imageMimeType ?? (imageFilePath ? mimeFromExtension(imageFilePath) : undefined),
+    imageType:
+      playlistData.playlist.imageMimeType ??
+      (imageFilePath ? mimeFromExtension(imageFilePath) : undefined),
     bgFilterEnabled: playlistData.playlist.bgFilterEnabled,
     bgFilterBlur: playlistData.playlist.bgFilterBlur,
     bgFilterContrast: playlistData.playlist.bgFilterContrast,
@@ -488,13 +514,7 @@ export async function initializeStandalonePlaylist(
     // background: fetch images from file paths and store in blob store
     setTimeout(
       () =>
-        loadStandaloneImages(
-          playlistData,
-          docId,
-          playlist,
-          songs,
-          callbacks
-        ),
+        loadStandaloneImages(playlistData, docId, playlist, songs, callbacks),
       1000
     );
   } catch (err) {

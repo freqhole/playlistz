@@ -64,7 +64,7 @@ export const PlaylistDocSchema = z.object({
         nodeId: z.string(),
         joinedAt: z.string(),
         lastSeenAt: z.string().optional(),
-      }),
+      })
     )
     .default({}),
   acl: z
@@ -76,7 +76,7 @@ export const PlaylistDocSchema = z.object({
           z.literal("editor"),
           z.literal("viewer"),
         ]),
-      }),
+      })
     )
     .optional(),
   deleted: z.boolean().optional(),
@@ -90,9 +90,9 @@ export const PlaylistDocSchema = z.object({
   coverFilterEnabled: z.boolean().optional(),
   coverFilterBlur: z.number().optional(),
   // background image layout
-  bgSize: z.string().optional(),     // css background-size, default: "cover"
+  bgSize: z.string().optional(), // css background-size, default: "cover"
   bgPosition: z.string().optional(), // css background-position, default: "top"
-  bgRepeat: z.string().optional(),   // css background-repeat, default: "no-repeat"
+  bgRepeat: z.string().optional(), // css background-repeat, default: "no-repeat"
 });
 export type PlaylistDoc = z.infer<typeof PlaylistDocSchema>;
 
@@ -121,7 +121,7 @@ export function parsePlaylistDoc(raw: unknown): PlaylistDoc {
       "[playlistz:schema] parse failed - falling back to defaults. error:",
       err instanceof z.ZodError ? err.issues : err,
       "raw keys:",
-      raw && typeof raw === "object" ? Object.keys(raw) : "null",
+      raw && typeof raw === "object" ? Object.keys(raw) : "null"
     );
     return PlaylistDocSchema.parse({});
   }

@@ -154,7 +154,9 @@ describe("useSongState edit mode", () => {
 
   describe("handleSongSaved", () => {
     it("updates song in IDB and keeps editing the saved song", async () => {
-      const { updateSongInDoc } = await import("../services/playlistDocService.js");
+      const { updateSongInDoc } = await import(
+        "../services/playlistDocService.js"
+      );
       let savedHook: ReturnType<typeof useSongState> | undefined;
       createRoot((dispose) => {
         savedHook = useSongState();
@@ -164,22 +166,34 @@ describe("useSongState edit mode", () => {
       // test the async call outside the root since createRoot disposes sync
       const hook = (() => {
         let h: ReturnType<typeof useSongState>;
-        createRoot(() => { h = useSongState(); h.handleEditSong(mockSong); });
+        createRoot(() => {
+          h = useSongState();
+          h.handleEditSong(mockSong);
+        });
         return h!;
       })();
       const updatedSong = { ...mockSong, title: "updated title" };
       await hook.handleSongSaved(updatedSong);
-      expect(updateSongInDoc).toHaveBeenCalledWith(updatedSong.playlistId, updatedSong.id, updatedSong);
+      expect(updateSongInDoc).toHaveBeenCalledWith(
+        updatedSong.playlistId,
+        updatedSong.id,
+        updatedSong
+      );
       // panel stays open with the saved values
       expect(hook.editingSong()).toEqual(updatedSong);
       expect(hook.isEditMode()).toBe(true);
     });
 
     it("sets error when IDB update fails", async () => {
-      const { updateSongInDoc } = await import("../services/playlistDocService.js");
+      const { updateSongInDoc } = await import(
+        "../services/playlistDocService.js"
+      );
       vi.mocked(updateSongInDoc).mockRejectedValueOnce(new Error("db error"));
       let hook: ReturnType<typeof useSongState>;
-      createRoot(() => { hook = useSongState(); hook!.handleEditSong(mockSong); });
+      createRoot(() => {
+        hook = useSongState();
+        hook!.handleEditSong(mockSong);
+      });
       await hook!.handleSongSaved(mockSong);
       expect(hook!.error()).toBeTruthy();
     });
@@ -233,4 +247,3 @@ describe("useSongState edit mode", () => {
     });
   });
 });
-

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* global console, process */
 import { build } from "vite";
 import solid from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
@@ -43,7 +42,8 @@ function generateIndexHtml() {
 async function buildStandalone() {
   const distDir = path.resolve("dist");
   if (!skipClear) {
-    if (fs.existsSync(distDir)) fs.rmSync(distDir, { recursive: true, force: true });
+    if (fs.existsSync(distDir))
+      fs.rmSync(distDir, { recursive: true, force: true });
   }
   fs.mkdirSync(distDir, { recursive: true });
 
@@ -58,25 +58,33 @@ async function buildStandalone() {
   await build({
     configFile: false,
     plugins: [
-      wasm(), topLevelAwait(), solid({ typescript: true, jsx: "preserve" }), tailwindcss(),
+      wasm(),
+      topLevelAwait(),
+      solid({ typescript: true, jsx: "preserve" }),
+      tailwindcss(),
       {
         name: "capture-browser-bundle",
         enforce: "post",
         async generateBundle(_, bundle) {
           const jsChunk = Object.values(bundle).find(
-            (f) => f.type === "chunk" && typeof f.code === "string",
+            (f) => f.type === "chunk" && typeof f.code === "string"
           );
           const cssAsset = Object.values(bundle).find(
-            (f) => f.type === "asset" && String(f.fileName).endsWith(".css"),
+            (f) => f.type === "asset" && String(f.fileName).endsWith(".css")
           );
-          if (!jsChunk) { console.error("no js chunk found"); return; }
+          if (!jsChunk) {
+            console.error("no js chunk found");
+            return;
+          }
           for (const [fileName, file] of Object.entries(bundle)) {
             if (file.type === "asset" && fileName.endsWith(".wasm")) {
               const b64 = Buffer.from(file.source).toString("base64");
               const dataUri = `data:application/wasm;base64,${b64}`;
               jsChunk.code = jsChunk.code.split(`/${fileName}`).join(dataUri);
               delete bundle[fileName];
-              console.log(`  inlined wasm: ${fileName} (${(b64.length / 1024 / 1024).toFixed(1)} mb)`);
+              console.log(
+                `  inlined wasm: ${fileName} (${(b64.length / 1024 / 1024).toFixed(1)} mb)`
+              );
             }
           }
           cssCode = cssAsset ? String(cssAsset.source) : "";
@@ -86,12 +94,18 @@ async function buildStandalone() {
       },
     ],
     build: {
-      outDir: "dist", target: "esnext", minify: false, sourcemap: false, emptyOutDir: false,
+      outDir: "dist",
+      target: "esnext",
+      minify: false,
+      sourcemap: false,
+      emptyOutDir: false,
       rollupOptions: {
         input: "./src/web-component.tsx",
         output: {
-          format: "es", entryFileNames: "playlistz-entry.js",
-          chunkFileNames: "playlistz-[hash].js", assetFileNames: "playlistz.[ext]",
+          format: "es",
+          entryFileNames: "playlistz-entry.js",
+          chunkFileNames: "playlistz-[hash].js",
+          assetFileNames: "playlistz.[ext]",
           inlineDynamicImports: true,
         },
         external: ["@freqhole/midden"],
@@ -101,14 +115,25 @@ async function buildStandalone() {
 
   let cssInjector = "";
   if (cssCode) {
-    const cssMinified = (await transform(cssCode, { loader: "css", minify: true })).code.replace(/\n/g, "");
+    const cssMinified = (
+      await transform(cssCode, { loader: "css", minify: true })
+    ).code.replace(/\n/g, "");
     cssInjector = `(()=>{const s=document.createElement('style');s.textContent=${JSON.stringify(cssMinified)};document.head.appendChild(s);})();\n`;
   }
   const { code: browserMinified } = await transform(cssInjector + browserCode, {
-    minify: true, sourcemap: false, format: "iife", target: "esnext",
+    minify: true,
+    sourcemap: false,
+    format: "iife",
+    target: "esnext",
   });
-  fs.writeFileSync(path.resolve("dist/freqhole-playlistz.js"), browserMinified, "utf-8");
-  console.log(`generated: freqhole-playlistz.js (${(browserMinified.length / 1024 / 1024).toFixed(2)} mb)`);
+  fs.writeFileSync(
+    path.resolve("dist/freqhole-playlistz.js"),
+    browserMinified,
+    "utf-8"
+  );
+  console.log(
+    `generated: freqhole-playlistz.js (${(browserMinified.length / 1024 / 1024).toFixed(2)} mb)`
+  );
 
   // ---- cli bundle ----
   console.log("building freqhole-playlistz.cli.mjs...");
@@ -116,8 +141,12 @@ async function buildStandalone() {
   const cliEntry = path.resolve(__dirname, "src/cli/index.ts");
   await esbuild({
     entryPoints: [cliEntry],
-    bundle: true, platform: "node", format: "esm", outfile: cliOut,
-    minify: true, sourcemap: false,
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    outfile: cliOut,
+    minify: true,
+    sourcemap: false,
     banner: { js: "#!/usr/bin/env node" },
     define: { "import.meta.url": '"file://"' },
   });
@@ -138,4 +167,7 @@ async function buildStandalone() {
   console.log("  cli:     dist/freqhole-playlistz.cli.mjs");
 }
 
-buildStandalone().catch((err) => { console.error("build failed:", err); process.exit(1); });
+buildStandalone().catch((err) => {
+  console.error("build failed:", err);
+  process.exit(1);
+});

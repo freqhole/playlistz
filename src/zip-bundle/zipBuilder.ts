@@ -1,8 +1,19 @@
 import { Zip, ZipPassThrough } from "fflate";
-import type { BlobFetcher, PlaylistZipEntry, PlaylistZipOptions } from "./types.js";
-import { sanitizeFilename, createSafeTitle, getFileExtension } from "./utils.js";
+import type {
+  BlobFetcher,
+  PlaylistZipEntry,
+  PlaylistZipOptions,
+} from "./types.js";
+import {
+  sanitizeFilename,
+  createSafeTitle,
+  getFileExtension,
+} from "./utils.js";
 import { generateM3UContent } from "./m3u.js";
-import { generateIndexHtml, generatePlaylistzJs } from "../utils/standaloneTemplates.js";
+import {
+  generateIndexHtml,
+  generatePlaylistzJs,
+} from "../utils/standaloneTemplates.js";
 import { generateSwJs } from "../utils/swTemplate.js";
 
 // derive a MIME type from a file path extension.
@@ -17,7 +28,7 @@ function mimeFromPath(filePath: string): string {
     webp: "image/webp",
     avif: "image/avif",
   };
-  return (ext && map[ext]) ? map[ext]! : "image/jpeg";
+  return ext && map[ext] ? map[ext]! : "image/jpeg";
 }
 
 const TEXT_ENC = new TextEncoder();
@@ -47,44 +58,49 @@ async function createStreamingZip(): Promise<{
     try {
       const opfsRoot = await navigator.storage.getDirectory();
       const tempName = `playlistz-dl-${Date.now()}.zip`;
-      const tempHandle = await opfsRoot.getFileHandle(tempName, { create: true });
+      const tempHandle = await opfsRoot.getFileHandle(tempName, {
+        create: true,
+      });
       const writable = await tempHandle.createWritable();
 
-    // chain writes so they execute in order and we can await the tail
-    let pendingWrite: Promise<unknown> = Promise.resolve();
-    let resolveFinished!: () => void;
-    let rejectFinished!: (err: unknown) => void;
-    const finished = new Promise<void>((res, rej) => {
-      resolveFinished = res;
-      rejectFinished = rej;
-    });
+      // chain writes so they execute in order and we can await the tail
+      let pendingWrite: Promise<unknown> = Promise.resolve();
+      let resolveFinished!: () => void;
+      let rejectFinished!: (err: unknown) => void;
+      const finished = new Promise<void>((res, rej) => {
+        resolveFinished = res;
+        rejectFinished = rej;
+      });
 
-    const zip = new Zip((err, data, final) => {
-      if (err) { rejectFinished(err); return; }
-      pendingWrite = pendingWrite.then(() => writable.write(data));
-      if (final) {
-        pendingWrite
-          .then(() => writable.close())
-          .then(resolveFinished, rejectFinished);
-      }
-    });
+      const zip = new Zip((err, data, final) => {
+        if (err) {
+          rejectFinished(err);
+          return;
+        }
+        pendingWrite = pendingWrite.then(() => writable.write(data));
+        if (final) {
+          pendingWrite
+            .then(() => writable.close())
+            .then(resolveFinished, rejectFinished);
+        }
+      });
 
-    return {
-      tempName,
-      async addFile(path, bytes) {
-        const entry = new ZipPassThrough(path);
-        zip.add(entry);
-        entry.push(bytes, true);
-        // await the write tail so OPFS has consumed the bytes before the
-        // caller fetches the next file. this lets the prior ArrayBuffer GC.
-        await pendingWrite;
-      },
-      async finish() {
-        zip.end();
-        await finished;
-        return tempHandle.getFile();
-      },
-    };
+      return {
+        tempName,
+        async addFile(path, bytes) {
+          const entry = new ZipPassThrough(path);
+          zip.add(entry);
+          entry.push(bytes, true);
+          // await the write tail so OPFS has consumed the bytes before the
+          // caller fetches the next file. this lets the prior ArrayBuffer GC.
+          await pendingWrite;
+        },
+        async finish() {
+          zip.end();
+          await finished;
+          return tempHandle.getFile();
+        },
+      };
     } catch {
       // OPFS unavailable or createWritable not supported (e.g. Tauri WKWebView) -
       // fall through to the in-memory path below
@@ -95,10 +111,16 @@ async function createStreamingZip(): Promise<{
   const chunks: Uint8Array[] = [];
   let resolveDone!: () => void;
   let rejectDone!: (err: unknown) => void;
-  const done = new Promise<void>((res, rej) => { resolveDone = res; rejectDone = rej; });
+  const done = new Promise<void>((res, rej) => {
+    resolveDone = res;
+    rejectDone = rej;
+  });
 
   const zip = new Zip((err, data, final) => {
-    if (err) { rejectDone(err); return; }
+    if (err) {
+      rejectDone(err);
+      return;
+    }
     chunks.push(data);
     if (final) resolveDone();
   });
@@ -115,7 +137,10 @@ async function createStreamingZip(): Promise<{
       const total = chunks.reduce((acc, c) => acc + c.length, 0);
       const buf = new Uint8Array(total);
       let off = 0;
-      for (const c of chunks) { buf.set(c, off); off += c.length; }
+      for (const c of chunks) {
+        buf.set(c, off);
+        off += c.length;
+      }
       return new Blob([buf], { type: "application/zip" });
     },
   };
@@ -127,7 +152,7 @@ async function createStreamingZip(): Promise<{
 export async function buildPlaylistZip(
   entry: PlaylistZipEntry,
   fetchBlob: BlobFetcher,
-  options: PlaylistZipOptions = {},
+  options: PlaylistZipOptions = {}
 ): Promise<Blob> {
   const {
     includeImages = true,
@@ -147,7 +172,10 @@ export async function buildPlaylistZip(
       const ext = getFileExtension(entry.playlist.imageType ?? "image/jpeg");
       const filename = `playlist-cover${ext}`;
       playlistImagePath = `data/${filename}`;
-      await builder.addFile(`${rootName}/${playlistImagePath}`, new Uint8Array(bytes));
+      await builder.addFile(
+        `${rootName}/${playlistImagePath}`,
+        new Uint8Array(bytes)
+      );
       // bytes GC-eligible after addFile resolves
     }
   }
@@ -165,7 +193,9 @@ export async function buildPlaylistZip(
   for (const song of entry.songs) {
     const safeFilename = song.originalFilename
       ? sanitizeFilename(song.originalFilename)
-      : sanitizeFilename(`${song.title}.${getFileExtension(song.mimeType).slice(1)}`);
+      : sanitizeFilename(
+          `${song.title}.${getFileExtension(song.mimeType).slice(1)}`
+        );
     const safeBase = safeFilename.replace(/\.[^.]+$/, "");
     const audioPath = `data/${safeFilename}`;
     let fileSize = song.fileSize ?? 0;
@@ -175,7 +205,10 @@ export async function buildPlaylistZip(
       const audioBytes = await fetchBlob(song.sha);
       if (audioBytes) {
         fileSize = audioBytes.byteLength;
-        await builder.addFile(`${rootName}/${audioPath}`, new Uint8Array(audioBytes));
+        await builder.addFile(
+          `${rootName}/${audioPath}`,
+          new Uint8Array(audioBytes)
+        );
         // audioBytes GC-eligible after addFile resolves
       }
     }
@@ -188,7 +221,10 @@ export async function buildPlaylistZip(
         const ext = getFileExtension(song.imageType ?? "image/jpeg");
         const imageFilename = `${safeBase}-cover${ext}`;
         imagePath = `data/${imageFilename}`;
-        await builder.addFile(`${rootName}/${imagePath}`, new Uint8Array(imageBytes));
+        await builder.addFile(
+          `${rootName}/${imagePath}`,
+          new Uint8Array(imageBytes)
+        );
         // imageBytes GC-eligible after addFile resolves
       }
     }
@@ -204,7 +240,9 @@ export async function buildPlaylistZip(
         title: entry.playlist.title,
         description: entry.playlist.description,
         rev: entry.playlist.rev,
-        imageMimeType: entry.playlist.imageType ?? (playlistImagePath ? mimeFromPath(playlistImagePath) : undefined),
+        imageMimeType:
+          entry.playlist.imageType ??
+          (playlistImagePath ? mimeFromPath(playlistImagePath) : undefined),
         imageFilePath: playlistImagePath,
         safeFilename: rootName,
         bgFilterEnabled: entry.playlist.bgFilterEnabled,
@@ -226,12 +264,17 @@ export async function buildPlaylistZip(
         fileSize: r.fileSize,
         mimeType: r.song.mimeType,
         sha: r.song.sha,
-        imageMimeType: r.song.imageType ?? (r.imagePath ? mimeFromPath(r.imagePath) : undefined),
+        imageMimeType:
+          r.song.imageType ??
+          (r.imagePath ? mimeFromPath(r.imagePath) : undefined),
         imageFilePath: r.imagePath,
       })),
     },
   ];
-  await builder.addFile(`${rootName}/playlistz.js`, TEXT_ENC.encode(generatePlaylistzJs(playlistzData)));
+  await builder.addFile(
+    `${rootName}/playlistz.js`,
+    TEXT_ENC.encode(generatePlaylistzJs(playlistzData))
+  );
 
   // ---- m3u8 file ----
   if (generateM3U) {
@@ -250,14 +293,20 @@ export async function buildPlaylistZip(
         duration: r.song.duration,
         audioPath: r.audioPath,
         imagePath: r.imagePath,
-      })),
+      }))
     );
-    await builder.addFile(`${rootName}/data/${rootName}.m3u8`, TEXT_ENC.encode(m3uContent));
+    await builder.addFile(
+      `${rootName}/data/${rootName}.m3u8`,
+      TEXT_ENC.encode(m3uContent)
+    );
   }
 
   // ---- static shell files ----
   if (includeHTML) {
-    await builder.addFile(`${rootName}/index.html`, TEXT_ENC.encode(generateIndexHtml()));
+    await builder.addFile(
+      `${rootName}/index.html`,
+      TEXT_ENC.encode(generateIndexHtml())
+    );
     await builder.addFile(`${rootName}/sw.js`, TEXT_ENC.encode(generateSwJs()));
 
     const bundleUrl =
@@ -279,13 +328,19 @@ export async function buildPlaylistZip(
           if (text.trimStart().startsWith("<!")) {
             console.warn(
               "freqhole-playlistz.js fetch returned HTML (vite dev mode?). " +
-              "run `npm run build:standalone` first, then retry the zip download.",
+                "run `npm run build:standalone` first, then retry the zip download."
             );
           } else {
-            await builder.addFile(`${rootName}/freqhole-playlistz.js`, TEXT_ENC.encode(text));
+            await builder.addFile(
+              `${rootName}/freqhole-playlistz.js`,
+              TEXT_ENC.encode(text)
+            );
           }
         } else {
-          console.warn("could not fetch freqhole-playlistz.js for zip bundle:", res.status);
+          console.warn(
+            "could not fetch freqhole-playlistz.js for zip bundle:",
+            res.status
+          );
         }
       } catch (err) {
         console.warn("could not include freqhole-playlistz.js in zip:", err);

@@ -16,7 +16,11 @@ function bumpModified(doc: PlaylistDoc, by?: string): void {
 }
 
 // insert or replace a song in the doc, appending its id to order if not already present
-export function upsertSong(doc: PlaylistDoc, song: SongEntry, by?: string): void {
+export function upsertSong(
+  doc: PlaylistDoc,
+  song: SongEntry,
+  by?: string
+): void {
   doc.songs[song.id] = song;
   if (!doc.order.includes(song.id)) {
     doc.order.push(song.id);
@@ -25,7 +29,11 @@ export function upsertSong(doc: PlaylistDoc, song: SongEntry, by?: string): void
 }
 
 // remove a song from songs and order
-export function removeSong(doc: PlaylistDoc, songId: string, by?: string): void {
+export function removeSong(
+  doc: PlaylistDoc,
+  songId: string,
+  by?: string
+): void {
   delete doc.songs[songId];
   const idx = doc.order.indexOf(songId);
   if (idx !== -1) {
@@ -40,7 +48,7 @@ export function reorderSongs(
   doc: PlaylistDoc,
   songId: string,
   toIndex: number,
-  by?: string,
+  by?: string
 ): void {
   const fromIdx = doc.order.indexOf(songId);
   if (fromIdx === -1) return;
@@ -72,7 +80,7 @@ type MetadataFields = Partial<
 export function setMetadata(
   doc: PlaylistDoc,
   fields: MetadataFields,
-  by?: string,
+  by?: string
 ): void {
   if (fields.title !== undefined) doc.title = fields.title;
   if (fields.description !== undefined) doc.description = fields.description;
@@ -101,12 +109,10 @@ export function addImage(
   doc: PlaylistDoc,
   ref: ImageRef,
   target?: { songId?: string },
-  by?: string,
+  by?: string
 ): void {
   const images =
-    target?.songId != null
-      ? doc.songs[target.songId]?.images
-      : doc.images;
+    target?.songId != null ? doc.songs[target.songId]?.images : doc.images;
 
   if (!images) return;
 
@@ -125,12 +131,10 @@ export function setPrimaryImage(
   doc: PlaylistDoc,
   blobId: string,
   target?: { songId?: string },
-  by?: string,
+  by?: string
 ): void {
   const images =
-    target?.songId != null
-      ? doc.songs[target.songId]?.images
-      : doc.images;
+    target?.songId != null ? doc.songs[target.songId]?.images : doc.images;
 
   if (!images) return;
 
@@ -164,7 +168,7 @@ export function setAclRole(
   doc: PlaylistDoc,
   nodeId: string,
   role: "owner" | "editor" | "viewer",
-  by?: string,
+  by?: string
 ): void {
   if (!doc.acl) {
     doc.acl = {};

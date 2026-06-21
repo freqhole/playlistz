@@ -226,7 +226,11 @@ const _transferListeners = new Set<() => void>();
 
 function notifyTransferListeners(): void {
   for (const cb of _transferListeners) {
-    try { cb(); } catch { /* ignore listener errors */ }
+    try {
+      cb();
+    } catch {
+      /* ignore listener errors */
+    }
   }
 }
 
@@ -334,7 +338,10 @@ export async function fetchBlobForDoc(
     notifyTransferListeners();
     const devTask = _devFetchOverride(sha256, mimeType, onProgress);
     const withTimeout = new Promise<string | null>((_, reject) => {
-      const t = setTimeout(() => reject(new Error("blob fetch timeout")), BLOB_FETCH_TIMEOUT_MS);
+      const t = setTimeout(
+        () => reject(new Error("blob fetch timeout")),
+        BLOB_FETCH_TIMEOUT_MS
+      );
       devTask.finally(() => clearTimeout(t));
     });
     const task = Promise.race([devTask, withTimeout]).then(
@@ -368,9 +375,7 @@ export async function fetchBlobForDoc(
     try {
       const handle = await findPlaylistDoc(docId as AutomergeUrl);
       const doc = handle.doc();
-      peers = Object.keys(doc?.peers ?? {}).filter(
-        (n) => n && n !== myNodeId
-      );
+      peers = Object.keys(doc?.peers ?? {}).filter((n) => n && n !== myNodeId);
     } catch {
       return null;
     }
@@ -414,7 +419,10 @@ export async function fetchBlobForDoc(
   })();
 
   const withTimeout = new Promise<string | null>((_, reject) => {
-    const t = setTimeout(() => reject(new Error("blob fetch timeout")), BLOB_FETCH_TIMEOUT_MS);
+    const t = setTimeout(
+      () => reject(new Error("blob fetch timeout")),
+      BLOB_FETCH_TIMEOUT_MS
+    );
     task.finally(() => clearTimeout(t));
   });
   const racedTask = Promise.race([task, withTimeout]) as Promise<string | null>;
@@ -476,7 +484,11 @@ let prefetchRun = 0;
  * the start of the next song.
  * fire-and-forget; a new call cancels the previous run.
  */
-export function prefetchUpcoming(playlist: Playlist, currentSongId: string, currentSongRemaining = 0): void {
+export function prefetchUpcoming(
+  playlist: Playlist,
+  currentSongId: string,
+  currentSongRemaining = 0
+): void {
   const run = ++prefetchRun;
   void (async () => {
     const songs = await getSongsForPlaylist(playlist.id).catch(
@@ -673,19 +685,16 @@ export function _resetBlobTransferForTests(): void {
 
 // override function for fetchBlobForDoc - set by dev-hooks.ts in DEV builds only.
 // checked under `import.meta.env.DEV` so the branch is eliminated in production.
-let _devFetchOverride: (
+let _devFetchOverride:
   | ((
       sha256: string,
       mimeType: string,
       onProgress?: (p: BlobFetchProgress) => void
     ) => Promise<string | null>)
-  | null
-) = null;
+  | null = null;
 
 // set the fetch override (called from dev-hooks.ts)
-export function _devSetFetchOverride(
-  fn: typeof _devFetchOverride
-): void {
+export function _devSetFetchOverride(fn: typeof _devFetchOverride): void {
   _devFetchOverride = fn;
 }
 
@@ -697,6 +706,8 @@ export async function _devEvictBlob(sha256: string): Promise<void> {
 
 // fetch a blob directly by sha256 - used in tests to trigger retry without a UI click.
 // passes an empty docId because mock overrides don't use it.
-export async function _devFetchBlobBySha(sha256: string): Promise<string | null> {
+export async function _devFetchBlobBySha(
+  sha256: string
+): Promise<string | null> {
   return fetchBlobForDoc("", sha256, "audio/wav");
 }

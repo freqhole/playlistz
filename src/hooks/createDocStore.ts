@@ -14,10 +14,7 @@ import type {
   DocHandleChangePayload,
   DocHandleDeletePayload,
 } from "@automerge/automerge-repo";
-import {
-  parsePlaylistDoc,
-  type PlaylistDoc,
-} from "../types/playlistz";
+import { parsePlaylistDoc, type PlaylistDoc } from "../types/playlistz";
 
 export interface DocStore {
   doc: Accessor<PlaylistDoc>;

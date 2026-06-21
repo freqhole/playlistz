@@ -7,8 +7,8 @@ export interface M3UZipSong {
   artist: string;
   album: string;
   duration: number;
-  audioPath: string;   // relative path written into the m3u8, e.g. "data/song.mp3"
-  imagePath?: string;  // relative path for cover, e.g. "data/song-cover.jpg"
+  audioPath: string; // relative path written into the m3u8, e.g. "data/song.mp3"
+  imagePath?: string; // relative path for cover, e.g. "data/song-cover.jpg"
 }
 
 export interface M3UZipPlaylist {
@@ -16,19 +16,19 @@ export interface M3UZipPlaylist {
   title: string;
   description?: string;
   rev?: number;
-  imagePath?: string;  // relative path for playlist cover
+  imagePath?: string; // relative path for playlist cover
 }
 
 export function generateM3UContent(
   playlist: M3UZipPlaylist,
-  songs: M3UZipSong[],
+  songs: M3UZipSong[]
 ): string {
   let out = "#EXTM3U\n";
   out += `# Playlist: ${playlist.title}\n`;
   out += `# PlaylistId: ${playlist.id}\n`;
   out += `# PlaylistRev: ${playlist.rev ?? 0}\n`;
   if (playlist.description) out += `# Description: ${playlist.description}\n`;
-  if (playlist.imagePath)   out += `# PlaylistImage: ${playlist.imagePath}\n`;
+  if (playlist.imagePath) out += `# PlaylistImage: ${playlist.imagePath}\n`;
   out += "\n";
 
   for (const song of songs) {

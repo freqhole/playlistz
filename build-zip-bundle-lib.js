@@ -1,9 +1,5 @@
 #!/usr/bin/env node
 // builds the ./zip-bundle export as a pure ESM library.
-// uses esbuild (already a dep via vite) - no extra tooling needed.
-// output: dist/zip-bundle/index.js + dist/zip-bundle/index.d.ts (via tsc)
-
-/* global console, process */
 import { build } from "esbuild";
 import { execSync } from "child_process";
 import fs from "fs";
@@ -38,7 +34,7 @@ execSync(
     "--moduleResolution bundler --module esnext " +
     "--outDir dist/zip-bundle " +
     "src/zip-bundle/index.ts",
-    { cwd: __dirname, stdio: "inherit" },
+    { cwd: __dirname, stdio: "inherit" }
 );
 
 console.log("done: dist/zip-bundle/");
