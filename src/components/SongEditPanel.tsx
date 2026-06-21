@@ -180,14 +180,6 @@ export function SongEditPanel(props: SongEditPanelProps) {
     props.onClose();
   };
 
-  // reset form edits back to the song's stored values (does not close)
-  const handleReset = () => {
-    const url = imageUrl();
-    if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
-    setError(null);
-    initFromSong();
-  };
-
   const handleRemoveImage = () => {
     const url = imageUrl();
     if (url) URL.revokeObjectURL(url);
@@ -392,41 +384,68 @@ export function SongEditPanel(props: SongEditPanelProps) {
         {/* text fields + file info */}
         <div class="flex flex-col gap-3 sm:order-1">
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1">
-              title
-            </label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-xs font-medium text-gray-400">title</label>
+              <Show when={title().trim() !== props.song.title}>
+                <button
+                  onClick={() => setTitle(props.song.title)}
+                  class="text-xs text-gray-500 hover:text-white transition-colors"
+                  title="reset title"
+                >
+                  reset
+                </button>
+              </Show>
+            </div>
             <input
               type="text"
               value={title()}
               onInput={(e) => setTitle(e.currentTarget.value)}
               disabled={isLoading()}
-              class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
+              class="w-full bg-black text-white px-3 py-2 border border-gray-600 hover:border-gray-400 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
               placeholder="song title"
             />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1">
-              artist
-            </label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-xs font-medium text-gray-400">artist</label>
+              <Show when={artist().trim() !== (props.song.artist || "")}>
+                <button
+                  onClick={() => setArtist(props.song.artist || "")}
+                  class="text-xs text-gray-500 hover:text-white transition-colors"
+                  title="reset artist"
+                >
+                  reset
+                </button>
+              </Show>
+            </div>
             <input
               type="text"
               value={artist()}
               onInput={(e) => setArtist(e.currentTarget.value)}
               disabled={isLoading()}
-              class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
+              class="w-full bg-black text-white px-3 py-2 border border-gray-600 hover:border-gray-400 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
               placeholder="artist name"
             />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1">
-              album
-            </label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-xs font-medium text-gray-400">album</label>
+              <Show when={album().trim() !== (props.song.album || "")}>
+                <button
+                  onClick={() => setAlbum(props.song.album || "")}
+                  class="text-xs text-gray-500 hover:text-white transition-colors"
+                  title="reset album"
+                >
+                  reset
+                </button>
+              </Show>
+            </div>
             <input
               type="text"
               value={album()}
               onInput={(e) => setAlbum(e.currentTarget.value)}
               disabled={isLoading()}
-              class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
+              class="w-full bg-black text-white px-3 py-2 border border-gray-600 hover:border-gray-400 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
               placeholder="album name"
             />
           </div>
@@ -466,7 +485,7 @@ export function SongEditPanel(props: SongEditPanelProps) {
               title="delete song"
             >
               <svg
-                class="w-4 h-4"
+                class="w-4 h-4 flex-shrink-0"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -478,21 +497,13 @@ export function SongEditPanel(props: SongEditPanelProps) {
                   d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                 />
               </svg>
-              delete
+              <span class="hidden sm:inline">delete</span>
             </button>
             <div class="flex-1" />
             <button
-              onClick={handleReset}
-              disabled={isLoading()}
-              class="px-4 py-2 text-gray-400 hover:text-white disabled:text-gray-600 font-medium transition-colors"
-              title="reset form edits"
-            >
-              reset
-            </button>
-            <button
               onClick={handleSave}
               disabled={isLoading()}
-              class="px-6 py-2 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white font-medium transition-colors flex items-center gap-2"
+              class="px-4 py-2 sm:px-6 bg-magenta-500 hover:bg-magenta-600 disabled:bg-magenta-400 text-white font-medium transition-colors flex items-center gap-2"
             >
               <Show
                 when={!isLoading()}
@@ -510,11 +521,11 @@ export function SongEditPanel(props: SongEditPanelProps) {
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     stroke-width="2"
-                    d="M5 13l4 4L19 7"
+                    d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8"
                   />
                 </svg>
               </Show>
-              save
+              <span class="hidden sm:inline">save</span>
             </button>
             <Show when={props.nextSong}>
               <button

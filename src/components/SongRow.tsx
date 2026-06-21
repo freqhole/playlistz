@@ -6,6 +6,7 @@ import {
   onCleanup,
 } from "solid-js";
 import { getSongById } from "../services/playlistDocService.js";
+import { enrichSongsWithStandalonePaths } from "../services/standaloneService.js";
 import { createRelativeTimeSignal } from "../utils/timeUtils.js";
 import { getSongSpecificTrigger } from "../services/songReactivity.js";
 import {
@@ -68,7 +69,7 @@ export function SongRow(props: SongRowProps) {
         if (!fetchedSong) {
           return null;
         }
-        return fetchedSong;
+        return enrichSongsWithStandalonePaths([fetchedSong])[0] ?? null;
       } catch (error) {
         console.error(`Error fetching song ${songId}:`, error);
         return null;
@@ -279,6 +280,7 @@ export function SongRow(props: SongRowProps) {
 
           return (
             <div
+              data-testid="song-row"
               class={`group relative flex items-center p-3 group-hover:bg-opacity-70 hover:bg-magenta-500 transition-all duration-200 overflow-hidden ${
                 isCurrentlyPlaying() || isCurrentlySelected()
                   ? "bg-black"

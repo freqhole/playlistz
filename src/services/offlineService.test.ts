@@ -435,7 +435,7 @@ describe("Offline Service Tests", () => {
 
       await initializeOfflineSupport("Test Playlist");
 
-      expect(mockRegister).toHaveBeenCalledWith("./sw.js");
+      expect(mockRegister).toHaveBeenCalledWith("/sw.js");
     });
 
     it("should handle service worker registration failure", async () => {
@@ -569,7 +569,7 @@ describe("Offline Service Tests", () => {
       const { navigatorStorage, serviceWorker } = mockManager.getMocks();
       expect(document.createElement).toHaveBeenCalledWith("link");
       expect(navigatorStorage.persist).toHaveBeenCalled();
-      expect(serviceWorker.register).toHaveBeenCalledWith("./sw.js");
+      expect(serviceWorker.register).toHaveBeenCalledWith("/sw.js");
     });
 
     it("should initialize with playlist title and data", async () => {

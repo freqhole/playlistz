@@ -2,6 +2,26 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRoot } from "solid-js";
 import { usePlaylistManager } from "./usePlaylistManager.js";
 import type { Playlist } from "../types/playlist.js";
+import type { DocIndexEntry } from "../services/indexedDBService.js";
+
+const mockPlaylist: Playlist = {
+  id: "test-playlist",
+  title: "Test Playlist",
+  description: "Test Description",
+  songIds: ["song1", "song2"],
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+};
+
+const mockDocEntry: DocIndexEntry = {
+  docId: "test-playlist",
+  title: "Test Playlist",
+  addedAt: Date.now(),
+  source: "local",
+};
+
+// keep a reference to the docIndex entries array that createDocIndexQuery returns
+let docIndexEntries: DocIndexEntry[] = [mockDocEntry];
 
 // Mock the services
 vi.mock("../services/playlistDocService.js", () => ({
@@ -12,22 +32,35 @@ vi.mock("../services/playlistDocService.js", () => ({
   deleteSong: vi.fn(),
   reorderSongsInDoc: vi.fn(),
   getSongsForPlaylist: vi.fn().mockResolvedValue([]),
+  getSongsFromHandle: vi.fn().mockResolvedValue([]),
   getSongById: vi.fn(),
   docToPlaylist: vi.fn(),
+  docToPlaylistAsync: vi.fn().mockResolvedValue({
+    id: "test-playlist",
+    title: "Test Playlist",
+    description: "Test Description",
+    songIds: ["song1", "song2"],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }),
   getSongsWithAudioData: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("./createDocIndexQuery.js", () => ({
-  createDocIndexQuery: vi.fn(() => () => []),
+  createDocIndexQuery: vi.fn(() => () => docIndexEntries),
 }));
 
 vi.mock("../services/automergeRepo.js", () => ({
-  findPlaylistDoc: vi.fn(),
+  findPlaylistDoc: vi.fn(async () => ({
+    doc: () => ({ title: "Test Playlist", songs: {}, songIds: [], peers: {} }),
+    on: vi.fn(),
+    off: vi.fn(),
+  })),
   getRepo: vi.fn(),
 }));
 
-vi.mock("freqhole-api-client/playlistz", () => ({
-  parsePlaylistDoc: vi.fn(),
+vi.mock("@freqhole/api-client/playlistz", () => ({
+  parsePlaylistDoc: vi.fn((doc: Record<string, unknown>) => doc),
   emptyPlaylistDoc: vi.fn(),
 }));
 
@@ -57,35 +90,67 @@ vi.mock("../services/audioService.js", () => ({
     currentPlaylist: vi.fn(() => null),
   },
   stop: vi.fn(),
+  refreshPlaylistQueue: vi.fn(),
 }));
 
 vi.mock("../services/imageService.js", () => ({
   getImageUrlForContext: vi.fn(),
 }));
 
+vi.mock("../services/indexedDBService.js", () => ({
+  loadSetting: vi.fn().mockResolvedValue(null),
+  saveSetting: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe("usePlaylistManager consolidated delete operations", () => {
   let dispose: () => void;
   let hook: ReturnType<typeof usePlaylistManager>;
 
-  const mockPlaylist: Playlist = {
-    id: "test-playlist",
-    title: "Test Playlist",
-    description: "Test Description",
-    songIds: ["song1", "song2"],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-
   beforeEach(async () => {
     vi.clearAllMocks();
+    docIndexEntries = [mockDocEntry];
+
+    // re-initialize mock implementations cleared by vi.clearAllMocks()
+    const docSvc = await import("../services/playlistDocService.js");
+    const repoSvc = await import("../services/automergeRepo.js");
+    const idbSvc = await import("../services/indexedDBService.js");
+    const fhClient = await import("@freqhole/api-client/playlistz");
+    const docIndexQry = await import("./createDocIndexQuery.js");
+
+    vi.mocked(docIndexQry.createDocIndexQuery).mockReturnValue(() => docIndexEntries as never);
+
+    vi.mocked(repoSvc.findPlaylistDoc).mockResolvedValue({
+      doc: () => ({ title: "Test Playlist", songs: {}, songIds: [], peers: {} }),
+      on: vi.fn(),
+      off: vi.fn(),
+    } as never);
+
+    vi.mocked(docSvc.docToPlaylistAsync).mockResolvedValue({
+      id: "test-playlist",
+      title: "Test Playlist",
+      description: "Test Description",
+      songIds: ["song1", "song2"],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    } as never);
+
+    vi.mocked(docSvc.getSongsFromHandle).mockResolvedValue([] as never);
+    vi.mocked(idbSvc.loadSetting).mockResolvedValue(null as never);
+    vi.mocked(fhClient.parsePlaylistDoc).mockImplementation((doc: unknown) => doc as never);
 
     createRoot((disposeFn) => {
       dispose = disposeFn;
       hook = usePlaylistManager();
     });
 
-    // Wait for initialization
+    // wait for deferred effects to run (syncPlaylistsFromDocIndex, on-select, etc.)
     await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // ensure the selected playlist is populated for tests that rely on it
+    hook.setSelectedPlaylist(mockPlaylist);
   });
 
   afterEach(() => {
@@ -104,7 +169,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
       vi.mocked(deletePlaylist).mockResolvedValue();
 
       // Select playlist
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
       expect(hook.selectedPlaylist()).toBeTruthy();
       expect(hook.selectedPlaylist()?.id).toBe("test-playlist");
 
@@ -124,7 +189,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
       // Mock service error
       vi.mocked(deletePlaylist).mockRejectedValue(new Error("Delete failed"));
 
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       await hook.handleDeletePlaylist();
 
@@ -156,7 +221,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
         updatedAt: Date.now(),
       });
 
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       await hook.handleDeletePlaylist();
 
@@ -189,7 +254,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
         updatedAt: Date.now(),
       });
 
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       await hook.handleDeletePlaylist();
 
@@ -207,7 +272,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
       vi.mocked(deleteSong).mockResolvedValue();
 
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       await hook.handleRemoveSong("song1");
 
@@ -227,7 +292,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
         new Error("Remove failed")
       );
 
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       await hook.handleRemoveSong("song1");
 
@@ -243,7 +308,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
       vi.mocked(deleteSong).mockResolvedValue();
 
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       const mockOnClose = vi.fn();
 
@@ -263,7 +328,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
 
       vi.mocked(deleteSong).mockResolvedValue();
 
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       // Should work without callback (SongRow delete button case)
       await hook.handleRemoveSong("song1");
@@ -299,7 +364,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
         updatedAt: Date.now(),
       });
 
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       await hook.handleRemoveSong("song1");
 
@@ -334,7 +399,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
         updatedAt: Date.now(),
       });
 
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       await hook.handleRemoveSong("song1");
 
@@ -356,7 +421,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
       vi.mocked(deleteSong).mockResolvedValue();
 
       // All operations now use the same hook, so state is unified
-      hook.selectPlaylist(mockPlaylist);
+      hook.setSelectedPlaylist(mockPlaylist);
 
       // Song removal should work
       await hook.handleRemoveSong("song1");

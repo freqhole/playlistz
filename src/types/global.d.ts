@@ -1,7 +1,5 @@
 // global type declarations for playlistz
 
-import type { FreqholePlaylistz } from "../utils/standaloneTemplates.js";
-
 // behaviour modes for the __mockBlobFetch dev hook
 type MockBlobBehaviour =
   | { type: "instant" }
@@ -12,7 +10,6 @@ type MockBlobBehaviour =
 
 declare global {
   interface Window {
-    __PLAYLISTZ__?: FreqholePlaylistz;
     STANDALONE_MODE?: boolean;
     DEFERRED_PLAYLIST_DATA?: FreqholePlaylistz;
 
@@ -25,6 +22,7 @@ declare global {
     __seekTo?: (seconds: number) => void;
     __triggerTrackEnd?: () => void;
     __triggerAudioError?: (code?: number) => void;
+    __currentSong?: () => string | null;
 
     // blob store control
     __evictBlob?: (sha256: string) => Promise<void>;
@@ -32,6 +30,10 @@ declare global {
     __clearMockBlobFetch?: () => void;
     __setBlobFetchTimeout?: (ms: number) => void;
     __fetchBlobBySha?: (sha256: string) => Promise<string | null>;
+
+    // docIndex test hooks (registered in src/dev-hooks.ts)
+    __getDocIndexEntries?: () => Promise<unknown[]>;
+    __patchDocIndexEntry?: (docId: string, patch: unknown) => Promise<void>;
   }
 }
 

@@ -1,7 +1,7 @@
 import { createSignal, createEffect } from "solid-js";
 import { createDocIndexQuery } from "./createDocIndexQuery.js";
 import { findPlaylistDoc } from "../services/automergeRepo.js";
-import { parsePlaylistDoc } from "freqhole-api-client/playlistz";
+import { parsePlaylistDoc } from "@freqhole/api-client/playlistz";
 import { docToPlaylist } from "../services/playlistDocService.js";
 import type { Playlist } from "../types/playlist.js";
 import type { AutomergeUrl } from "@automerge/automerge-repo";

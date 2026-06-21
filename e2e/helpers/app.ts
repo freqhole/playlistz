@@ -136,7 +136,8 @@ export async function addSongs(page: Page, count: number, durationSec = 1): Prom
 
 // set a cover image on the playlist edit panel via the file input
 export async function setPlaylistCover(page: Page, f: FixtureFile): Promise<void> {
-  const input = page.locator("input[type='file']").first();
+  // use accept="image/*" to distinguish from the + add-songs audio input
+  const input = page.locator("input[type='file'][accept='image/*']").first();
   await input.waitFor({ state: "attached", timeout: 5000 });
   await input.setInputFiles({ name: f.name, mimeType: f.mimeType, buffer: Buffer.from(f.bytes) });
 }

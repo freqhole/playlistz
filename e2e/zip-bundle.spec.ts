@@ -13,7 +13,7 @@
 // dist/freqhole-playlistz.js is missing. the vite dev server at port 5917
 // serves dist/ so the download service can embed the bundle in the zip.
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as http from "node:http";
@@ -24,6 +24,8 @@ import {
   resetAppState,
   createPlaylistViaUI,
   addSongs,
+  makePng,
+  setPlaylistCover,
 } from "./helpers.js";
 
 // --- inline http server for serving extracted zip contents ---
@@ -155,6 +157,22 @@ function ensureBundleBuilt(): void {
 // --- standalone http server port (avoid collision with vite port 5917) ---
 const STANDALONE_PORT = 5920;
 
+// open the edit panel (if not already open) and click the download zip button.
+// the download button lives in the edit panel, not the main header.
+async function openEditAndClickDownload(page: Page): Promise<void> {
+  const panel = page.getByTestId("edit-panel");
+  const isOpen = await panel.isVisible().catch(() => false);
+  if (!isOpen) {
+    await page.getByTestId("btn-edit-playlist").click();
+    await panel.waitFor({ timeout: 5_000 });
+  }
+  // wait for the download button to be enabled (not disabled by isDownloading/isLoading)
+  const dlBtn = page.getByTestId("btn-download-zip");
+  await dlBtn.waitFor({ state: "visible", timeout: 3_000 });
+  await expect(dlBtn).not.toBeDisabled({ timeout: 3_000 });
+  await dlBtn.click();
+}
+
 test.describe("zip bundle download + standalone roundtrip", () => {
   test.beforeAll(() => ensureBundleBuilt());
 
@@ -169,7 +187,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await addSongs(page, 2);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
 
     expect(download.suggestedFilename()).toMatch(/\.zip$/);
@@ -188,7 +206,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await expect(titleInput).toHaveValue("my test playlist");
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
 
     const zipPath = await download.path();
@@ -213,13 +231,14 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     expect(playlistzJsFile).toBeTruthy();
     const playlistzJs = await playlistzJsFile!.async("string");
 
-    // must be a valid window.__PLAYLISTZ__ assignment
-    expect(playlistzJs).toMatch(/^window\.__PLAYLISTZ__\s*=/);
+    // must set the data-playlistz attribute on the web component element
+    expect(playlistzJs).toContain("setAttribute('data-playlistz'");
 
-    // parse the JSON payload from "window.__PLAYLISTZ__ = [...];"
-    const jsonMatch = playlistzJs.match(/window\.__PLAYLISTZ__\s*=\s*(\[.*\]);?\s*$/s);
-    expect(jsonMatch).toBeTruthy();
-    const playlistzData = JSON.parse(jsonMatch![1]!) as Array<{
+    // extract and parse the JSON payload from setAttribute('data-playlistz', <json>)
+    const attrMatch = playlistzJs.match(/setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/);
+    expect(attrMatch).toBeTruthy();
+    const innerJson = JSON.parse(attrMatch![1]!);
+    const playlistzData = JSON.parse(innerJson) as Array<{
       playlist: { id: string; title: string };
       songs: Array<{ title: string; duration: number; originalFilename: string; mimeType: string }>;
     }>;
@@ -239,6 +258,72 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     }
   });
 
+  test("downloaded zip contains playlist cover and song cover images with valid extensions", async ({
+    page,
+  }) => {
+    await createPlaylistViaUI(page);
+    await addSongs(page, 1);
+
+    // add a playlist cover
+    await page.getByTestId("btn-edit-playlist").click();
+    const coverBytes = await makePng(page, { width: 32, height: 32, color: "#aa00ff" });
+    await setPlaylistCover(page, { name: "cover.png", mimeType: "image/png", bytes: coverBytes });
+    await page.waitForTimeout(600);
+    // close the playlist edit panel before interacting with song rows
+    await page.getByTestId("btn-edit-playlist").click();
+    await page.waitForTimeout(200);
+
+    // add a song cover via the song edit panel
+    const row = page.getByTestId("song-row").first();
+    await row.hover();
+    await page.getByTestId("btn-edit-song").first().click();
+    await page.getByTestId("song-edit-panel").waitFor();
+
+    const songCoverBytes = await makePng(page, { width: 32, height: 32, color: "#00aaff" });
+    const songCoverInput = page.locator("#song-image-upload-panel");
+    await songCoverInput.setInputFiles({ name: "song-cover.png", mimeType: "image/png", buffer: Buffer.from(songCoverBytes) });
+    await page.waitForTimeout(400);
+
+    // click save in the song edit panel
+    await page.locator('[data-testid="song-edit-panel"] button').filter({ hasText: "save" }).click();
+    await page.waitForTimeout(600);
+
+    // close the song edit panel
+    await page.locator('[data-testid="song-edit-panel"] button[title="close"]').click();
+    await page.waitForTimeout(300);
+
+    const downloadPromise = page.waitForEvent("download");
+    await openEditAndClickDownload(page);
+    const download = await downloadPromise;
+    const zipBuf = fs.readFileSync((await download.path())!);
+    const zip = await JSZip.loadAsync(zipBuf);
+    const names = Object.keys(zip.files);
+
+    // playlist cover must be a valid image file (not .bin)
+    const playlistCoverFiles = names.filter((n) => n.includes("playlist-cover"));
+    expect(playlistCoverFiles.length).toBeGreaterThanOrEqual(1);
+    expect(playlistCoverFiles.some((n) => /\.(png|jpg|jpeg|gif|webp)$/i.test(n))).toBe(true);
+
+    // song cover image must be a valid image file (not .bin)
+    const songImageFiles = names.filter((n) => n.includes("-cover.") && !n.includes("playlist-cover"));
+    expect(songImageFiles.length).toBeGreaterThanOrEqual(1);
+    expect(songImageFiles.some((n) => /\.(png|jpg|jpeg|gif|webp)$/i.test(n))).toBe(true);
+
+    // imageMimeType in playlistz.js must be a real MIME type, not "original"
+    const playlistzJsFile = zip.file(/playlistz\.js$/)[0]!;
+    const playlistzJs = await playlistzJsFile.async("string");
+    const attrMatch = playlistzJs.match(/setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/);
+    expect(attrMatch).toBeTruthy();
+    const innerJson = JSON.parse(attrMatch![1]!);
+    const playlistzData = JSON.parse(innerJson) as Array<{
+      playlist: { imageMimeType?: string };
+      songs: Array<{ imageMimeType?: string }>;
+    }>;
+    const entry = playlistzData[0]!;
+    expect(entry.playlist.imageMimeType).toMatch(/^image\//);
+    expect(entry.songs[0]?.imageMimeType).toMatch(/^image\//);
+  });
+
   test("zip reimport: drop zip back onto the app and songs reappear", async ({
     page,
   }) => {
@@ -247,7 +332,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
 
     // download and capture the zip
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipPath = await download.path();
     const zipBuf = fs.readFileSync(zipPath!);
@@ -292,7 +377,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await addSongs(page, 3);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipPath = await download.path();
     expect(zipPath).toBeTruthy();
@@ -347,7 +432,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
 
     // download and capture the zip
     const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipPath = await download.path();
     expect(zipPath, "zip download path should exist").toBeTruthy();
@@ -412,7 +497,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await addSongs(page, 1, 2); // 2-second song for faster playback check
 
     const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipBuf = fs.readFileSync((await download.path())!);
 
@@ -468,7 +553,7 @@ test.describe("--http CLI server mode", () => {
     await addSongs(page, 2);
 
     const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipBuf = fs.readFileSync((await download.path())!);
 
@@ -503,6 +588,267 @@ test.describe("--http CLI server mode", () => {
       await ctx.close();
     } finally {
       await new Promise<void>((res) => server.close(() => res()));
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+test.describe("zip bundle: file:// standalone mode", () => {
+  test.beforeAll(() => ensureBundleBuilt());
+
+  test.beforeEach(async ({ page }) => {
+    await resetAppState(page);
+  });
+
+  // helper: open the edit panel and click the download zip button.
+  // helper: download a zip from the current state and extract to a temp dir.
+  // returns { serveDir, tmpDir }.
+  async function downloadAndExtract(
+    page: Page,
+  ): Promise<{ serveDir: string; tmpDir: string }> {
+    const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });
+    await openEditAndClickDownload(page);
+    const download = await downloadPromise;
+    const zipBuf = fs.readFileSync((await download.path())!);
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "playlistz-e2e-file-"));
+    await extractZip(zipBuf, tmpDir);
+    return { serveDir: findRootDir(tmpDir), tmpDir };
+  }
+
+  test("audio plays when index.html is opened via file://", async ({ page }) => {
+    test.setTimeout(90_000);
+    await createPlaylistViaUI(page);
+    await addSongs(page, 2, 2); // 2-second songs
+
+    const { serveDir, tmpDir } = await downloadAndExtract(page);
+    const ctx = await page.context().browser()!.newContext();
+    const standalonePage = await ctx.newPage();
+
+    try {
+      await standalonePage.goto(`file://${path.join(serveDir, "index.html")}`);
+      await standalonePage.getByTestId("app-ready").waitFor({ timeout: 20_000 });
+      await standalonePage.getByText("song-00").waitFor({ timeout: 10_000 });
+      await standalonePage.getByText("song-01").waitFor();
+
+      // double-click the first song row to play (desktop uses onDblClick)
+      await standalonePage.getByTestId("song-row").first().dblclick();
+
+      // verify no audio error shown
+      await expect(
+        standalonePage.getByText("no audio source available"),
+      ).not.toBeVisible({ timeout: 500 });
+
+      // verify playback started: btn-play-playlist flips to aria-pressed="true"
+      // when isPlaying && currentPlaylist match
+      await expect(
+        standalonePage.getByTestId("btn-play-playlist"),
+      ).toHaveAttribute("aria-pressed", "true", { timeout: 8_000 });
+    } finally {
+      await ctx.close();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("global play button starts playback in standalone file:// mode", async ({ page }) => {
+    test.setTimeout(90_000);
+    await createPlaylistViaUI(page);
+    await addSongs(page, 2, 2);
+
+    const { serveDir, tmpDir } = await downloadAndExtract(page);
+    const ctx = await page.context().browser()!.newContext();
+    const standalonePage = await ctx.newPage();
+
+    try {
+      await standalonePage.goto(`file://${path.join(serveDir, "index.html")}`);
+      await standalonePage.getByTestId("app-ready").waitFor({ timeout: 20_000 });
+      await standalonePage.getByText("song-00").waitFor({ timeout: 10_000 });
+
+      // click the global play button directly (not a song row double-click)
+      await standalonePage.getByTestId("btn-play-playlist").click();
+
+      await expect(
+        standalonePage.getByText("no audio source available"),
+      ).not.toBeVisible({ timeout: 500 });
+      await expect(
+        standalonePage.getByTestId("btn-play-playlist"),
+      ).toHaveAttribute("aria-pressed", "true", { timeout: 8_000 });
+    } finally {
+      await ctx.close();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("global play button works after page reload in standalone file:// mode", async ({ page }) => {
+    test.setTimeout(120_000);
+    await createPlaylistViaUI(page);
+    await addSongs(page, 2, 2);
+
+    const { serveDir, tmpDir } = await downloadAndExtract(page);
+    const ctx = await page.context().browser()!.newContext();
+    const standalonePage = await ctx.newPage();
+
+    try {
+      // first load - initialize the standalone playlist into IDB
+      await standalonePage.goto(`file://${path.join(serveDir, "index.html")}`);
+      await standalonePage.getByTestId("app-ready").waitFor({ timeout: 20_000 });
+      await standalonePage.getByText("song-00").waitFor({ timeout: 10_000 });
+      await standalonePage.waitForTimeout(1000);
+
+      // reload - the docIndex entry already exists; paths must still be restored
+      await standalonePage.reload();
+      await standalonePage.getByTestId("app-ready").waitFor({ timeout: 20_000 });
+      await standalonePage.getByText("song-00").waitFor({ timeout: 10_000 });
+
+      // global play button must work after reload (songs need standaloneFilePath)
+      await standalonePage.getByTestId("btn-play-playlist").click();
+
+      await expect(
+        standalonePage.getByText("no audio source available"),
+      ).not.toBeVisible({ timeout: 500 });
+      await expect(
+        standalonePage.getByTestId("btn-play-playlist"),
+      ).toHaveAttribute("aria-pressed", "true", { timeout: 8_000 });
+    } finally {
+      await ctx.close();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("cover image is displayed when index.html is opened via file://", async ({ page }) => {
+    test.setTimeout(90_000);
+    await createPlaylistViaUI(page);
+    await addSongs(page, 1);
+
+    // attach a playlist cover image via the edit panel
+    await page.getByTestId("btn-edit-playlist").click();
+    const coverBytes = await makePng(page, { width: 64, height: 64, color: "#ff00ff" });
+    await setPlaylistCover(page, { name: "cover.png", mimeType: "image/png", bytes: coverBytes });
+    await page.waitForTimeout(500);
+    // close edit panel by clicking the toggle button again
+    await page.getByTestId("btn-edit-playlist").click();
+
+    const { serveDir, tmpDir } = await downloadAndExtract(page);
+    const ctx = await page.context().browser()!.newContext();
+    const standalonePage = await ctx.newPage();
+
+    try {
+      await standalonePage.goto(`file://${path.join(serveDir, "index.html")}`);
+      await standalonePage.getByTestId("app-ready").waitFor({ timeout: 20_000 });
+      await standalonePage.getByText("song-00").waitFor({ timeout: 10_000 });
+
+      // at least one img element should have loaded a file:// src from data/
+      await standalonePage.waitForFunction(
+        () => {
+          const imgs = Array.from(document.querySelectorAll("img"));
+          return imgs.some(
+            (img) =>
+              img.naturalWidth > 0 &&
+              (img.src.startsWith("file://") || img.src.includes("data/")),
+          );
+        },
+        undefined,
+        { timeout: 10_000 },
+      );
+    } finally {
+      await ctx.close();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("song row thumbnail renders in standalone file:// mode", async ({ page }) => {
+    test.setTimeout(90_000);
+    await createPlaylistViaUI(page);
+    await addSongs(page, 1);
+
+    // add a per-song cover image
+    await page.getByTestId("song-row").first().hover();
+    await page.getByTestId("btn-edit-song").first().click();
+    await page.getByTestId("song-edit-panel").waitFor();
+    const songCoverBytes = await makePng(page, { width: 32, height: 32, color: "#00ccff" });
+    await page.locator("#song-image-upload-panel").setInputFiles({
+      name: "song-cover.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(songCoverBytes),
+    });
+    await page.waitForTimeout(400);
+    await page.locator('[data-testid="song-edit-panel"] button').filter({ hasText: "save" }).click();
+    await page.waitForTimeout(600);
+    await page.locator('[data-testid="song-edit-panel"] button[title="close"]').click();
+    await page.waitForTimeout(300);
+
+    const { serveDir, tmpDir } = await downloadAndExtract(page);
+    const ctx = await page.context().browser()!.newContext();
+    const standalonePage = await ctx.newPage();
+
+    try {
+      await standalonePage.goto(`file://${path.join(serveDir, "index.html")}`);
+      await standalonePage.getByTestId("app-ready").waitFor({ timeout: 20_000 });
+      await standalonePage.getByText("song-00").waitFor({ timeout: 10_000 });
+
+      // the song row should render an img thumbnail (not gated behind missing imageType)
+      await standalonePage.waitForFunction(
+        () => {
+          const row = document.querySelector("[data-testid='song-row']");
+          if (!row) return false;
+          const img = row.querySelector("img");
+          return !!img && img.naturalWidth > 0;
+        },
+        undefined,
+        { timeout: 10_000 },
+      );
+    } finally {
+      await ctx.close();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("background image updates when a song plays in standalone file:// mode", async ({ page }) => {
+    test.setTimeout(90_000);
+    await createPlaylistViaUI(page);
+    await addSongs(page, 1, 2);
+
+    // add a playlist cover so background can derive from it
+    await page.getByTestId("btn-edit-playlist").click();
+    const coverBytes = await makePng(page, { width: 64, height: 64, color: "#ff8800" });
+    await setPlaylistCover(page, { name: "cover.png", mimeType: "image/png", bytes: coverBytes });
+    await page.waitForTimeout(500);
+    await page.getByTestId("btn-edit-playlist").click();
+
+    const { serveDir, tmpDir } = await downloadAndExtract(page);
+    const ctx = await page.context().browser()!.newContext();
+    const standalonePage = await ctx.newPage();
+
+    try {
+      await standalonePage.goto(`file://${path.join(serveDir, "index.html")}`);
+      await standalonePage.getByTestId("app-ready").waitFor({ timeout: 20_000 });
+      await standalonePage.getByText("song-00").waitFor({ timeout: 10_000 });
+
+      // play a song to trigger background image
+      await standalonePage.getByTestId("song-row").first().dblclick();
+      await expect(standalonePage.getByTestId("btn-play-playlist")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+        { timeout: 8_000 },
+      );
+
+      // background image element or container should have a src pointing at data/
+      await standalonePage.waitForFunction(
+        () => {
+          // check for a background img element with a loaded image
+          const bgImgs = Array.from(document.querySelectorAll("img[data-testid='background-image'], .bg-image img, img.background"));
+          if (bgImgs.some((img) => (img as HTMLImageElement).naturalWidth > 0)) return true;
+          // fallback: check any element with background-image style pointing at data/
+          const allEls = Array.from(document.querySelectorAll("*"));
+          return allEls.some((el) => {
+            const style = window.getComputedStyle(el).backgroundImage;
+            return style && style !== "none" && (style.includes("data/") || style.includes("file://"));
+          });
+        },
+        undefined,
+        { timeout: 10_000 },
+      );
+    } finally {
+      await ctx.close();
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });

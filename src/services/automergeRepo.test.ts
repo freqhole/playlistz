@@ -11,7 +11,7 @@ const { MockIrohNetworkAdapterClass } = vi.hoisted(() => {
   return { MockIrohNetworkAdapterClass: vi.fn() };
 });
 
-vi.mock("freqhole-api-client/automerge", async () => {
+vi.mock("@freqhole/api-client/automerge", async () => {
   const { NetworkAdapter } = await vi.importActual<
     typeof import("@automerge/automerge-repo")
   >("@automerge/automerge-repo");
@@ -54,7 +54,7 @@ import {
 } from "./automergeRepo.js";
 import { parseAutomergeUrl } from "@automerge/automerge-repo";
 import type { PeerId, DocumentId } from "@automerge/automerge-repo";
-import { addPeer } from "freqhole-api-client/playlistz";
+import { addPeer } from "@freqhole/api-client/playlistz";
 
 describe("automergeRepo", () => {
   beforeEach(() => {

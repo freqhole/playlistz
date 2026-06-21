@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import type { P2PIdentity } from "freqhole-api-client/storage";
+import type { P2PIdentity } from "@freqhole/api-client/storage";
 
 // --- mocks (hoisted before module imports) ---
 
@@ -15,13 +15,13 @@ const {
   mockCreateWithAlpns: vi.fn(),
 }));
 
-vi.mock("freqhole-api-client/storage", () => ({
+vi.mock("@freqhole/api-client/storage", () => ({
   resolveIdentity: mockResolveIdentity,
   persistIdentity: mockPersistIdentity,
   acquireNodeLeadership: mockAcquireLeadership,
 }));
 
-vi.mock("midden", () => ({
+vi.mock("@freqhole/midden", () => ({
   MiddenNode: {
     create_with_alpns: mockCreateWithAlpns,
   },
@@ -236,7 +236,7 @@ describe("graceful degradation when wasm import fails", () => {
 
   it("does not throw when midden module is missing entirely", async () => {
     mockResolveIdentity.mockResolvedValue(fakeIdentity());
-    // simulate dynamic import("midden") rejecting with module-not-found
+    // simulate dynamic import("@freqhole/midden") rejecting with module-not-found
     mockCreateWithAlpns.mockImplementation(() => {
       throw new TypeError("cannot find module 'midden'");
     });

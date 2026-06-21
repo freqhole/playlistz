@@ -4,9 +4,10 @@
 import { createSignal } from "solid-js";
 import type { Song, Playlist, AudioState } from "../types/playlist.js";
 import { loadAllPlaybackPositions, savePlaybackPosition, deletePlaybackPosition, saveLastPlayed, loadLastPlayed } from "./indexedDBService.js";
-import { getBlobObjectURL } from "freqhole-api-client/storage";
+import { getBlobObjectURL } from "@freqhole/api-client/storage";
 import { fetchSongBlob, prefetchUpcoming } from "./blobTransferService.js";
 import { getSongsForPlaylist } from "./playlistDocService.js";
+import { enrichSongsWithStandalonePaths } from "./standaloneService.js";
 import {
   streamAudioWithCaching,
   downloadSongIfNeeded,
@@ -431,7 +432,7 @@ async function loadPlaylistQueue(playlist: Playlist): Promise<void> {
   try {
     // songs come from the automerge doc; playlist.id is the docId
     const playlistSongs = await getSongsForPlaylist(playlist.id);
-    setPlaylistQueue(playlistSongs);
+    setPlaylistQueue(enrichSongsWithStandalonePaths(playlistSongs));
     setCurrentPlaylist(playlist);
   } catch (error) {
     console.error("error loading playlist queue:", error);

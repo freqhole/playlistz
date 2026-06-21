@@ -31,6 +31,22 @@
     box-sizing: border-box;
   }
 
+  /* buttons and interactive labels always show the pointer cursor */
+  button:not([disabled]),
+  label[for],
+  label:has(input),
+  input[type="checkbox"]:not([disabled]),
+  input[type="radio"]:not([disabled]),
+  input[type="range"]:not([disabled]),
+  select:not([disabled]) {
+    cursor: pointer;
+  }
+
+  /* disabled buttons should show the not-allowed cursor */
+  button[disabled] {
+    cursor: not-allowed;
+  }
+
   body {
     background-color: black;
     color: white;

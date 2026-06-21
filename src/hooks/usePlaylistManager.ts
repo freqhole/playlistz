@@ -20,7 +20,7 @@ import {
   docToPlaylistAsync,
 } from "../services/playlistDocService.js";
 import { findPlaylistDoc } from "../services/automergeRepo.js";
-import { parsePlaylistDoc } from "freqhole-api-client/playlistz";
+import { parsePlaylistDoc } from "@freqhole/api-client/playlistz";
 import {
   refreshPlaylistQueue,
   audioState,
@@ -40,10 +40,17 @@ import {
 import {
   initializeAllStandalonePlaylists,
   clearStandaloneLoadingProgress,
+  enrichSongsWithStandalonePaths,
+  enrichPlaylistWithStandalonePaths,
+  standalonePreferredDocId,
+  setStandalonePreferredDocId,
 } from "../services/standaloneService.js";
 import { getImageUrlForContext } from "../services/imageService.js";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { DocIndexEntry } from "../services/indexedDBService.js";
+import { saveSetting, loadSetting } from "../services/indexedDBService.js";
+
+const SETTING_SELECTED_PLAYLIST = "selectedPlaylistId";
 
 export function usePlaylistManager() {
   const [playlists, setPlaylists] = createSignal<Playlist[]>([]);
@@ -62,6 +69,14 @@ export function usePlaylistManager() {
   const [playlistSongs, setPlaylistSongs] = createSignal<Song[]>([]);
   const [isInitialized, setIsInitialized] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+
+  // persist selection to idb whenever it changes so it survives a reload.
+  // the effect only runs after the signal has a non-null value so we don't
+  // overwrite a saved selection with null during the initial startup sync.
+  createEffect(() => {
+    const id = selectedPlaylistId();
+    if (id) void saveSetting(SETTING_SELECTED_PLAYLIST, id);
+  });
 
   // modal and UI state
   const [showImageModal, setShowImageModal] = createSignal(false);
@@ -109,7 +124,13 @@ export function usePlaylistManager() {
             );
             const raw = handle.doc();
             const doc = parsePlaylistDoc(raw ?? {});
-            return await docToPlaylistAsync(entry.docId, doc);
+            const playlist = await docToPlaylistAsync(entry.docId, doc);
+            // overlay docIndex remote-source metadata
+            playlist.remoteNodeId = entry.remoteNodeId;
+            playlist.remoteName = entry.remoteName;
+            playlist.remoteAvatarDataUrl = entry.remoteAvatarDataUrl;
+            playlist.isForked = entry.isForked;
+            return playlist;
           } catch {
             // doc not yet available - use entry metadata as placeholder
             return {
@@ -119,13 +140,17 @@ export function usePlaylistManager() {
               createdAt: entry.addedAt,
               updatedAt: entry.addedAt,
               songIds: [],
+              remoteNodeId: entry.remoteNodeId,
+              remoteName: entry.remoteName,
+              remoteAvatarDataUrl: entry.remoteAvatarDataUrl,
+              isForked: entry.isForked,
             } as Playlist;
           }
         })
       );
 
       log.debug("playlist.sync", "syncPlaylists #", String(syncId), "resolved", String(resolved.length));
-      setPlaylists(resolved);
+      setPlaylists(resolved.map(enrichPlaylistWithStandalonePaths));
 
       // update selection id only: selectedPlaylist() will auto-derive from playlists()
       const currentId = selectedPlaylistId();
@@ -134,8 +159,11 @@ export function usePlaylistManager() {
         if (!stillExists) {
           setSelectedPlaylistId(resolved.length > 0 ? resolved[0]!.id : null);
         }
-      } else if (resolved.length > 0) {
-        setSelectedPlaylistId(resolved[0]!.id);
+      } else {
+        // no in-memory selection yet - try to restore from idb, fall back to first
+        const savedId = await loadSetting<string>(SETTING_SELECTED_PLAYLIST);
+        const target = savedId ? resolved.find((p) => p.id === savedId) : null;
+        setSelectedPlaylistId(target ? target.id : resolved.length > 0 ? resolved[0]!.id : null);
       }
     } catch (err) {
       log.error("playlist.sync", "error syncing playlists from doc index:", err);
@@ -238,6 +266,20 @@ export function usePlaylistManager() {
     void syncPlaylistsFromDocIndex(entries);
   });
 
+  // reactive effect: when a standalone playlist is initialized, select it immediately.
+  // this overrides any previously remembered selection so the current zip's
+  // playlist is always shown first when opening a standalone file:// page.
+  // clears standalonePreferredDocId after applying so subsequent playlists()
+  // updates (doc changes, sidebar refreshes) don't keep snapping the selection back.
+  createEffect(() => {
+    const preferred = standalonePreferredDocId();
+    if (!preferred) return;
+    if (playlists().some((p) => p.id === preferred)) {
+      setSelectedPlaylistId(preferred);
+      setStandalonePreferredDocId(null);
+    }
+  });
+
   // reactive effect (keyed by playlist id): subscribe to the selected playlist's
   // doc handle so any mutation (adding songs, edits, remote sync) refreshes
   // the songs list and updates the playlist entry in playlists().
@@ -271,14 +313,23 @@ export function usePlaylistManager() {
             const updated = await docToPlaylistAsync(playlistId, doc);
 
             setPlaylists((prev) =>
-              prev.map((p) => (p.id === playlistId ? updated : p))
+              prev.map((p) => {
+                if (p.id !== playlistId) return p;
+                return enrichPlaylistWithStandalonePaths({
+                  ...updated,
+                  remoteNodeId: p.remoteNodeId,
+                  remoteName: p.remoteName,
+                  remoteAvatarDataUrl: p.remoteAvatarDataUrl,
+                  isForked: p.isForked,
+                });
+              })
             );
             // selectedPlaylist() auto-updates from playlists() via memo - no setSelectedPlaylist needed
 
             // use the handle we already have - avoids a redundant repo.find()
             const songs = await getSongsFromHandle(playlistId, handle);
             if (!disposed) {
-              setPlaylistSongs(songs);
+              setPlaylistSongs(enrichSongsWithStandalonePaths(songs));
             }
           } catch (err) {
             log.error("playlist.select", "error refreshing selected playlist doc:", err);
@@ -418,6 +469,10 @@ export function usePlaylistManager() {
     setSelectedPlaylistId(playlist?.id ?? null);
   };
 
+  const selectById = (id: string) => {
+    setSelectedPlaylistId(id);
+  };
+
   const handlePlaylistUpdate = async (updates: Partial<Playlist>) => {
     const playlist = selectedPlaylist();
     if (!playlist) return;
@@ -465,7 +520,6 @@ export function usePlaylistManager() {
     try {
       setError(null);
       await downloadPlaylistAsZip(playlist, {
-        includeMetadata: true,
         includeImages: true,
         generateM3U: true,
         includeHTML: true,
@@ -614,6 +668,7 @@ export function usePlaylistManager() {
     createNewPlaylist,
     handleFileDrop,
     selectPlaylist,
+    selectById,
     handlePlaylistUpdate,
     handleDeletePlaylist,
     handleDownloadPlaylist,

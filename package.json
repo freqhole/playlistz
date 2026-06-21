@@ -1,24 +1,26 @@
 {
-  "name": "playlistz",
+  "name": "@freqhole/playlistz",
   "version": "0.0.1",
   "description": "make some music playlistz in yr browser!",
   "type": "module",
-  "scripts": {
-    "dev": "vite --config config/vite.config.ts",
-    "start": "vite --config config/vite.config.ts",
-    "build": "vite build --config config/vite.config.ts",
-    "build:standalone": "node build-component.js",
-    "preview": "vite preview --config config/vite.config.ts",
-    "test": "vitest --run --config config/vitest.config.ts",
-    "test:watch": "vitest --config config/vitest.config.ts",
-    "test:coverage": "vitest --coverage --run --config config/vitest.config.ts",
-    "test:e2e": "playwright test --config config/playwright.config.ts",
-    "lint": "eslint",
-    "lint:fix": "eslint 'src/**/*.{ts,tsx}' --fix",
-    "format": "prettier --write 'src/**/*.{ts,tsx}'",
-    "type-check": "tsc --noEmit",
-    "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist coverage"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/freqhole/playlistz"
+  },
+  "exports": {
+    ".": "./src/web-component.tsx",
+    "./zip-bundle": "./src/zip-bundle/index.ts",
+    "./templates": "./src/utils/standaloneTemplates.ts"
+  },
+  "typesVersions": {
+    "*": {
+      "zip-bundle": [
+        "./src/zip-bundle/index.ts"
+      ],
+      "templates": [
+        "./src/utils/standaloneTemplates.ts"
+      ]
+    }
   },
   "keywords": [
     "music-player",
@@ -31,20 +33,53 @@
   "author": "3dwardsharp",
   "license": "MIT",
   "bin": {
-    "freqhole-playlistz": "./dist/freqhole-playlistz-cli.mjs"
+    "freqhole-playlistz": "./dist/freqhole-playlistz.cli.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "start": "vite --config config/vite.config.ts",
+    "dev": "npm start",
+    "build": "npm run build:app && npm run build:standalone -- --no-clear && npm run build:zip-bundle-lib",
+    "build:standalone": "node build-component.js",
+    "build:app": "vite build --config config/vite.config.ts",
+    "build:zip-bundle-lib": "node build-zip-bundle-lib.js",
+    "preview": "vite preview --config config/vite.config.ts",
+    "test": "vitest --run --config config/vitest.config.ts",
+    "test:watch": "vitest --config config/vitest.config.ts",
+    "test:coverage": "vitest --coverage --run --config config/vitest.config.ts",
+    "test:e2e": "playwright test --config config/playwright.config.ts",
+    "test:e2e:mock": "playwright test --config config/playwright.config.ts --grep @mock",
+    "test:e2e:real": "playwright test --config config/playwright.config.ts --grep-invert \"@mock|@p2p\"",
+    "test:e2e:p2p": "playwright test --config config/playwright.config.ts --grep @p2p",
+    "lint": "eslint",
+    "lint:fix": "eslint 'src/**/*.{ts,tsx}' --fix",
+    "format": "prettier --write 'src/**/*.{ts,tsx}'",
+    "type-check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist coverage",
+    "changes": "changeset",
+    "changeset": "changeset",
+    "changeset:status": "changeset status",
+    "version": "changeset version",
+    "use-local": "node scripts/use-local.mjs",
+    "use-published": "node scripts/use-published.mjs"
   },
   "dependencies": {
     "@automerge/automerge-repo": "^2.5.5",
     "@automerge/automerge-repo-network-broadcastchannel": "^2.5.5",
     "@automerge/automerge-repo-storage-indexeddb": "^2.5.5",
-    "freqhole-api-client": "file:../tomb/client-codegen/freqhole-api-client",
+    "@freqhole/api-client": "0.1.31",
+    "@freqhole/midden": "0.1.31",
+    "fflate": "^0.8.3",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",
-    "midden": "file:../tomb/client/midden/pkg",
     "solid-js": "^1.8.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.27.10",
     "@eslint/js": "^9.34.0",
     "@playwright/test": "^1.60.0",
     "@solidjs/testing-library": "^0.8.10",

@@ -15,6 +15,7 @@ import {
   usePlaylistzSongs,
   usePlaylistzUI,
   usePlaylistzImageModal,
+  usePlaylistzDragDrop,
 } from "../../context/PlaylistzContext.js";
 import { getImageUrlForContext } from "../../services/imageService.js";
 import { audioState } from "../../services/audioService.js";
@@ -22,6 +23,7 @@ import {
   initSharingState,
   sharingReady,
   pendingKnockCount,
+  outboundPendingCount,
   connectedPeerCount,
   isTransferring,
 } from "../../services/sharingState.js";
@@ -36,7 +38,8 @@ import { PlaylistEditPanel } from "../PlaylistEditPanel.js";
 import { SongEditPanel } from "../SongEditPanel.js";
 import { PlaylistSharePanel } from "../PlaylistSharePanel.js";
 import { AllPlaylistsPanel } from "../AllPlaylistsPanel.js";
-import { PanelMiniHeader } from "./PanelMiniHeader.js";
+import { forkPlaylist } from "../../services/playlistDocService.js";
+
 import { log } from "../../utils/log.js";
 
 export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
@@ -44,6 +47,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const songState = usePlaylistzSongs();
   const uiState = usePlaylistzUI();
   const imageModal = usePlaylistzImageModal();
+  const dragDrop = usePlaylistzDragDrop();
 
   onMount(() => initSharingState());
 
@@ -60,6 +64,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     handleReorderSongs,
     setBackgroundOverride,
   } = playlistManager;
+
+  // read-only mode: playlist is subscribed from a remote peer and not yet forked
+  const isSubscribed = () =>
+    !!props.playlist().remoteNodeId && !props.playlist().isForked;
 
   const {
     handleEditSong,
@@ -122,6 +130,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   // share panel state - declared before isEditing so the memo can reference it
   const [showingShare, setShowingShare] = createSignal(false);
   const [showAllPlaylists, setShowAllPlaylists] = createSignal(false);
+  // when set, AllPlaylistsPanel opens with this peer nodeId pre-searched
+  const [allPlaylistsPeerQuery, setAllPlaylistsPeerQuery] = createSignal<
+    string | undefined
+  >(undefined);
 
   const closeShare = () => {
     setShowingShare(false);
@@ -280,14 +292,12 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     return {};
   };
 
-  // header collapses completely (out of layout) when editing a song, when
-  // the share panel is open, or when the all-playlists panel is open.
-  // stays visible in playlist edit mode (where the song panel is secondary).
+  // header collapses out of layout only when editing a specific song (and not
+  // in playlist edit mode). stays visible for share, all-playlists, and
+  // playlist edit mode.
   // overflow:hidden only applied while collapsing so it doesn't clip mobile content.
   const headerStyle = () =>
-    (editingSong() && !editingPlaylist()) ||
-    showingShare() ||
-    showAllPlaylists()
+    editingSong() && !editingPlaylist()
       ? {
           transition: "max-height 350ms ease, opacity 300ms ease",
           "max-height": "0px",
@@ -327,35 +337,12 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
     <div
       class={`flex-1 flex flex-col min-h-0 [overflow-x:clip] ${isMobile() ? "p-2" : "p-6"}`}
     >
-      {/* all-playlists mini header */}
-      <Show when={showAllPlaylists()}>
-        <PanelMiniHeader
-          playlist={props.playlist()}
-          label="all playlistz"
-          isMobile={isMobile()}
-          style={panelEntryStyle()}
-          onClose={() => setShowAllPlaylists(false)}
-          closeTitle="close all playlists"
-        />
-      </Show>
-
-      {/* share panel mini header */}
-      <Show when={showingShare()}>
-        <PanelMiniHeader
-          playlist={props.playlist()}
-          label="share"
-          isMobile={isMobile()}
-          style={panelEntryStyle()}
-          onClose={closeShare}
-          closeTitle="close share panel"
-        />
-      </Show>
-
       {(() => {
-        // playlist header - animates up/out when editing a specific song or
-        // when the share panel is open. on mobile it renders inside the
-        // scroll container (below) so the cover image + title scroll away,
-        // while the player controls bar stays sticky at the top
+        // playlist header - animates up/out only when editing a specific song
+        // (not in playlist edit mode). stays visible for share, all-playlists,
+        // and playlist edit mode. on mobile it renders inside the scroll
+        // container so the cover image + title scroll with content, while the
+        // player controls bar stays sticky at the top
         const headerSection = () => (
           <div
             style={headerStyle()}
@@ -437,7 +424,8 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                         title: e.currentTarget.value,
                       });
                     }}
-                    class="text-3xl font-bold text-white bg-transparent border-none outline-none focus:bg-gray-800 px-2 py-1 rounded w-full"
+                    disabled={isSubscribed()}
+                    class="text-3xl font-bold text-white bg-transparent border-none outline-none focus:bg-gray-800 px-2 py-1 rounded w-full disabled:opacity-60 disabled:cursor-not-allowed"
                     placeholder="playlist title"
                   />
                 </div>
@@ -452,9 +440,20 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                         description: e.currentTarget.value,
                       });
                     }}
-                    class="text-white bg-transparent border-none focus:bg-gray-800 px-2 py-1 rounded w-full"
+                    disabled={isSubscribed()}
+                    class="text-white bg-transparent border-none focus:bg-gray-800 px-2 py-1 rounded w-full disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
+
+                {/* read-only banner for subscribed playlists */}
+                <Show when={isSubscribed()}>
+                  <SubscribedBanner
+                    playlist={props.playlist()}
+                    onFork={(newDocId) => {
+                      playlistManager.selectById(newDocId);
+                    }}
+                  />
+                </Show>
 
                 {/* player + action buttons grid - inline here on desktop, a
                 sticky bar inside the scroll container on mobile */}
@@ -493,15 +492,44 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                 class="flex items-center justify-end text-sm gap-0"
                 style={{ "grid-area": "info" }}
               >
-                <Show when={audioState.currentSong()}>
-                  {(song) => (
-                    <span
-                      data-testid="now-playing-title"
-                      class="bg-black bg-opacity-80 p-2 truncate max-w-[12rem]"
+                {/* sharer identity pill - shown when playlist is subscribed from a remote peer */}
+                <Show when={props.playlist().remoteNodeId}>
+                  <button
+                    data-testid="btn-browse-sharer"
+                    class="flex items-center gap-1 bg-black/80 px-1.5 py-2 text-xs text-gray-400 hover:text-magenta-300 hover:bg-black transition-colors"
+                    title={`browse ${props.playlist().remoteName || props.playlist().remoteNodeId?.slice(0, 16)}'s playlistz`}
+                    onClick={() => {
+                      if (showingShare()) closeShare();
+                      if (editingPlaylist() || editingSong()) handleCloseEdit();
+                      setAllPlaylistsPeerQuery(props.playlist().remoteNodeId);
+                      setShowAllPlaylists(true);
+                    }}
+                  >
+                    <Show
+                      when={props.playlist().remoteAvatarDataUrl}
+                      fallback={
+                        <span class="inline-flex items-center justify-center w-4 h-4 bg-magenta-700/60 text-white text-[9px] font-bold shrink-0 overflow-hidden rounded-full">
+                          {(
+                            props.playlist().remoteName ||
+                            props.playlist().remoteNodeId ||
+                            ""
+                          )
+                            .slice(0, 1)
+                            .toUpperCase()}
+                        </span>
+                      }
                     >
-                      {song().title}
+                      <img
+                        src={props.playlist().remoteAvatarDataUrl}
+                        alt={props.playlist().remoteName || "peer"}
+                        class="w-4 h-4 rounded-full object-cover shrink-0"
+                      />
+                    </Show>
+                    <span class="truncate max-w-[6rem]">
+                      {props.playlist().remoteName ||
+                        props.playlist().remoteNodeId?.slice(0, 8)}
                     </span>
-                  )}
+                  </button>
                 </Show>
                 <span
                   data-testid="playlist-song-count"
@@ -570,6 +598,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   data-testid="btn-edit-playlist"
                   aria-expanded={editingPlaylist()}
                   onClick={() => {
+                    if (showAllPlaylists()) setShowAllPlaylists(false);
                     if (showingShare()) closeShare();
                     editingPlaylist()
                       ? handleCloseEdit()
@@ -604,6 +633,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     if (showingShare()) {
                       closeShare();
                     } else {
+                      if (showAllPlaylists()) setShowAllPlaylists(false);
                       if (editingPlaylist()) handleCloseEdit();
                       setShowingShare(true);
                     }
@@ -678,9 +708,11 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                       }
                     />
                   </svg>
-                  <Show when={pendingKnockCount() > 0}>
+                  <Show
+                    when={pendingKnockCount() > 0 || outboundPendingCount() > 0}
+                  >
                     <span class="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-magenta-500 text-white text-[9px] leading-[14px] text-center font-bold">
-                      {pendingKnockCount()}
+                      {pendingKnockCount() + outboundPendingCount()}
                     </span>
                   </Show>
                 </button>
@@ -780,48 +812,45 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   </button>
                 </Show>
 
-                {/* download playlist .zip button */}
+                {/* add songs button: opens system file picker, same handler as drag-and-drop.
+                    hidden in file:// mode (standalone zip) where new songs can't be added. */}
                 <Show when={window.location.protocol !== "file:"}>
-                  <button
-                    data-testid="btn-download-zip"
-                    onClick={handleDownloadPlaylist}
-                    disabled={isDownloading()}
-                    class="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 transition-colors bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="download playlist as zip"
+                  <label
+                    data-testid="btn-add-songs"
+                    title="add songz"
+                    class="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 transition-colors bg-black/90 cursor-pointer"
                   >
-                    <Show
-                      when={!isDownloading()}
-                      fallback={
-                        <svg
-                          class="w-4 h-4 animate-spin"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                          />
-                        </svg>
-                      }
+                    <input
+                      type="file"
+                      accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aiff,.zip"
+                      multiple
+                      class="hidden"
+                      onChange={async (e) => {
+                        const files = Array.from(e.currentTarget.files ?? []);
+                        if (!files.length) return;
+                        await dragDrop.processFileImport(files, {
+                          selectedPlaylist: props.playlist(),
+                          playlists: playlistManager.playlists(),
+                          onPlaylistSelected: (p) =>
+                            playlistManager.selectPlaylist(p),
+                        });
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
                     >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                    </Show>
-                  </button>
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2.5"
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                  </label>
                 </Show>
               </div>
             </div>
@@ -945,6 +974,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     playlist={props.playlist}
                     playlists={playlists()}
                     onClose={closeShare}
+                    onPlaylistAdded={(docId) => {
+                      playlistManager.selectById(docId);
+                      closeShare();
+                    }}
                   />
                 </div>
               </Show>
@@ -955,19 +988,28 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
               <Show when={showAllPlaylists() && rowsGone()}>
                 <div style={panelEntryStyle()}>
                   <AllPlaylistsPanel
-                    onClose={() => setShowAllPlaylists(false)}
+                    onClose={() => {
+                      setShowAllPlaylists(false);
+                      setAllPlaylistsPeerQuery(undefined);
+                    }}
                     onEdit={(p) => {
                       playlistManager.selectPlaylist(p);
                       setShowAllPlaylists(false);
-                      // small delay so the selection + panel close propagate
-                      // before handleEditPlaylist reads selectedPlaylist()
+                      setAllPlaylistsPeerQuery(undefined);
                       setTimeout(() => handleEditPlaylist(), 0);
                     }}
                     onShare={(p) => {
                       playlistManager.selectPlaylist(p);
                       setShowAllPlaylists(false);
+                      setAllPlaylistsPeerQuery(undefined);
                       setTimeout(() => setShowingShare(true), 0);
                     }}
+                    onPlaylistAdded={(docId) => {
+                      playlistManager.selectById(docId);
+                      setShowAllPlaylists(false);
+                      setAllPlaylistsPeerQuery(undefined);
+                    }}
+                    initialQuery={allPlaylistsPeerQuery()}
                   />
                 </div>
               </Show>
@@ -992,6 +1034,10 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                     onSave={(updated) =>
                       playlistManager.selectPlaylist(updated)
                     }
+                    onFork={(newDocId) => {
+                      playlistManager.selectById(newDocId);
+                      handleCloseEdit();
+                    }}
                   />
                 </div>
               </Show>
@@ -1078,12 +1124,14 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                             <SongRow
                               songId={songId}
                               index={index()}
-                              showRemoveButton={true}
+                              showRemoveButton={!isSubscribed()}
                               onRemove={handleRemoveSong}
                               onPlay={handlePlaySongWithPlaylist}
                               onPause={handlePauseSong}
                               onEdit={handleEditSong}
-                              onReorder={handleReorderSongs}
+                              onReorder={
+                                isSubscribed() ? undefined : handleReorderSongs
+                              }
                             />
                           </div>
                         </div>
@@ -1096,6 +1144,60 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
           </>
         );
       })()}
+    </div>
+  );
+}
+
+// compact read-only banner shown below the title/description for subscribed playlists.
+// provides quick access to fork (local copy) and the full edit panel (for collab request).
+function SubscribedBanner(props: {
+  playlist: Playlist;
+  onFork: (newDocId: string) => void;
+}) {
+  const [forking, setForking] = createSignal(false);
+  const [forkError, setForkError] = createSignal<string | null>(null);
+
+  const handleFork = async () => {
+    if (forking()) return;
+    setForking(true);
+    setForkError(null);
+    try {
+      const forked = await forkPlaylist(props.playlist.id);
+      props.onFork(forked.id);
+    } catch (err) {
+      setForkError("fork failed");
+      console.error("fork error:", err);
+    } finally {
+      setForking(false);
+    }
+  };
+
+  const displayName = () =>
+    props.playlist.remoteName ||
+    props.playlist.remoteNodeId?.slice(0, 16) ||
+    "peer";
+
+  return (
+    <div
+      data-testid="subscribed-banner"
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 bg-black/70 border-t border-gray-800 text-xs"
+    >
+      <span class="text-yellow-500/80 font-medium">read only</span>
+      <span class="text-gray-600">·</span>
+      <span class="text-gray-500">from {displayName()}</span>
+      <div class="flex items-center gap-2 ml-auto">
+        <button
+          data-testid="btn-fork-playlist-banner"
+          class="px-2 py-0.5 text-gray-300 hover:text-white border border-gray-700 hover:border-gray-500 disabled:opacity-50 transition-colors"
+          onClick={() => void handleFork()}
+          disabled={forking()}
+        >
+          {forking() ? "forking..." : "fork my copy"}
+        </button>
+      </div>
+      <Show when={forkError()}>
+        <span class="w-full text-red-400">{forkError()}</span>
+      </Show>
     </div>
   );
 }

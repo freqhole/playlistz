@@ -26,7 +26,7 @@ vi.mock("./playlistDocService.js", () => ({
 }));
 
 // mock blob storage
-vi.mock("freqhole-api-client/storage", () => ({
+vi.mock("@freqhole/api-client/storage", () => ({
   getBlobObjectURL: vi.fn().mockResolvedValue(null),
   storeBlob: vi.fn(),
   getBlob: vi.fn(),

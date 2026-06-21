@@ -32,6 +32,12 @@ export type MockBlobBehaviour = NonNullable<Window["__mockBlobFetch"]> extends (
 // --- time-acceleration hooks ---
 // these drive the real audio element without substituting any service boundary.
 
+// returns the title of the currently playing song, or null if nothing is playing.
+// use this instead of looking for a DOM element to assert playback state.
+export async function currentSong(page: Page): Promise<string | null> {
+  return page.evaluate(() => window.__currentSong?.() ?? null);
+}
+
 // seek the audio element to a specific time (seconds)
 export async function seekTo(page: Page, seconds: number): Promise<void> {
   await page.evaluate((t) => window.__seekTo?.(t), seconds);
@@ -87,4 +93,41 @@ export async function setBlobFetchTimeout(page: Page, ms: number): Promise<void>
 // useful when the retry click target is obstructed by an overlay element.
 export async function fetchBlobBySha(page: Page, sha256: string): Promise<void> {
   await page.evaluate((sha) => window.__fetchBlobBySha?.(sha), sha256);
+}
+
+// --- docIndex dev hooks (registered in src/dev-hooks.ts) ---
+
+export interface DocIndexEntry {
+  docId: string;
+  title: string;
+  addedAt: number;
+  source: "local" | "shared" | "freqhole";
+  remoteNodeId?: string;
+  remoteName?: string;
+  isForked?: boolean;
+}
+
+// return all docIndex entries from the running app (via service layer, not raw idb)
+export async function getDocIndexEntries(page: Page): Promise<DocIndexEntry[]> {
+  // the hook is registered after a dynamic import - wait for it to appear
+  await page.waitForFunction(() => typeof window.__getDocIndexEntries === "function", {
+    timeout: 5000,
+  });
+  return page.evaluate(() => window.__getDocIndexEntries!()) as Promise<DocIndexEntry[]>;
+}
+
+// patch a docIndex entry in-place (merge patch), then wait for the app to
+// re-sync its playlist list from the updated docIndex
+export async function patchDocIndexEntry(
+  page: Page,
+  docId: string,
+  patch: Partial<DocIndexEntry>
+): Promise<void> {
+  await page.waitForFunction(() => typeof window.__patchDocIndexEntry === "function", {
+    timeout: 5000,
+  });
+  await page.evaluate(
+    ({ docId, patch }) => window.__patchDocIndexEntry!(docId, patch),
+    { docId, patch }
+  );
 }

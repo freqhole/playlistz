@@ -14,7 +14,7 @@ import { IDBFactory } from "fake-indexeddb";
 
 // --- mocks (hoisted before module imports) ---
 
-vi.mock("freqhole-api-client/automerge", async () => {
+vi.mock("@freqhole/api-client/automerge", async () => {
   const { NetworkAdapter } = await vi.importActual<
     typeof import("@automerge/automerge-repo")
   >("@automerge/automerge-repo");
@@ -49,7 +49,7 @@ const { blobStore } = vi.hoisted(() => ({
   blobStore: new Map<string, { mimeType: string; size: number }>(),
 }));
 
-vi.mock("freqhole-api-client/storage", () => ({
+vi.mock("@freqhole/api-client/storage", () => ({
   storeBlob: vi.fn(async (blob: Blob, mimeType: string) => {
     const id = `sha-${blobStore.size + 1}-${blob.size}`;
     blobStore.set(id, { mimeType, size: blob.size });
@@ -73,6 +73,9 @@ vi.mock("freqhole-api-client/storage", () => ({
       created_at: 0,
     };
   }),
+  deleteBlob: vi.fn(async (id: string) => {
+    blobStore.delete(id);
+  }),
 }));
 
 import {
@@ -95,7 +98,7 @@ import {
 import { _resetRepoForTests, findPlaylistDoc } from "./automergeRepo.js";
 import { resetDBCache } from "./indexedDBService.js";
 import { getAllDocIndexEntries, getDocIndexEntry } from "./docIndexService.js";
-import { parsePlaylistDoc } from "freqhole-api-client/playlistz";
+import { parsePlaylistDoc } from "@freqhole/api-client/playlistz";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 
 function makeAudioFile(name = "track.mp3", content = "fake audio"): File {

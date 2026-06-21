@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Song } from "../types/playlist.js";
 
 // mock the shared blob store
-vi.mock("freqhole-api-client/storage", () => ({
+vi.mock("@freqhole/api-client/storage", () => ({
   storeBlob: vi.fn(),
   getBlobMetadata: vi.fn(),
 }));
@@ -18,7 +18,7 @@ import {
   downloadSongIfNeeded,
   isSongDownloading,
 } from "./streamingAudioService.js";
-import { storeBlob, getBlobMetadata } from "freqhole-api-client/storage";
+import { storeBlob, getBlobMetadata } from "@freqhole/api-client/storage";
 
 function makeSong(overrides: Partial<Song> = {}): Song {
   return {

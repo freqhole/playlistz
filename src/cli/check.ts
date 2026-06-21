@@ -1,6 +1,5 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as vm from "node:vm";
 
 function validateField(
   obj: Record<string, unknown>,
@@ -31,12 +30,12 @@ function checkData(
   const warnings: string[] = [];
 
   if (!Array.isArray(data)) {
-    errors.push(`window.__PLAYLISTZ__ must be an array, got ${typeof data}`);
+    errors.push(`playlist data must be an array, got ${typeof data}`);
     return { errors, warnings };
   }
 
   if (data.length === 0) {
-    warnings.push("window.__PLAYLISTZ__ is empty (no playlists)");
+    warnings.push("playlist data is empty (no playlists)");
     return { errors, warnings };
   }
 
@@ -131,9 +130,12 @@ export function checkFile(filePath: string): void {
   let data: unknown;
   try {
     const src = fs.readFileSync(resolved, "utf-8");
-    const ctx = vm.createContext({ window: {} as Record<string, unknown> });
-    vm.runInContext(src, ctx);
-    data = (ctx["window"] as Record<string, unknown>)["__PLAYLISTZ__"];
+    const attrMatch = src.match(/setAttribute\s*\(\s*'data-playlistz'\s*,\s*("(?:[^"\\]|\\.)*")\s*\)/);
+    if (!attrMatch) {
+      console.error(`${filePath} does not set the data-playlistz attribute`);
+      process.exit(1);
+    }
+    data = JSON.parse(JSON.parse(attrMatch[1]!));
   } catch (err) {
     console.error(`failed to parse ${filePath}:`);
     console.error(err instanceof Error ? err.message : String(err));
@@ -141,7 +143,7 @@ export function checkFile(filePath: string): void {
   }
 
   if (data === undefined) {
-    console.error(`${filePath} does not set window.__PLAYLISTZ__`);
+    console.error(`${filePath} does not contain playlist data`);
     process.exit(1);
   }
 

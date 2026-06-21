@@ -10,6 +10,7 @@ import {
 } from "../context/PlaylistzContext.js";
 
 import { PlaylistContainer } from "./playlist/index.js";
+import { ShareLinkKnockPanel } from "./ShareLinkKnockPanel.js";
 import { log } from "../utils/log.js";
 function PlaylistzInner() {
   // context hooks
@@ -72,8 +73,15 @@ function PlaylistzInner() {
     return `blur(${blur}px) contrast(${contrast}) brightness(${brightness})`;
   };
 
+  const bgSize = () => selectedPlaylist()?.bgSize ?? "cover";
+  const bgPosition = () => selectedPlaylist()?.bgPosition ?? "top";
+  const bgRepeat = () => selectedPlaylist()?.bgRepeat ?? "no-repeat";
+
   // create a wrapper that provides the necessary options to handleFileDrop
   const handleFileDropWrapper = async (e: DragEvent) => {
+    // don't allow dropping songs onto a subscribed (read-only) playlist
+    const current = selectedPlaylist();
+    if (current?.remoteNodeId && !current?.isForked) return;
     await handleFileDrop(e, {
       selectedPlaylist: selectedPlaylist(),
       playlists: playlists(),
@@ -94,6 +102,12 @@ function PlaylistzInner() {
   const [pendingShareDocId, setPendingShareDocId] = createSignal<string | null>(
     null
   );
+  const [shareKnockRequired, setShareKnockRequired] = createSignal<{
+    ownerNodeId: string;
+    docId: string;
+    title?: string;
+    ownerName?: string;
+  } | null>(null);
 
   createEffect(() => {
     if (!isInitialized() || shareFragmentHandled) return;
@@ -104,9 +118,9 @@ function PlaylistzInner() {
         const { handleShareFragment } = await import(
           "../services/sharingService.js"
         );
-        const docId = await handleShareFragment();
-        if (docId) {
-          const found = playlists().find((p) => p.id === docId);
+        const result = await handleShareFragment();
+        if (result?.status === "synced") {
+          const found = playlists().find((p) => p.id === result.docId);
           if (found) {
             selectPlaylist(found);
             // start playback if nothing is currently playing
@@ -116,8 +130,10 @@ function PlaylistzInner() {
             if (!audioState.isPlaying()) void playPlaylist(found);
           } else {
             // playlist not synced yet - watch for it reactively
-            setPendingShareDocId(docId);
+            setPendingShareDocId(result.docId);
           }
+        } else if (result?.status === "knock_required") {
+          setShareKnockRequired(result);
         }
       } catch (err) {
         log.warn("share.fragment", "share link open failed:", err);
@@ -189,9 +205,12 @@ function PlaylistzInner() {
       {/* background image cover */}
       <Show when={backgroundImageUrl()}>
         <div
-          class="absolute inset-0 bg-cover bg-top bg-no-repeat transition-opacity duration-1000 ease-out"
+          class="absolute inset-0 bg-no-repeat transition-opacity duration-1000 ease-out"
           style={{
             "background-image": `url(${backgroundImageUrl()})`,
+            "background-size": bgSize(),
+            "background-position": bgPosition(),
+            "background-repeat": bgRepeat(),
             filter: bgFilter(),
             "z-index": "0",
           }}
@@ -228,9 +247,23 @@ function PlaylistzInner() {
         <h1 class="sr-only" data-testid="app-ready">
           playlistz
         </h1>
+        {/* knock-gated share link landing: shown before sync happens */}
+        <Show when={shareKnockRequired()}>
+          <ShareLinkKnockPanel
+            ownerNodeId={shareKnockRequired()!.ownerNodeId}
+            docId={shareKnockRequired()!.docId}
+            title={shareKnockRequired()!.title}
+            ownerName={shareKnockRequired()!.ownerName}
+            onAccepted={(docId) => {
+              setShareKnockRequired(null);
+              setPendingShareDocId(docId);
+            }}
+            onDismiss={() => setShareKnockRequired(null)}
+          />
+        </Show>
         {/* full-width playlist content */}
-        <div class="relative flex h-full" style={{ "z-index": "2" }}>
-          <div class="flex-1 flex flex-col min-h-0">
+        <div class="relative flex h-full min-w-0" style={{ "z-index": "2" }}>
+          <div class="flex-1 flex flex-col min-h-0 min-w-0">
             <Show
               when={selectedPlaylist()}
               fallback={

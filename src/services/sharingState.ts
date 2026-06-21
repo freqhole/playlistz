@@ -14,6 +14,7 @@ import {
 } from "./p2pService.js";
 import {
   getInboundKnocks,
+  getOutboundKnocks,
   onKnocksChanged,
   ensureSharingReady,
 } from "./sharingService.js";
@@ -36,10 +37,14 @@ const [isTransferring, setIsTransferring] = createSignal(false);
 const [hasP2pIdentity, setHasP2pIdentity] = createSignal(
   !!getIdentity()?.node_id
 );
+// number of outbound knocks we sent that are still pending (waiting for owner
+// to accept). shown as a badge on the share button so the user can follow up.
+const [outboundPendingCount, setOutboundPendingCount] = createSignal(0);
 
 export {
   sharingReady,
   pendingKnockCount,
+  outboundPendingCount,
   endpointEnabled,
   connectedPeerCount,
   isTransferring,
@@ -52,8 +57,10 @@ let _unsubTransfer: (() => void) | null = null;
 
 async function refreshKnockCount(): Promise<void> {
   try {
-    const knocks = await getInboundKnocks();
-    setPendingKnockCount(knocks.filter((k) => k.status === "pending").length);
+    const inbound = await getInboundKnocks();
+    setPendingKnockCount(inbound.filter((k) => k.status === "pending").length);
+    const outbound = await getOutboundKnocks();
+    setOutboundPendingCount(outbound.filter((k) => k.status === "pending").length);
   } catch {
     // idb unavailable (early boot)
   }

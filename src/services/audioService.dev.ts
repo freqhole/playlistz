@@ -10,10 +10,13 @@ import {
   _devSeekTo,
   _devTriggerTrackEnd,
   _devTriggerAudioError,
+  audioState,
 } from "./audioService.js";
 
 export function registerAudioDevHooks(): void {
   window.__seekTo = _devSeekTo;
   window.__triggerTrackEnd = _devTriggerTrackEnd;
   window.__triggerAudioError = _devTriggerAudioError;
+  // returns the title of the currently playing song, or null
+  window.__currentSong = () => audioState.currentSong()?.title ?? null;
 }

@@ -5,6 +5,10 @@ import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
   plugins: [wasm(), topLevelAwait(), solid()],
+  resolve: {
+    // use browser build of solid-js in tests so reactive signals/memos work correctly
+    conditions: ["browser", "solid", "development"],
+  },
   test: {
     globals: true,
     environment: "jsdom",

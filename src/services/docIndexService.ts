@@ -19,9 +19,17 @@ import type {
 } from "./indexedDBService.js";
 import { log } from "../utils/log.js";
 
+// event name for same-page doc index invalidation.
+// used alongside BroadcastChannel so file:// (null origin) still works.
+const DOC_INDEX_CHANGE_EVENT = "playlistz:docindex-changed";
+
 // broadcast a docIndex mutation so same-tab queries and other tabs refresh.
 function broadcastDocIndexChange(): void {
   log.trace("idb.docindex", "broadcast mutation");
+  // CustomEvent works in any origin including file:// (null)
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(DOC_INDEX_CHANGE_EVENT));
+  }
   try {
     const bc = new BroadcastChannel(`${DB_NAME}-changes`);
     bc.postMessage({ type: "mutation", store: DOC_INDEX_STORE });
@@ -30,6 +38,8 @@ function broadcastDocIndexChange(): void {
     // broadcastchannel unavailable in some environments (workers, tests)
   }
 }
+
+export { DOC_INDEX_CHANGE_EVENT };
 
 // --- docIndex ---
 
