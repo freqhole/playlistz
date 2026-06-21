@@ -209,7 +209,7 @@ export function AllPlaylistsPanel(props: Props) {
               setSearchStatus(null);
             }
           }}
-          class="w-full bg-black/60 text-white px-3 py-2 text-xs border border-white/10 focus:border-magenta-500 focus:outline-none placeholder-gray-600"
+          class="w-full bg-black/60 text-white px-3 py-2 text-xs border border-white/10 hover:border-white/30 focus:border-magenta-500 focus:outline-none placeholder-gray-600 transition-colors"
         />
         <Show when={searchStatus()}>
           <div class="mt-1 text-xs text-magenta-400 px-1">
@@ -331,7 +331,7 @@ export function AllPlaylistsPanel(props: Props) {
             data-testid="btn-new-playlist"
             onClick={handleCreate}
             disabled={isCreating()}
-            class="w-full flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-magenta-400 hover:bg-black/60 disabled:opacity-50 transition-colors border-t border-white/10 bg-black/40 text-sm"
+            class="w-full flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-white hover:bg-magenta-500/75 disabled:opacity-50 transition-colors border-t border-white/10 bg-black/40 text-sm"
           >
             <div class="flex-shrink-0 w-10 h-10 flex items-center justify-center border border-dashed border-gray-600">
               <Show
@@ -355,7 +355,7 @@ export function AllPlaylistsPanel(props: Props) {
                 </svg>
               </Show>
             </div>
-            <span class="px-1 py-0.5 bg-black">
+            <span class="px-1 py-0.5 bg-black text-white">
               {isCreating() ? "creating..." : "new playlist"}
             </span>
           </button>

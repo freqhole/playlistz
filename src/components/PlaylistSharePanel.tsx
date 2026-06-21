@@ -566,7 +566,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
               placeholder="optional message to the owner"
               value={collabRequestMessage()}
               onInput={(e) => setCollabRequestMessage(e.currentTarget.value)}
-              class="w-full bg-black text-white px-2 py-1.5 text-xs border border-gray-700 focus:border-magenta-500 focus:outline-none"
+              class="w-full bg-black text-white px-2 py-1.5 text-xs border border-gray-700 hover:border-gray-500 focus:border-magenta-500 focus:outline-none transition-colors"
             />
             <button
               data-testid="btn-request-collab-access"
@@ -612,7 +612,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                 value={shareLink()}
                 title="copy p2p share link"
                 onFocus={(e) => e.currentTarget.select()}
-                class="flex-1 bg-black text-white px-3 py-2 text-xs border border-magenta-200 focus:outline-none truncate min-w-0"
+                class="flex-1 bg-black text-white px-3 py-2 text-xs border border-magenta-200 hover:border-magenta-400 focus:outline-none truncate min-w-0 transition-colors"
               />
               <button
                 data-testid="btn-copy-share-link"
@@ -629,50 +629,52 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
 
       {/* receive a shared playlist - moved to all-playlists search bar */}
 
-      {/* endpoint settings: mode and visibility */}
-      <div class="space-y-3">
-        <div>
-          <label class="block text-xs mb-1">
-            <span class="bg-black px-1 text-gray-400">
-              who can browse this playlist?
-            </span>
-          </label>
-          <div class="flex gap-2">
-            <button
-              data-testid="btn-mode-public"
-              aria-pressed={settings().mode === "public"}
-              onClick={() => void handleSaveSettings({ mode: "public" })}
-              class={`flex-1 px-3 py-2 text-sm border ${settings().mode === "public" ? "border-magenta-500 bg-magenta-500/20 text-white" : "border-gray-600 text-gray-400"}`}
-            >
-              anyone (public)
-            </button>
-            <button
-              data-testid="btn-mode-knock"
-              aria-pressed={settings().mode === "knock"}
-              onClick={() => void handleSaveSettings({ mode: "knock" })}
-              class={`flex-1 px-3 py-2 text-sm border ${settings().mode === "knock" ? "border-magenta-500 bg-magenta-500/20 text-white" : "border-gray-600 text-gray-400"}`}
-            >
-              knock first
-            </button>
-          </div>
-          <div class="mt-2">
-            <button
-              data-testid="btn-toggle-collaborative"
-              type="button"
-              aria-pressed={collaborative()}
-              onClick={() => void handleToggleCollaborative()}
-              class={`w-full px-3 py-2 text-sm border transition-colors ${
-                collaborative()
-                  ? "border-magenta-500 bg-magenta-500/20 text-white"
-                  : "border-gray-600 text-gray-400"
-              }`}
-              title="when on, peers with access can edit without a separate approval"
-            >
-              collaborative editing {collaborative() ? "(on)" : "(off)"}
-            </button>
+      {/* endpoint settings: mode and visibility - only relevant when p2p is active */}
+      <Show when={p2pEnabled()}>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs mb-1">
+              <span class="bg-black px-1 text-gray-400">
+                who can browse this playlist?
+              </span>
+            </label>
+            <div class="flex gap-2">
+              <button
+                data-testid="btn-mode-public"
+                aria-pressed={settings().mode === "public"}
+                onClick={() => void handleSaveSettings({ mode: "public" })}
+                class={`flex-1 px-3 py-2 text-sm border transition-colors ${settings().mode === "public" ? "border-magenta-500 bg-magenta-500/20 text-white" : "border-gray-600 text-gray-400 hover:border-magenta-500 hover:text-gray-200 hover:bg-white/5"}`}
+              >
+                anyone (public)
+              </button>
+              <button
+                data-testid="btn-mode-knock"
+                aria-pressed={settings().mode === "knock"}
+                onClick={() => void handleSaveSettings({ mode: "knock" })}
+                class={`flex-1 px-3 py-2 text-sm border transition-colors ${settings().mode === "knock" ? "border-magenta-500 bg-magenta-500/20 text-white" : "border-gray-600 text-gray-400 hover:border-magenta-500 hover:text-gray-200 hover:bg-white/5"}`}
+              >
+                knock first
+              </button>
+            </div>
+            <div class="mt-2">
+              <button
+                data-testid="btn-toggle-collaborative"
+                type="button"
+                aria-pressed={collaborative()}
+                onClick={() => void handleToggleCollaborative()}
+                class={`w-full px-3 py-2 text-sm border transition-colors ${
+                  collaborative()
+                    ? "border-magenta-500 bg-magenta-500/20 text-white"
+                    : "border-gray-600 text-gray-400 hover:border-magenta-500 hover:text-gray-200 hover:bg-white/5"
+                }`}
+                title="when on, peers with access can edit without a separate approval"
+              >
+                collaborative editing {collaborative() ? "(on)" : "(off)"}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </Show>
 
       {/* knock inbox - only shown when there are pending knocks */}
       <Show when={pendingKnocks().length > 0}>
@@ -759,7 +761,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                   <button
                     onClick={() => void handleDeny(knock)}
                     disabled={!!acceptingKnockId()}
-                    class="flex-1 px-3 py-1 border border-gray-600 text-gray-300 hover:bg-gray-800 disabled:opacity-50 text-xs"
+                    class="flex-1 px-3 py-1 border border-gray-600 text-gray-300 hover:border-gray-400 hover:text-white hover:bg-white/5 disabled:opacity-50 text-xs transition-colors"
                   >
                     deny
                   </button>
@@ -851,7 +853,7 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                   <button
                     onClick={() => void handleRetry()}
                     disabled={retryingKnockId() === knock.id}
-                    class="w-full px-3 py-1 border border-gray-600 hover:border-gray-400 text-gray-300 hover:text-white disabled:opacity-50 text-xs"
+                    class="w-full px-3 py-1 border border-gray-600 hover:border-gray-400 text-gray-300 hover:text-white hover:bg-white/5 disabled:opacity-50 text-xs transition-colors"
                   >
                     {retryingKnockId() === knock.id
                       ? "checking..."
