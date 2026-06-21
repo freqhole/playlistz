@@ -1,4 +1,3 @@
-
 import {
   createSignal,
   Show,
@@ -117,7 +116,6 @@ export function PlaylistCoverModal(props: PlaylistCoverModalProps) {
     setIsDownloading(true);
     try {
       await downloadPlaylistAsZip(props.playlist, {
-        includeMetadata: true,
         includeImages: true,
         generateM3U: true,
         includeHTML: true,

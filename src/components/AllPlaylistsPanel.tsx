@@ -470,7 +470,6 @@ function PlaylistRow(props: {
     setDownloading(true);
     try {
       await downloadPlaylistAsZip(props.playlist, {
-        includeMetadata: true,
         includeImages: true,
         generateM3U: true,
         includeHTML: true,

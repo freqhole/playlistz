@@ -1,8 +1,9 @@
 # on every push to main, run the changesets action:
 #   - changesets pending  -> open/update the "Version Packages" PR on
 #     changeset-release/main (runs `npm run version` = changeset version).
-#   - no changesets pending (version PR just merged + tag pushed) ->
-#     npm-publish.yml handles the actual registry publish on the tag event.
+#   - no changesets pending (version PR just merged) -> run `npm run release:publish`
+#     which publishes to npm, creates the git tag, and creates the GitHub release.
+#     changesets/action generates the release body from changeset markdown.
 name: changesets
 
 on:
@@ -16,10 +17,11 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
-  version:
-    name: open / update version PR
+  version-or-publish:
+    name: version PR or publish
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -30,21 +32,29 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          registry-url: "https://registry.npmjs.org"
 
       - name: install deps
         run: npm ci
+
+      - name: build (needed for publish)
+        run: npm run build
 
       - name: configure git identity
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: changesets - open/update version PR
+      - name: changesets - version PR or publish
         uses: changesets/action@v1
         with:
           version: npm run version
-          # no publish here - npm-publish.yml handles it on the version tag
+          # publish runs when version PR is merged (no more changesets pending).
+          # changesets/action creates the git tag and github release automatically,
+          # using the accumulated changeset markdown as the release body.
+          publish: npm run release:publish
           commit: "chore: version packages"
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
