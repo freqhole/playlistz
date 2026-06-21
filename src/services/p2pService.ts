@@ -12,12 +12,12 @@ import {
   acquireNodeLeadership,
   type P2PIdentity,
   type IdentityStore,
-} from "freqhole-api-client/storage";
-import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN } from "freqhole-api-client/playlistz";
+} from "@freqhole/api-client/storage";
+import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN } from "@freqhole/api-client/playlistz";
 import type {
   MiddenStreamNode,
   IrohNetworkAdapterOptions,
-} from "freqhole-api-client/automerge";
+} from "@freqhole/api-client/automerge";
 
 // --- local settings db for identity fallback ---
 
@@ -134,7 +134,7 @@ async function bootMidden(
 ): Promise<MiddenStreamNode | null> {
   try {
     // bundler target: wasm init happens at import time via vite-plugin-wasm.
-    const midden = await import("midden");
+    const midden = await import("@freqhole/midden");
     const node = await midden.MiddenNode.create_with_alpns(secretKey, [
       AUTOMERGE_ALPN,
       PLAYLISTZ_ALPN,

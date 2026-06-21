@@ -26,7 +26,7 @@ import {
   knockOnPeer,
   type PeerPlaylistListing,
 } from "../services/sharingService.js";
-import { decodeShareToken } from "freqhole-api-client/playlistz";
+import { decodeShareToken } from "@freqhole/api-client/playlistz";
 import { ShareLinkKnockPanel } from "./ShareLinkKnockPanel.js";
 
 interface Props {

@@ -14,7 +14,7 @@ import {
   decodeShareToken,
   type Message,
   type BiStreamLike,
-} from "freqhole-api-client/playlistz";
+} from "@freqhole/api-client/playlistz";
 
 // --- mocks (hoisted before module imports) ---
 

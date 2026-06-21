@@ -11,7 +11,7 @@ import type {
 } from "@automerge/automerge-repo";
 import { createDocStore, changeDoc } from "./createDocStore.js";
 import type { DocHandle } from "@automerge/automerge-repo";
-import type { PlaylistDoc } from "freqhole-api-client/playlistz";
+import type { PlaylistDoc } from "@freqhole/api-client/playlistz";
 
 // --- minimal mock DocHandle ---
 

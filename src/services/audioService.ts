@@ -4,7 +4,7 @@
 import { createSignal } from "solid-js";
 import type { Song, Playlist, AudioState } from "../types/playlist.js";
 import { loadAllPlaybackPositions, savePlaybackPosition, deletePlaybackPosition, saveLastPlayed, loadLastPlayed } from "./indexedDBService.js";
-import { getBlobObjectURL } from "freqhole-api-client/storage";
+import { getBlobObjectURL } from "@freqhole/api-client/storage";
 import { fetchSongBlob, prefetchUpcoming } from "./blobTransferService.js";
 import { getSongsForPlaylist } from "./playlistDocService.js";
 import { enrichSongsWithStandalonePaths } from "./standaloneService.js";

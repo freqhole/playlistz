@@ -20,13 +20,13 @@ import {
   type PlaylistDoc,
   type SongEntry,
   type ImageRef,
-} from "freqhole-api-client/playlistz";
+} from "@freqhole/api-client/playlistz";
 import {
   storeBlob,
   getBlobObjectURL,
   getBlobMetadata,
   deleteBlob,
-} from "freqhole-api-client/storage";
+} from "@freqhole/api-client/storage";
 import {
   addDocIndexEntry,
   removeDocIndexEntry,

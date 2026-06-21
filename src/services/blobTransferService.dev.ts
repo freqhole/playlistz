@@ -14,7 +14,7 @@ import {
   _devFetchBlobBySha,
   type BlobFetchProgress,
 } from "./blobTransferService.js";
-import { storeBlob } from "freqhole-api-client/storage";
+import { storeBlob } from "@freqhole/api-client/storage";
 
 // the behaviour union mirrors global.d.ts Window["__mockBlobFetch"] parameter.
 // keeping it here means the mock impl and its type live together.

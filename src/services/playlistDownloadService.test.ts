@@ -13,7 +13,7 @@ vi.mock("./playlistDocService.js", () => ({
   updatePlaylist: vi.fn(),
 }));
 
-vi.mock("freqhole-api-client/storage", () => ({
+vi.mock("@freqhole/api-client/storage", () => ({
   getBlob: vi.fn(),
 }));
 
@@ -165,7 +165,7 @@ describe("Playlist Download Service", () => {
     const { getSongsForPlaylist, updatePlaylist } = await import(
       "./playlistDocService.js"
     );
-    const { getBlob } = await import("freqhole-api-client/storage");
+    const { getBlob } = await import("@freqhole/api-client/storage");
 
     vi.mocked(getSongsForPlaylist).mockResolvedValue(mockSongs);
     vi.mocked(updatePlaylist).mockResolvedValue(undefined);
@@ -237,7 +237,7 @@ describe("Playlist Download Service", () => {
     });
 
     it("should fetch audio from blob store for each song", async () => {
-      const { getBlob } = await import("freqhole-api-client/storage");
+      const { getBlob } = await import("@freqhole/api-client/storage");
 
       await downloadPlaylistAsZip(mockPlaylist);
 
@@ -247,7 +247,7 @@ describe("Playlist Download Service", () => {
     });
 
     it("should fetch playlist cover image from blob store", async () => {
-      const { getBlob } = await import("freqhole-api-client/storage");
+      const { getBlob } = await import("@freqhole/api-client/storage");
 
       await downloadPlaylistAsZip(mockPlaylist);
 
@@ -255,7 +255,7 @@ describe("Playlist Download Service", () => {
     });
 
     it("should skip image fetching when includeImages is false", async () => {
-      const { getBlob } = await import("freqhole-api-client/storage");
+      const { getBlob } = await import("@freqhole/api-client/storage");
 
       await downloadPlaylistAsZip(mockPlaylist, { includeImages: false });
 

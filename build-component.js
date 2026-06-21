@@ -94,7 +94,7 @@ async function buildStandalone() {
           chunkFileNames: "playlistz-[hash].js", assetFileNames: "playlistz.[ext]",
           inlineDynamicImports: true,
         },
-        external: ["midden"],
+        external: ["@freqhole/midden"],
       },
     },
   });

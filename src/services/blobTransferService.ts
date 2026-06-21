@@ -20,14 +20,14 @@ import {
   getBlob,
   getBlobMetadata,
   storeBlob,
-} from "freqhole-api-client/storage";
+} from "@freqhole/api-client/storage";
 import { createSignal } from "solid-js";
 import {
   PLAYLISTZ_ALPN,
   sendMessage,
   readMessage,
   type BiStreamLike,
-} from "freqhole-api-client/playlistz";
+} from "@freqhole/api-client/playlistz";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { getNode } from "./p2pService.js";
 import { getIrohAdapter, findPlaylistDoc } from "./automergeRepo.js";
@@ -691,7 +691,7 @@ export function _devSetFetchOverride(
 
 // evict a blob from local store - for simulating cache misses in tests
 export async function _devEvictBlob(sha256: string): Promise<void> {
-  const { deleteBlob } = await import("freqhole-api-client/storage");
+  const { deleteBlob } = await import("@freqhole/api-client/storage");
   await deleteBlob(sha256).catch(() => {});
 }
 

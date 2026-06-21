@@ -59,7 +59,7 @@ vi.mock("../services/automergeRepo.js", () => ({
   getRepo: vi.fn(),
 }));
 
-vi.mock("freqhole-api-client/playlistz", () => ({
+vi.mock("@freqhole/api-client/playlistz", () => ({
   parsePlaylistDoc: vi.fn((doc: Record<string, unknown>) => doc),
   emptyPlaylistDoc: vi.fn(),
 }));
@@ -114,7 +114,7 @@ describe("usePlaylistManager consolidated delete operations", () => {
     const docSvc = await import("../services/playlistDocService.js");
     const repoSvc = await import("../services/automergeRepo.js");
     const idbSvc = await import("../services/indexedDBService.js");
-    const fhClient = await import("freqhole-api-client/playlistz");
+    const fhClient = await import("@freqhole/api-client/playlistz");
     const docIndexQry = await import("./createDocIndexQuery.js");
 
     vi.mocked(docIndexQry.createDocIndexQuery).mockReturnValue(() => docIndexEntries as never);

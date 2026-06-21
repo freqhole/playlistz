@@ -42,7 +42,7 @@ vi.mock("./playlistDocService.js", () => ({
   getSongById: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("freqhole-api-client/playlistz", () => ({
+vi.mock("@freqhole/api-client/playlistz", () => ({
   emptyPlaylistDoc: vi.fn().mockReturnValue({}),
   upsertSong: vi.fn(),
   setMetadata: vi.fn(),
@@ -55,7 +55,7 @@ vi.mock("freqhole-api-client/playlistz", () => ({
   }),
 }));
 
-vi.mock("freqhole-api-client/storage", () => ({
+vi.mock("@freqhole/api-client/storage", () => ({
   getBlobMetadata: vi.fn().mockResolvedValue(null),
 }));
 
@@ -83,7 +83,7 @@ import { loadSetting, saveSetting } from "./indexedDBService.js";
 import { createPlaylistDoc, findPlaylistDoc } from "./automergeRepo.js";
 import { addDocIndexEntry } from "./docIndexService.js";
 import { getSongsForPlaylist, getSongById } from "./playlistDocService.js";
-import { getBlobMetadata } from "freqhole-api-client/storage";
+import { getBlobMetadata } from "@freqhole/api-client/storage";
 import { downloadSongIfNeeded } from "./streamingAudioService.js";
 
 // mock solid-js

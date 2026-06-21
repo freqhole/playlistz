@@ -17,7 +17,7 @@ import type {
 import {
   parsePlaylistDoc,
   type PlaylistDoc,
-} from "freqhole-api-client/playlistz";
+} from "@freqhole/api-client/playlistz";
 
 export interface DocStore {
   doc: Accessor<PlaylistDoc>;

@@ -18,13 +18,13 @@ import {
 } from "@automerge/automerge-repo";
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb";
 import { BroadcastChannelNetworkAdapter } from "@automerge/automerge-repo-network-broadcastchannel";
-import { IrohNetworkAdapter } from "freqhole-api-client/automerge";
+import { IrohNetworkAdapter } from "@freqhole/api-client/automerge";
 import {
   parsePlaylistDoc,
   emptyPlaylistDoc,
   tombstone,
   type PlaylistDoc,
-} from "freqhole-api-client/playlistz";
+} from "@freqhole/api-client/playlistz";
 import { getAdapterOptions } from "./p2pService.js";
 import { log } from "../utils/log.js";
 

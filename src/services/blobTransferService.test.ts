@@ -11,7 +11,7 @@ import {
   decodeMessage,
   type Message,
   type BiStreamLike,
-} from "freqhole-api-client/playlistz";
+} from "@freqhole/api-client/playlistz";
 import type { Playlist, Song } from "../types/playlist.js";
 
 // --- mocks (hoisted before module imports) ---
@@ -53,7 +53,7 @@ vi.mock("./playlistDocService.js", () => ({
   ),
 }));
 
-vi.mock("freqhole-api-client/storage", () => ({
+vi.mock("@freqhole/api-client/storage", () => ({
   storeBlob: vi.fn(async (blob: Blob) => {
     const id = `mock-${blob.size}`;
     blobStore.set(id, blob.size);

@@ -11,8 +11,8 @@ import {
   setMetadata,
   parsePlaylistDoc,
   type SongEntry,
-} from "freqhole-api-client/playlistz";
-import { getBlobMetadata } from "freqhole-api-client/storage";
+} from "@freqhole/api-client/playlistz";
+import { getBlobMetadata } from "@freqhole/api-client/storage";
 import { addDocIndexEntry } from "./docIndexService.js";
 import {
   docToPlaylist,
