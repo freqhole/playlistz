@@ -1,0 +1,103 @@
+# fast checks on every pull request to main.
+# skips the "Version Packages" changeset PR (it only bumps versions and changelogs).
+name: pr checks
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ---- changeset presence check ----
+  changeset:
+    name: changeset required
+    if: github.head_ref != 'changeset-release/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: install deps
+        run: npm ci
+
+      - name: check for changeset
+        run: npx changeset status --since=origin/main
+
+  # ---- type-check + lint ----
+  lint:
+    name: type-check + lint
+    if: github.head_ref != 'changeset-release/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: install deps
+        run: npm ci
+
+      - name: type-check
+        run: npm run typecheck
+
+      - name: lint
+        run: npm run lint
+
+  # ---- unit tests ----
+  test:
+    name: unit tests
+    if: github.head_ref != 'changeset-release/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: install deps
+        run: npm ci
+
+      - name: test
+        run: npm test
+
+  # ---- e2e tests ----
+  e2e:
+    name: e2e tests
+    if: github.head_ref != 'changeset-release/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: install deps
+        run: npm ci
+
+      - name: install playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: build standalone bundle (needed by e2e tests)
+        run: npm run build:standalone
+
+      - name: e2e tests
+        run: npm run test:e2e

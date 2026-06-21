@@ -1,0 +1,50 @@
+# on every push to main, run the changesets action:
+#   - changesets pending  -> open/update the "Version Packages" PR on
+#     changeset-release/main (runs `npm run version` = changeset version).
+#   - no changesets pending (version PR just merged + tag pushed) ->
+#     npm-publish.yml handles the actual registry publish on the tag event.
+name: changesets
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: changesets-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version:
+    name: open / update version PR
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: install deps
+        run: npm ci
+
+      - name: configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: changesets - open/update version PR
+        uses: changesets/action@v1
+        with:
+          version: npm run version
+          # no publish here - npm-publish.yml handles it on the version tag
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
