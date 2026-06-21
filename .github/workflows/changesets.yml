@@ -28,15 +28,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # temporary: provides file: dep sources until @freqhole/api-client is
-      # published with /playlistz /storage /automerge sub-paths. remove once done.
-      - name: checkout tomb (file: dep sources)
-        uses: actions/checkout@v4
-        with:
-          repository: freqhole/tomb
-          path: ../tomb
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: setup node
         uses: actions/setup-node@v4
         with:
@@ -44,7 +35,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: install deps
-        run: npm install
+        run: npm ci
 
       - name: build (needed for publish)
         run: npm run build
