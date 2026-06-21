@@ -7,7 +7,7 @@
 
 import { createSignal, onCleanup } from "solid-js";
 import type { Accessor } from "solid-js";
-import { getAllDocIndexEntries } from "../services/docIndexService.js";
+import { getAllDocIndexEntries, DOC_INDEX_CHANGE_EVENT } from "../services/docIndexService.js";
 import { DB_NAME, DOC_INDEX_STORE } from "../services/indexedDBService.js";
 import type { DocIndexEntry } from "../services/indexedDBService.js";
 import { log } from "../utils/log.js";
@@ -30,6 +30,7 @@ export function createDocIndexQuery(): Accessor<DocIndexEntry[]> {
 
   void refresh();
 
+  // BroadcastChannel: cross-tab invalidation
   const bc = new BroadcastChannel(`${DB_NAME}-changes`);
   bc.onmessage = (e: MessageEvent) => {
     if (e.data?.type === "mutation" && e.data.store === DOC_INDEX_STORE) {
@@ -38,8 +39,14 @@ export function createDocIndexQuery(): Accessor<DocIndexEntry[]> {
     }
   };
 
+  // CustomEvent: same-page invalidation - works on file:// (null origin)
+  // where BroadcastChannel may not deliver same-page messages reliably.
+  const onDocIndexChanged = () => { void refresh(); };
+  window.addEventListener(DOC_INDEX_CHANGE_EVENT, onDocIndexChanged);
+
   onCleanup(() => {
     bc.close();
+    window.removeEventListener(DOC_INDEX_CHANGE_EVENT, onDocIndexChanged);
   });
 
   return entries;

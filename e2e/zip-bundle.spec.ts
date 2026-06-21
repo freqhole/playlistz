@@ -157,6 +157,22 @@ function ensureBundleBuilt(): void {
 // --- standalone http server port (avoid collision with vite port 5917) ---
 const STANDALONE_PORT = 5920;
 
+// open the edit panel (if not already open) and click the download zip button.
+// the download button lives in the edit panel, not the main header.
+async function openEditAndClickDownload(page: Page): Promise<void> {
+  const panel = page.getByTestId("edit-panel");
+  const isOpen = await panel.isVisible().catch(() => false);
+  if (!isOpen) {
+    await page.getByTestId("btn-edit-playlist").click();
+    await panel.waitFor({ timeout: 5_000 });
+  }
+  // wait for the download button to be enabled (not disabled by isDownloading/isLoading)
+  const dlBtn = page.getByTestId("btn-download-zip");
+  await dlBtn.waitFor({ state: "visible", timeout: 3_000 });
+  await expect(dlBtn).not.toBeDisabled({ timeout: 3_000 });
+  await dlBtn.click();
+}
+
 test.describe("zip bundle download + standalone roundtrip", () => {
   test.beforeAll(() => ensureBundleBuilt());
 
@@ -171,7 +187,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await addSongs(page, 2);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
 
     expect(download.suggestedFilename()).toMatch(/\.zip$/);
@@ -190,7 +206,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await expect(titleInput).toHaveValue("my test playlist");
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
 
     const zipPath = await download.path();
@@ -277,7 +293,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await page.waitForTimeout(300);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipBuf = fs.readFileSync((await download.path())!);
     const zip = await JSZip.loadAsync(zipBuf);
@@ -316,7 +332,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
 
     // download and capture the zip
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipPath = await download.path();
     const zipBuf = fs.readFileSync(zipPath!);
@@ -361,7 +377,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await addSongs(page, 3);
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipPath = await download.path();
     expect(zipPath).toBeTruthy();
@@ -416,7 +432,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
 
     // download and capture the zip
     const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipPath = await download.path();
     expect(zipPath, "zip download path should exist").toBeTruthy();
@@ -481,7 +497,7 @@ test.describe("zip bundle download + standalone roundtrip", () => {
     await addSongs(page, 1, 2); // 2-second song for faster playback check
 
     const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipBuf = fs.readFileSync((await download.path())!);
 
@@ -537,7 +553,7 @@ test.describe("--http CLI server mode", () => {
     await addSongs(page, 2);
 
     const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipBuf = fs.readFileSync((await download.path())!);
 
@@ -584,13 +600,14 @@ test.describe("zip bundle: file:// standalone mode", () => {
     await resetAppState(page);
   });
 
+  // helper: open the edit panel and click the download zip button.
   // helper: download a zip from the current state and extract to a temp dir.
-  // returns { serveDir, tmpDir, zipBuf }.
+  // returns { serveDir, tmpDir }.
   async function downloadAndExtract(
     page: Page,
   ): Promise<{ serveDir: string; tmpDir: string }> {
     const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });
-    await page.getByTestId("btn-download-zip").click();
+    await openEditAndClickDownload(page);
     const download = await downloadPromise;
     const zipBuf = fs.readFileSync((await download.path())!);
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "playlistz-e2e-file-"));

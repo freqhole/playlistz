@@ -15,6 +15,7 @@ import {
   usePlaylistzSongs,
   usePlaylistzUI,
   usePlaylistzImageModal,
+  usePlaylistzDragDrop,
 } from "../../context/PlaylistzContext.js";
 import { getImageUrlForContext } from "../../services/imageService.js";
 import { audioState } from "../../services/audioService.js";
@@ -46,6 +47,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const songState = usePlaylistzSongs();
   const uiState = usePlaylistzUI();
   const imageModal = usePlaylistzImageModal();
+  const dragDrop = usePlaylistzDragDrop();
 
   onMount(() => initSharingState());
 
@@ -810,48 +812,45 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   </button>
                 </Show>
 
-                {/* download playlist .zip button */}
+                {/* add songs button: opens system file picker, same handler as drag-and-drop.
+                    hidden in file:// mode (standalone zip) where new songs can't be added. */}
                 <Show when={window.location.protocol !== "file:"}>
-                  <button
-                    data-testid="btn-download-zip"
-                    onClick={handleDownloadPlaylist}
-                    disabled={isDownloading()}
-                    class="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 transition-colors bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="download playlist as zip"
+                  <label
+                    data-testid="btn-add-songs"
+                    title="add songz"
+                    class="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 transition-colors bg-black/90 cursor-pointer"
                   >
-                    <Show
-                      when={!isDownloading()}
-                      fallback={
-                        <svg
-                          class="w-4 h-4 animate-spin"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                          />
-                        </svg>
-                      }
+                    <input
+                      type="file"
+                      accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aiff,.zip"
+                      multiple
+                      class="hidden"
+                      onChange={async (e) => {
+                        const files = Array.from(e.currentTarget.files ?? []);
+                        if (!files.length) return;
+                        await dragDrop.processFileImport(files, {
+                          selectedPlaylist: props.playlist(),
+                          playlists: playlistManager.playlists(),
+                          onPlaylistSelected: (p) =>
+                            playlistManager.selectPlaylist(p),
+                        });
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                    <svg
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
                     >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                    </Show>
-                  </button>
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2.5"
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                  </label>
                 </Show>
               </div>
             </div>

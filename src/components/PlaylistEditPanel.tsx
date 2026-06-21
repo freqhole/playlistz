@@ -13,7 +13,6 @@ import {
 } from "../services/imageService.js";
 import { ensureSharingReady } from "../services/sharingService.js";
 import { initSharingState } from "../services/sharingState.js";
-import { downloadPlaylistAsZip } from "../services/playlistDownloadService.js";
 import { usePlaylistzManager } from "../context/PlaylistzContext.js";
 import type { Playlist, Song } from "../types/playlist.js";
 
@@ -27,14 +26,15 @@ interface PlaylistEditPanelProps {
 }
 
 export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
-  const { backgroundSource, setBackgroundOverride } = usePlaylistzManager();
+  const playlistManager = usePlaylistzManager();
+  const { backgroundSource, setBackgroundOverride } = playlistManager;
+  const { handleDownloadPlaylist, isDownloading } = playlistManager;
 
   const [selectedImageUrl, setSelectedImageUrl] = createSignal<
     string | undefined
   >();
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const [isDownloading, setIsDownloading] = createSignal(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = createSignal(false);
 
   onMount(() => {
@@ -131,23 +131,6 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
       setError("failed to remove image");
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleDownloadPlaylist = async () => {
-    setIsDownloading(true);
-    try {
-      await downloadPlaylistAsZip(props.playlist, {
-        includeMetadata: true,
-        includeImages: true,
-        generateM3U: true,
-        includeHTML: true,
-      });
-    } catch (err) {
-      setError("failed to download playlist");
-      console.error("download error:", err);
-    } finally {
-      setIsDownloading(false);
     }
   };
 
@@ -730,6 +713,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           <div class="flex flex-col gap-2">
             <Show when={window.location.protocol !== "file:"}>
               <button
+                data-testid="btn-download-zip"
                 onClick={handleDownloadPlaylist}
                 disabled={isDownloading() || isLoading()}
                 class="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-400 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2"
