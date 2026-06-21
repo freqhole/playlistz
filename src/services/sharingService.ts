@@ -21,7 +21,7 @@ import {
   type Message,
   type BiStreamLike,
   type SharePayloadV1,
-} from "@freqhole/api-client/playlistz";
+} from "../types/playlistz";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { getIrohAdapter, findPlaylistDoc, flushDoc, authorizePeerForDoc } from "./automergeRepo.js";
 import {

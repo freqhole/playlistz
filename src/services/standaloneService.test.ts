@@ -42,7 +42,7 @@ vi.mock("./playlistDocService.js", () => ({
   getSongById: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("@freqhole/api-client/playlistz", () => ({
+vi.mock("../types/playlistz", () => ({
   emptyPlaylistDoc: vi.fn().mockReturnValue({}),
   upsertSong: vi.fn(),
   setMetadata: vi.fn(),

@@ -20,7 +20,7 @@ import {
   docToPlaylistAsync,
 } from "../services/playlistDocService.js";
 import { findPlaylistDoc } from "../services/automergeRepo.js";
-import { parsePlaylistDoc } from "@freqhole/api-client/playlistz";
+import { parsePlaylistDoc } from "../types/playlistz";
 import {
   refreshPlaylistQueue,
   audioState,

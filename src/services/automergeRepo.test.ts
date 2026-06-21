@@ -54,7 +54,7 @@ import {
 } from "./automergeRepo.js";
 import { parseAutomergeUrl } from "@automerge/automerge-repo";
 import type { PeerId, DocumentId } from "@automerge/automerge-repo";
-import { addPeer } from "@freqhole/api-client/playlistz";
+import { addPeer } from "../types/playlistz";
 
 describe("automergeRepo", () => {
   beforeEach(() => {

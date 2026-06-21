@@ -20,7 +20,7 @@ import {
   type PlaylistDoc,
   type SongEntry,
   type ImageRef,
-} from "@freqhole/api-client/playlistz";
+} from "../types/playlistz";
 import {
   storeBlob,
   getBlobObjectURL,

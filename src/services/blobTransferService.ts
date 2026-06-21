@@ -27,7 +27,7 @@ import {
   sendMessage,
   readMessage,
   type BiStreamLike,
-} from "@freqhole/api-client/playlistz";
+} from "../types/playlistz";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { getNode } from "./p2pService.js";
 import { getIrohAdapter, findPlaylistDoc } from "./automergeRepo.js";

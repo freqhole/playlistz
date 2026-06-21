@@ -13,7 +13,7 @@ vi.mock("../services/automergeRepo.js", () => ({
   getRepo: vi.fn(),
 }));
 
-vi.mock("@freqhole/api-client/playlistz", () => ({
+vi.mock("../types/playlistz", () => ({
   parsePlaylistDoc: vi.fn((raw: any) => raw ?? {}),
 }));
 

@@ -24,7 +24,7 @@ import {
   emptyPlaylistDoc,
   tombstone,
   type PlaylistDoc,
-} from "@freqhole/api-client/playlistz";
+} from "../types/playlistz";
 import { getAdapterOptions } from "./p2pService.js";
 import { log } from "../utils/log.js";
 

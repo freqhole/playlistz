@@ -98,7 +98,7 @@ import {
 import { _resetRepoForTests, findPlaylistDoc } from "./automergeRepo.js";
 import { resetDBCache } from "./indexedDBService.js";
 import { getAllDocIndexEntries, getDocIndexEntry } from "./docIndexService.js";
-import { parsePlaylistDoc } from "@freqhole/api-client/playlistz";
+import { parsePlaylistDoc } from "../types/playlistz";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 
 function makeAudioFile(name = "track.mp3", content = "fake audio"): File {

@@ -13,7 +13,7 @@ import {
   type P2PIdentity,
   type IdentityStore,
 } from "@freqhole/api-client/storage";
-import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN } from "@freqhole/api-client/playlistz";
+import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN } from "../types/playlistz";
 import type {
   MiddenStreamNode,
   IrohNetworkAdapterOptions,

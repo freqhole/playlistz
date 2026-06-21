@@ -6,7 +6,7 @@ import {
   docToPlaylist,
 } from "./playlistDocService.js";
 import { findPlaylistDoc } from "./automergeRepo.js";
-import { parsePlaylistDoc } from "@freqhole/api-client/playlistz";
+import { parsePlaylistDoc } from "../types/playlistz";
 import JSZip from "jszip";
 import { getBlob } from "@freqhole/api-client/storage";
 import { buildPlaylistZip, cleanupOpfsTempFile } from "../zip-bundle/zipBuilder.js";
