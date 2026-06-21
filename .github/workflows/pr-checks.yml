@@ -44,13 +44,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: checkout tomb (provides file: dep sources)
+        uses: actions/checkout@v4
+        with:
+          repository: freqhole/tomb
+          path: ../tomb
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: setup node
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
       - name: install deps
-        run: npm ci
+        run: npm install
 
       - name: type-check
         run: npm run typecheck
@@ -66,13 +73,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: checkout tomb (provides file: dep sources)
+        uses: actions/checkout@v4
+        with:
+          repository: freqhole/tomb
+          path: ../tomb
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: setup node
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
       - name: install deps
-        run: npm ci
+        run: npm install
 
       - name: test
         run: npm test
@@ -85,13 +99,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: checkout tomb (provides file: dep sources)
+        uses: actions/checkout@v4
+        with:
+          repository: freqhole/tomb
+          path: ../tomb
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: setup node
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
       - name: install deps
-        run: npm ci
+        run: npm install
 
       - name: install playwright browsers
         run: npx playwright install --with-deps chromium

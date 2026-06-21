@@ -54,11 +54,9 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const {
     playlists,
     playlistSongs,
-    isDownloading,
     isCaching,
     allSongsCached,
     handlePlaylistUpdate,
-    handleDownloadPlaylist,
     handleCachePlaylist,
     handleRemoveSong,
     handleReorderSongs,
