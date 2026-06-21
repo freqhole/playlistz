@@ -401,7 +401,7 @@ export function SongEditPanel(props: SongEditPanelProps) {
               value={title()}
               onInput={(e) => setTitle(e.currentTarget.value)}
               disabled={isLoading()}
-              class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
+              class="w-full bg-black text-white px-3 py-2 border border-gray-600 hover:border-gray-400 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
               placeholder="song title"
             />
           </div>
@@ -423,7 +423,7 @@ export function SongEditPanel(props: SongEditPanelProps) {
               value={artist()}
               onInput={(e) => setArtist(e.currentTarget.value)}
               disabled={isLoading()}
-              class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
+              class="w-full bg-black text-white px-3 py-2 border border-gray-600 hover:border-gray-400 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
               placeholder="artist name"
             />
           </div>
@@ -445,7 +445,7 @@ export function SongEditPanel(props: SongEditPanelProps) {
               value={album()}
               onInput={(e) => setAlbum(e.currentTarget.value)}
               disabled={isLoading()}
-              class="w-full bg-black text-white px-3 py-2 border border-gray-600 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
+              class="w-full bg-black text-white px-3 py-2 border border-gray-600 hover:border-gray-400 focus:border-magenta-500 focus:ring-1 focus:ring-magenta-500 focus:outline-none transition-colors text-sm"
               placeholder="album name"
             />
           </div>
