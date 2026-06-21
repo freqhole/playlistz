@@ -224,6 +224,12 @@ test("mode buttons in share panel are visible", async ({ page }) => {
   await page.getByTestId("btn-share-playlist").click();
   await page.getByTestId("share-panel").waitFor({ timeout: 5000 });
 
+  // enable p2p so the mode buttons are shown
+  const enableBtn = page.getByTestId("btn-enable-sharing");
+  if (await enableBtn.isVisible()) {
+    await enableBtn.click();
+  }
+
   await expect(page.getByTestId("btn-mode-public")).toBeVisible();
   await expect(page.getByTestId("btn-mode-knock")).toBeVisible();
 });

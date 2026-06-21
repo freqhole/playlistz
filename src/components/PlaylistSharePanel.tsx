@@ -629,8 +629,10 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
 
       {/* receive a shared playlist - moved to all-playlists search bar */}
 
-      {/* endpoint settings: mode and visibility - only relevant when p2p is active */}
-      <Show when={p2pEnabled()}>
+      {/* endpoint settings: sharing mode and collaborative toggle.
+           shown as soon as the endpoint is enabled so the user can configure
+           mode while the node is still starting up */}
+      <Show when={endpointEnabled()}>
         <div class="space-y-3">
           <div>
             <label class="block text-xs mb-1">

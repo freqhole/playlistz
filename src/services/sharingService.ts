@@ -403,23 +403,40 @@ async function syncSharedDoc(
   if (!alreadyLocal) {
     for (let attempt = 0; ; attempt++) {
       try {
-        await adapter.addPeer(payload.n);
+        await Promise.race([
+          adapter.addPeer(payload.n),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("addPeer timed out")), 10_000)
+          ),
+        ]);
         break;
       } catch (err) {
-        if (attempt >= 5) {
+        if (attempt >= 3) {
           log.warn("p2p.connect", "could not connect to sharing peer:", err);
           break;
         }
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     }
   }
 
-  const handle = await findPlaylistDoc(payload.d as AutomergeUrl);
-  const doc = handle.doc();
+  // wait up to 30s for the doc to arrive; if it times out, proceed anyway -
+  // automerge will sync in the background once a peer connection establishes
+  let handle: Awaited<ReturnType<typeof findPlaylistDoc>> | undefined;
+  try {
+    handle = await Promise.race([
+      findPlaylistDoc(payload.d as AutomergeUrl),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("doc sync timed out")), 30_000)
+      ),
+    ]);
+  } catch {
+    // doc not yet available - will sync in background
+  }
+  const doc = handle?.doc() ?? null;
 
   const myNodeId = identity?.node_id;
-  if (doc) {
+  if (doc && handle) {
     const peers = doc.peers ?? {};
     const missingSelf = !!myNodeId && !(myNodeId in peers);
     const missingSharer = !(payload.n in peers);
@@ -526,10 +543,17 @@ async function openPlaylistzStream(nodeId: string): Promise<BiStreamLike> {
   if (!node) {
     throw new Error("p2p node is not running in this tab");
   }
-  return (await node.open_bi(
-    nodeId,
-    PLAYLISTZ_ALPN
-  )) as unknown as BiStreamLike;
+  // race against a timeout so open_bi doesn't hang indefinitely when the
+  // iroh relay hasn't yet propagated the peer's address
+  return await Promise.race([
+    node.open_bi(nodeId, PLAYLISTZ_ALPN) as unknown as Promise<BiStreamLike>,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("stream open timed out")),
+        15_000
+      )
+    ),
+  ]);
 }
 
 /**

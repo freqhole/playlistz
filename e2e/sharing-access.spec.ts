@@ -13,12 +13,19 @@ test.beforeEach(async ({ page }) => {
   await resetAppState(page);
 });
 
-// helper: open the share panel for the current playlist
+// helper: open the share panel for the current playlist, enabling p2p if needed
 async function openSharePanel(page: import("@playwright/test").Page) {
   // open via the share icon button in the playlist header
   await page.getByTestId("btn-share-playlist").click();
   // wait for the panel to be visible
   await page.getByTestId("share-panel").waitFor({ timeout: 5000 });
+  // enable p2p if not yet enabled (fresh session has no identity)
+  const enableBtn = page.getByTestId("btn-enable-sharing");
+  if (await enableBtn.isVisible()) {
+    await enableBtn.click();
+  }
+  // wait for mode buttons to appear (endpointEnabled becomes true synchronously)
+  await page.getByTestId("btn-mode-public").waitFor({ timeout: 5000 });
 }
 
 // --- mode toggle ---
