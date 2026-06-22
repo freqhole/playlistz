@@ -5,12 +5,13 @@
 #     upcoming version (tag + notes + standalone bundle).
 #   - no changesets pending (that PR was just merged) -> run
 #     `npm run release:publish`, which flips the already-built draft release to
-#     published. that creates the v$VERSION tag at main HEAD.
+#     published (creating the v$VERSION tag) AND publishes the npm package via
+#     npm trusted publishing (oidc). the npm publish happens here so the oidc
+#     token's workflow filename (changesets.yml) matches the trusted publisher
+#     configured on npmjs.com - no npm token needed.
 #
-# the npm package is published separately by npm-publish.yml, which runs on the
-# v*.*.* tag (and matches the npm trusted-publisher config). that tag is created
-# with GITHUB_TOKEN, so github's recursion guard won't auto-start npm-publish.yml
-# -> start it from the run's "approve" button or via workflow_dispatch.
+# after a successful npm publish, the bump-tomb job opens a PR in freqhole/tomb
+# bumping @freqhole/playlistz to the new version.
 name: changesets
 
 on:
@@ -24,11 +25,14 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   version-or-publish:
     name: version PR or publish
     runs-on: ubuntu-24.04
+    outputs:
+      released_version: ${{ steps.changesets.outputs.released_version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,15 +51,73 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: changesets - version PR or publish draft release
+      - name: changesets - version PR or publish release
+        id: changesets
         uses: changesets/action@v1
         with:
           version: npm run version
           # runs when the version PR merges (no changesets pending). flips the
-          # draft github release to published, creating the v$VERSION tag. it
-          # does NOT npm-publish; npm-publish.yml does that on the tag.
+          # draft github release to published (creating the v$VERSION tag) and
+          # publishes the npm package via oidc. emits released_version on a
+          # successful npm publish.
           publish: npm run release:publish
           commit: "chore: version packages"
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---- bump @freqhole/playlistz in tomb/ ----
+  bump-tomb:
+    name: bump @freqhole/playlistz in tomb
+    needs: version-or-publish
+    if: needs.version-or-publish.outputs.released_version != ''
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version-or-publish.outputs.released_version }}
+    steps:
+      - name: checkout tomb
+        uses: actions/checkout@v4
+        with:
+          repository: freqhole/tomb
+          token: ${{ secrets.TOMB_PAT }}
+          fetch-depth: 1
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: update @freqhole/playlistz in tomb/client/spume/package.json
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = 'client/spume/package.json';
+            const pkg = JSON.parse(fs.readFileSync(path, 'utf-8'));
+            if (pkg.dependencies?.['@freqhole/playlistz']) {
+              pkg.dependencies['@freqhole/playlistz'] = process.env.VERSION;
+            }
+            if (pkg.devDependencies?.['@freqhole/playlistz']) {
+              pkg.devDependencies['@freqhole/playlistz'] = process.env.VERSION;
+            }
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: open PR in tomb
+        run: |
+          BRANCH="chore/bump-playlistz-${VERSION}"
+          git checkout -b "$BRANCH"
+          git add client/spume/package.json
+          git commit -m "chore: bump @freqhole/playlistz to ${VERSION}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "chore: bump @freqhole/playlistz to ${VERSION}" \
+            --body "automated bump of @freqhole/playlistz to ${VERSION} after npm publish." \
+            --base main \
+            --head "$BRANCH"
+        env:
+          GH_TOKEN: ${{ secrets.TOMB_PAT }}
