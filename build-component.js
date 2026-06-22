@@ -158,9 +158,17 @@ async function buildStandalone() {
   console.log("generated: freqhole-playlistz.cli.mjs");
 
   // ---- static assets ----
-  fs.writeFileSync(path.resolve("dist/index.html"), indexHtml, "utf-8");
+  // in the full build (build:app then build:standalone --no-clear) vite already
+  // wrote dist/index.html pointing at the hashed vite assets, so keep it. only
+  // emit the web-component shell when run standalone, where dist was cleared and
+  // needs an entry point that loads freqhole-playlistz.js.
+  if (!skipClear) {
+    fs.writeFileSync(path.resolve("dist/index.html"), indexHtml, "utf-8");
+  }
   if (swJs) fs.writeFileSync(path.resolve("dist/sw.js"), swJs, "utf-8");
-  console.log("generated: index.html, sw.js");
+  console.log(
+    skipClear ? "generated: sw.js (kept vite index.html)" : "generated: index.html, sw.js"
+  );
 
   console.log("\nbuild completed!");
   console.log("  browser: dist/freqhole-playlistz.js");
