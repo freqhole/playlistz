@@ -10,6 +10,11 @@ import {
   waitForApp,
   logTs,
 } from "./helpers.js";
+import {
+  getP2PNodeId,
+  getP2PNodeAddr,
+  seedP2PPeerAddr,
+} from "./helpers/hooks.js";
 
 test.beforeEach(async ({ page }) => {
   await resetAppState(page);
@@ -142,6 +147,17 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
       // once the node is up the share column shows the link + copy button
       const copyBtn = pageA.getByTestId("btn-copy-share-link");
       await expect(copyBtn).toBeEnabled({ timeout: 180_000 });
+      // default share mode is "knock"; this test exercises public auto-sync,
+      // so switch to public. the share link encodes the mode, so wait for it
+      // to rebuild (the token changes when the knock flag is dropped).
+      const shareInput = pageA.getByTestId("input-share-link");
+      const knockLink = await shareInput.inputValue();
+      await pageA.getByTestId("btn-mode-public").click();
+      await expect(pageA.getByTestId("btn-mode-public")).toHaveAttribute(
+        "aria-pressed",
+        "true"
+      );
+      await expect(shareInput).not.toHaveValue(knockLink);
       logTs("[e2e] peer a: p2p node online");
     };
 
@@ -163,10 +179,7 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
     await Promise.all([setupA(), setupB()]);
 
     // read the share url straight from the readonly input (no clipboard)
-    const shareUrl = await pageA
-      .locator("input[readonly]")
-      .first()
-      .inputValue();
+    const shareUrl = await pageA.getByTestId("input-share-link").inputValue();
     expect(shareUrl).toContain("#share/");
     logTs(`[e2e] peer a: share url: ${shareUrl.slice(0, 60)}...`);
 
@@ -174,9 +187,11 @@ test("two browsers share a playlist over p2p @p2p", async ({ browser }) => {
     // search bar, which auto-detects and opens it
     await pageB.getByTestId("btn-all-playlists").click();
     await pageB.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
-    // give the iroh relay time to propagate this node's addresses before connecting;
-    // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
-    await pageB.waitForTimeout(20_000);
+    // hand peer a's reachable addr to peer b so the dial skips discovery
+    // propagation instead of blindly waiting for it.
+    const sharerNodeId = await getP2PNodeId(pageA);
+    const sharerAddr = await getP2PNodeAddr(pageA);
+    await seedP2PPeerAddr(pageB, sharerNodeId, sharerAddr);
     await pageB
       .getByTestId("input-search-playlists")
       .fill(shareUrl);

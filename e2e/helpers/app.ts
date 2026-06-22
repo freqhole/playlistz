@@ -117,20 +117,28 @@ export async function createPlaylistViaUI(page: Page): Promise<void> {
   );
 }
 
-// add n synthetic songs to the selected playlist via drag and drop
-export async function addSongs(page: Page, count: number, durationSec = 1): Promise<void> {
+// add n synthetic songs to the selected playlist via drag and drop.
+// startIndex offsets the song name/audio content so successive calls produce
+// distinct songs (same index => same bytes => same sha => deduped, not re-added).
+export async function addSongs(
+  page: Page,
+  count: number,
+  durationSec = 1,
+  startIndex = 0
+): Promise<void> {
   const files: FixtureFile[] = [];
   for (let i = 0; i < count; i++) {
+    const idx = startIndex + i;
     files.push({
-      name: `song-${String(i).padStart(2, "0")}.wav`,
+      name: `song-${String(idx).padStart(2, "0")}.wav`,
       mimeType: "audio/wav",
-      bytes: makeWav(durationSec, 220 + i * 110),
+      bytes: makeWav(durationSec, 220 + idx * 110),
     });
   }
   await dropFiles(page, files);
   // wait for the last row to show up
   await page
-    .getByText(`song-${String(count - 1).padStart(2, "0")}`)
+    .getByText(`song-${String(startIndex + count - 1).padStart(2, "0")}`)
     .waitFor({ timeout: 15000 });
 }
 

@@ -246,6 +246,22 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
     }
   });
 
+  // reflect the outbound collab knock status for the current playlist on the
+  // request banner, so a proactive accept notification (knock_notify) surfaces
+  // even without clicking "check if accepted".
+  createEffect(() => {
+    const docId = props.playlist().id;
+    const knock = outboundKnocks().find(
+      (k) => k.knockType === "doc_access" && k.requestedDocId === docId
+    );
+    if (!knock) return;
+    if (knock.status === "accepted") {
+      setCollabRequestStatus("access granted - you can now collaborate");
+    } else if (knock.status === "rejected") {
+      setCollabRequestStatus("access denied");
+    }
+  });
+
   const handleEnableP2P = async () => {
     setStarting(true);
     setError(null);
@@ -277,6 +293,9 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
       } catch (err) {
         log.warn("share.panel", "failed to write sharingMode to doc:", err);
       }
+      // the share link encodes the mode (knock vs public), so rebuild it to
+      // keep the displayed/copied link in sync with the selected mode.
+      await rebuildShareLink();
     }
   };
 
@@ -814,6 +833,13 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                       ...m,
                       [knock.id]: "access granted!",
                     }));
+                    // surface the outcome on the main request banner too when
+                    // this knock is for the playlist we're viewing
+                    if (knock.requestedDocId === props.playlist().id) {
+                      setCollabRequestStatus(
+                        "access granted - you can now collaborate"
+                      );
+                    }
                     await refreshKnocks();
                     if (knock.requestedDocId)
                       props.onPlaylistAdded?.(knock.requestedDocId);
@@ -822,6 +848,9 @@ export function PlaylistSharePanel(props: PlaylistSharePanelProps) {
                       ...m,
                       [knock.id]: "access denied",
                     }));
+                    if (knock.requestedDocId === props.playlist().id) {
+                      setCollabRequestStatus("access denied");
+                    }
                     await refreshKnocks();
                   } else {
                     setRetryStatusMap((m) => ({

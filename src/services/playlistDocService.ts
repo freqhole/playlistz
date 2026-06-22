@@ -125,6 +125,7 @@ export function docToPlaylist(docId: string, doc: PlaylistDoc): Playlist {
     bgSize: doc.bgSize,
     bgPosition: doc.bgPosition,
     bgRepeat: doc.bgRepeat,
+    collaborative: doc.collaborative,
   } as Playlist;
 }
 

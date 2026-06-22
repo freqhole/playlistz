@@ -82,6 +82,9 @@ export const PlaylistDocSchema = z.object({
   deleted: z.boolean().optional(),
   // per-playlist sharing mode. unset = private (not shared).
   sharingMode: z.union([z.literal("public"), z.literal("knock")]).optional(),
+  // when true, subscribers may edit the playlist in place and their changes
+  // sync back to peers. when false/unset, subscriptions are read-only (fork to edit).
+  collaborative: z.boolean().optional(),
   // display filter settings for the playlist background and cover
   bgFilterEnabled: z.boolean().optional(),
   bgFilterBlur: z.number().optional(),

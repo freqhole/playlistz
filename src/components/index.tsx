@@ -79,9 +79,11 @@ function PlaylistzInner() {
 
   // create a wrapper that provides the necessary options to handleFileDrop
   const handleFileDropWrapper = async (e: DragEvent) => {
-    // don't allow dropping songs onto a subscribed (read-only) playlist
+    // don't allow dropping songs onto a read-only subscribed playlist.
+    // collaborative subscriptions are editable, so they accept drops.
     const current = selectedPlaylist();
-    if (current?.remoteNodeId && !current?.isForked) return;
+    if (current?.remoteNodeId && !current?.isForked && !current?.collaborative)
+      return;
     await handleFileDrop(e, {
       selectedPlaylist: selectedPlaylist(),
       playlists: playlists(),

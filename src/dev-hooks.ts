@@ -16,6 +16,7 @@ import {
   getAllDocIndexEntries,
   addDocIndexEntry,
 } from "./services/docIndexService.js";
+import { getIdentity, getNodeAddr, seedPeerAddr } from "./services/p2pService.js";
 import type { DocIndexEntry } from "./services/indexedDBService.js";
 
 registerAudioDevHooks();
@@ -46,3 +47,27 @@ registerBlobDevHooks();
   if (!existing) throw new Error(`docIndex entry not found: ${docId}`);
   await addDocIndexEntry({ ...existing, ...(patch as Partial<DocIndexEntry>) });
 };
+
+// p2p test hooks: let e2e tests exchange reachable addrs between peers so
+// connections are deterministic without blind waits for discovery. production
+// never calls these; share links still carry node ids only.
+(
+  window as Window & {
+    __p2pNodeId?: () => string | null;
+    __p2pNodeAddr?: () => string | null;
+    __seedP2PPeerAddr?: (nodeId: string, addr: string) => void;
+  }
+).__p2pNodeId = () => getIdentity()?.node_id ?? null;
+
+(
+  window as Window & {
+    __p2pNodeAddr?: () => string | null;
+  }
+).__p2pNodeAddr = () => getNodeAddr();
+
+(
+  window as Window & {
+    __seedP2PPeerAddr?: (nodeId: string, addr: string) => void;
+  }
+).__seedP2PPeerAddr = (nodeId: string, addr: string) =>
+  seedPeerAddr(nodeId, addr);

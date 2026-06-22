@@ -14,8 +14,16 @@ import {
   createPlaylistViaUI,
   logTs,
 } from "./helpers.js";
+import {
+  getP2PNodeId,
+  getP2PNodeAddr,
+  seedP2PPeerAddr,
+} from "./helpers/hooks.js";
 
-// helper: enable p2p for a page, return the share link
+// helper: enable p2p for a page, set public share mode, return the share link.
+// the default share mode is "knock"; these tests subscribe without knocking,
+// so we switch to public and wait for the link to rebuild (the token changes
+// when the knock flag is dropped) before reading it.
 async function enableP2PAndGetShareLink(
   page: import("@playwright/test").Page,
   tag: string
@@ -23,12 +31,20 @@ async function enableP2PAndGetShareLink(
   await page.getByTestId("btn-share-playlist").click();
   logTs(`[e2e] ${tag}: enabling p2p...`);
   await page.getByTestId("btn-enable-sharing").click();
-  // wait for relay address to be embedded in the share URL (more reliable than sharing-status)
+  // the copy button becomes enabled once the node is online and the link built
   await expect(page.getByTestId("btn-copy-share-link")).toBeEnabled({
     timeout: 180_000,
   });
   logTs(`[e2e] ${tag}: p2p node online`);
-  const link = await page.locator("input[readonly]").first().inputValue();
+  const shareInput = page.getByTestId("input-share-link");
+  const knockLink = await shareInput.inputValue();
+  await page.getByTestId("btn-mode-public").click();
+  await expect(page.getByTestId("btn-mode-public")).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(shareInput).not.toHaveValue(knockLink);
+  const link = await shareInput.inputValue();
   expect(link).toContain("#share/");
   return link;
 }
@@ -38,7 +54,8 @@ async function subscribeToPublicPlaylist(
   page: import("@playwright/test").Page,
   shareUrl: string,
   tag: string,
-  expectedTitle: string
+  expectedTitle: string,
+  sharerPage: import("@playwright/test").Page
 ): Promise<void> {
   // close share panel if open
   if (
@@ -51,9 +68,11 @@ async function subscribeToPublicPlaylist(
   }
   await page.getByTestId("btn-all-playlists").click();
   await page.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
-  // give the iroh relay time to propagate this node's addresses before connecting;
-  // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
-  await page.waitForTimeout(20_000);
+  // hand the sharer's reachable addr to this peer so the dial skips discovery
+  // propagation instead of blindly waiting for it. both sides must be online.
+  const sharerNodeId = await getP2PNodeId(sharerPage);
+  const sharerAddr = await getP2PNodeAddr(sharerPage);
+  await seedP2PPeerAddr(page, sharerNodeId, sharerAddr);
   await page.getByTestId("input-search-playlists").fill(shareUrl);
   logTs(`[e2e] ${tag}: opening share link...`);
   await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible({
@@ -121,7 +140,8 @@ test(
         pageB,
         shareUrl,
         "peerB",
-        "collab-test-accept"
+        "collab-test-accept",
+        pageA
       );
 
       // B should see the subscribed banner (read only)
@@ -169,25 +189,30 @@ test(
       });
 
       // --- peer B: check if accepted via "check if accepted" button ---
-      // the status may already show granted if B received knock_notify
-      // otherwise click the check button
+      // B learns about the grant either via a proactive knock_notify push or by
+      // re-checking. the push can be dropped and the first re-check can race the
+      // owner persisting the grant, so retry the check until access is granted
+      // (this mirrors what a user would do - click "check" again). on success the
+      // banner flips to granted and/or the request-edit-access affordance goes
+      // away as B transitions from subscriber to collaborator.
       const statusEl = pageB.getByTestId("collab-request-status");
-      const alreadyGranted = await statusEl
-        .textContent({ timeout: 1000 })
-        .then((t) => t?.includes("access granted"))
-        .catch(() => false);
-
-      if (!alreadyGranted) {
-        // the "check if accepted" button appears in the outbound knocks section
-        const checkBtn = pageB.getByRole("button", { name: "check if accepted" });
-        if (await checkBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      const requestBtn = pageB.getByTestId("btn-request-collab-access");
+      await expect(async () => {
+        const checkBtn = pageB.getByRole("button", {
+          name: "check if accepted",
+        });
+        if (await checkBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
           await checkBtn.click();
           logTs("[e2e] peerB: clicked check if accepted");
         }
-        await expect(statusEl).toContainText("access granted", {
-          timeout: 30_000,
-        });
-      }
+        const bannerGranted = (
+          (await statusEl.textContent({ timeout: 500 }).catch(() => "")) ?? ""
+        ).includes("access granted");
+        const requestGone = !(await requestBtn
+          .isVisible({ timeout: 500 })
+          .catch(() => false));
+        expect(bannerGranted || requestGone).toBe(true);
+      }).toPass({ timeout: 60_000 });
       logTs("[e2e] peerB: access granted confirmed");
     } finally {
       await Promise.allSettled([ctxA.close(), ctxB.close()]);
@@ -236,7 +261,8 @@ test(
         pageB,
         shareUrl,
         "peerB",
-        "collab-test-deny"
+        "collab-test-deny",
+        pageA
       );
 
       // B requests access
@@ -329,7 +355,8 @@ test(
         pageB,
         shareUrl,
         "peerB",
-        "collab-test-auto"
+        "collab-test-auto",
+        pageA
       );
 
       // B requests collaboration access

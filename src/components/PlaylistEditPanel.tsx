@@ -160,6 +160,10 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
   const isSubscribed = () =>
     !!props.playlist.remoteNodeId && !props.playlist.isForked;
 
+  // read-only subscriptions show fork / request-collaboration. collaborative
+  // subscriptions are editable in place, so that box is hidden for them.
+  const isReadOnly = () => isSubscribed() && !props.playlist.collaborative;
+
   const handleFork = async () => {
     try {
       setIsForkingOrCollab(true);
@@ -352,6 +356,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
               }
               fallback={
                 <img
+                  data-testid="img-playlist-cover"
                   src={selectedImageUrl()}
                   alt="playlist cover"
                   class="w-full h-auto"
@@ -365,6 +370,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                 title="set the page background to this playlist's cover image"
               >
                 <img
+                  data-testid="img-playlist-cover"
                   src={selectedImageUrl()}
                   alt="playlist cover"
                   class="w-full h-auto"
@@ -377,6 +383,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           </Show>
 
           <input
+            data-testid="input-cover-image"
             type="file"
             accept="image/*"
             onChange={handleImageUpload}
@@ -406,7 +413,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         {/* filter controls + playlist info */}
         <div class="flex flex-col gap-5 min-w-0 sm:order-1">
           {/* subscribed playlist: fork or request collaboration */}
-          <Show when={isSubscribed()}>
+          <Show when={isReadOnly()}>
             <div class="space-y-2 border border-gray-700 p-3">
               <p class="text-xs text-gray-400">
                 this is a subscribed playlist from{" "}

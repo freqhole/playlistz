@@ -21,8 +21,9 @@ import {
   addSongs,
   makePng,
   logTs,
-  getDocIndexEntries,
-  patchDocIndexEntry,
+  getP2PNodeId,
+  getP2PNodeAddr,
+  seedP2PPeerAddr,
 } from "./helpers.js";
 
 const REPO_ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
@@ -172,7 +173,28 @@ test("three peers triangulate automerge changes @p2p", async ({ browser }) => {
     await pageA.getByTestId("input-playlist-title").blur();
     await pageA.waitForTimeout(500);
 
-    const shareUrl = await pageA.locator("input[readonly]").first().inputValue();
+    // default share mode is "knock"; switch peer A to public so B and C can
+    // subscribe without knocking. the link encodes the mode, so wait for it to
+    // rebuild (the token changes) before reading.
+    const shareInput = pageA.getByTestId("input-share-link");
+    const knockLink = await shareInput.inputValue();
+    await pageA.getByTestId("btn-mode-public").click();
+    await expect(pageA.getByTestId("btn-mode-public")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(shareInput).not.toHaveValue(knockLink);
+
+    // turn on collaborative editing so subscribers (B, C) can edit in place
+    // and have their changes sync back. without it, subscriptions are read-only.
+    await pageA.getByTestId("btn-toggle-collaborative").click();
+    await expect(pageA.getByTestId("btn-toggle-collaborative")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    logTs("[e2e] peerA: collaborative editing enabled");
+
+    const shareUrl = await shareInput.inputValue();
     expect(shareUrl).toContain("#share/");
     logTs(`[e2e] peerA: share url: ${shareUrl.slice(0, 60)}...`);
 
@@ -190,9 +212,11 @@ test("three peers triangulate automerge changes @p2p", async ({ browser }) => {
       }
       await page.getByTestId("btn-all-playlists").click();
       await page.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
-      // give the iroh relay time to propagate this node's addresses before connecting;
-      // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
-      await page.waitForTimeout(20_000);
+      // hand peer a's reachable addr to this peer so the dial skips discovery
+      // propagation instead of blindly waiting for it.
+      const sharerNodeId = await getP2PNodeId(pageA);
+      const sharerAddr = await getP2PNodeAddr(pageA);
+      await seedP2PPeerAddr(page, sharerNodeId, sharerAddr);
       await page.getByTestId("input-search-playlists").fill(shareUrl);
       logTs(`[e2e] ${tag}: opening share link...`);
       await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible({
@@ -218,6 +242,10 @@ test("three peers triangulate automerge changes @p2p", async ({ browser }) => {
     logTs("[e2e] B and C confirmed initial sync from A");
 
     // --- peer B renames the playlist ---
+    // collaborative editing must have synced from A first, which unlocks the input
+    await expect(pageB.getByTestId("input-playlist-title")).toBeEnabled({
+      timeout: 30_000,
+    });
     // click three times to select all, then type to replace
     await pageB.getByTestId("input-playlist-title").click({ clickCount: 3 });
     await pageB.getByTestId("input-playlist-title").fill("doom-renamed-by-b");
@@ -290,7 +318,17 @@ test("cli-served zip app joins relay and syncs with peers @p2p", async ({
     await expect(copyBtn).toBeEnabled({ timeout: 180_000 });
     logTs("[e2e] peerA: p2p node online");
 
-    const shareUrl = await pageA.locator("input[readonly]").first().inputValue();
+    // default share mode is "knock"; switch peer A to public so the cli peer
+    // can subscribe without knocking. wait for the link to rebuild first.
+    const shareInput = pageA.getByTestId("input-share-link");
+    const knockLink = await shareInput.inputValue();
+    await pageA.getByTestId("btn-mode-public").click();
+    await expect(pageA.getByTestId("btn-mode-public")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(shareInput).not.toHaveValue(knockLink);
+    const shareUrl = await shareInput.inputValue();
     expect(shareUrl).toContain("#share/");
     logTs(`[e2e] peerA: share url: ${shareUrl.slice(0, 60)}...`);
 
@@ -340,9 +378,13 @@ test("cli-served zip app joins relay and syncs with peers @p2p", async ({
     }
     await pageB.getByTestId("btn-all-playlists").click();
     await pageB.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
-    // give the iroh relay time to propagate this node's addresses before connecting;
-    // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
-    await pageB.waitForTimeout(20_000);
+    // hand peer a's reachable addr to the cli peer so the dial skips discovery
+    // propagation instead of blindly waiting for it.
+    {
+      const sharerNodeId = await getP2PNodeId(pageA);
+      const sharerAddr = await getP2PNodeAddr(pageA);
+      await seedP2PPeerAddr(pageB, sharerNodeId, sharerAddr);
+    }
     await pageB.getByTestId("input-search-playlists").fill(shareUrl);
     logTs("[e2e] cli peer: opening share link...");
     await expect(pageB.getByTestId("all-playlists-panel")).not.toBeVisible({
@@ -433,15 +475,28 @@ test(
       const copyBtn = pageA.getByTestId("btn-copy-share-link");
       await expect(copyBtn).toBeEnabled({ timeout: 180_000 });
       logTs("[e2e] peerA: p2p node online");
+      // the share link encodes the mode, so wait for it to rebuild (the token
+      // changes when the knock flag is dropped) before reading.
+      const shareInput = pageA.getByTestId("input-share-link");
+      const knockLink = await shareInput.inputValue();
       await pageA.getByTestId("btn-mode-public").click();
       await expect(pageA.getByTestId("btn-mode-public")).toHaveAttribute(
         "aria-pressed",
         "true",
         { timeout: 5000 }
       );
+      await expect(shareInput).not.toHaveValue(knockLink);
       logTs("[e2e] peerA: mode set to public");
 
-      const shareUrl = await pageA.locator("input[readonly]").first().inputValue();
+      // turn on collaborative editing so B and C can edit in place and have
+      // their changes sync back. without it, subscriptions are read-only.
+      await pageA.getByTestId("btn-toggle-collaborative").click();
+      await expect(
+        pageA.getByTestId("btn-toggle-collaborative")
+      ).toHaveAttribute("aria-pressed", "true", { timeout: 5000 });
+      logTs("[e2e] peerA: collaborative editing enabled");
+
+      const shareUrl = await shareInput.inputValue();
       expect(shareUrl).toContain("#share/");
       logTs(`[e2e] peerA: share url: ${shareUrl.slice(0, 60)}...`);
 
@@ -475,9 +530,11 @@ test(
       ) => {
         await page.getByTestId("btn-all-playlists").click();
         await page.getByTestId("all-playlists-panel").waitFor({ timeout: 5000 });
-        // give the iroh relay time to propagate this node's addresses before connecting;
-        // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
-        await page.waitForTimeout(20_000);
+        // hand peer a's reachable addr to this peer so the dial skips discovery
+        // propagation instead of blindly waiting for it.
+        const sharerNodeId = await getP2PNodeId(pageA);
+        const sharerAddr = await getP2PNodeAddr(pageA);
+        await seedP2PPeerAddr(page, sharerNodeId, sharerAddr);
         await page.getByTestId("input-search-playlists").fill(shareUrl);
         logTs(`[e2e] ${tag}: opening share link...`);
         await expect(page.getByTestId("all-playlists-panel")).not.toBeVisible({
@@ -506,19 +563,15 @@ test(
       logTs("[e2e] B and C confirmed initial sync: 3 songs");
 
       // ---------------------------------------------------------------
-      // round 1: peer B makes edits
-      // promote B to editor by clearing remoteNodeId so the UI unlocks
+      // round 1: peer B makes edits in place (collaborative editing)
       // ---------------------------------------------------------------
-      const bEntries = await getDocIndexEntries(pageB);
-      const sharedEntry = bEntries.find((e) => e.source === "shared");
-      if (!sharedEntry) throw new Error("peerB: no shared docIndex entry found");
-      await patchDocIndexEntry(pageB, sharedEntry.docId, { remoteNodeId: null as unknown as undefined });
-      await pageB.waitForTimeout(500); // let reactive effects settle
-      logTs("[e2e] peerB: promoted to editor (remoteNodeId cleared)");
+      // collaborative editing synced from A unlocks B's inputs without forking.
+      // wait for the description input to become editable before B edits.
+      const descInput = pageB.getByTestId("input-playlist-description");
+      await expect(descInput).toBeEnabled({ timeout: 30_000 });
+      logTs("[e2e] peerB: collaborative editing unlocked");
 
       // B changes the description
-      const descInput = pageB.getByTestId("input-playlist-description");
-      await expect(descInput).toBeEnabled({ timeout: 5000 });
       await descInput.fill("collab-edited-by-b");
       await descInput.blur();
       await pageB.waitForTimeout(300);
@@ -529,9 +582,10 @@ test(
       await pageB.getByTestId("btn-remove-song").first().click();
       logTs("[e2e] peerB: song-00 removed (2 songs remain)");
 
-      // B adds a new song (file drop, same helper as addSongs)
-      await addSongs(pageB, 1, 1);
-      logTs("[e2e] peerB: new song added (3 songs total on B)");
+      // B adds a distinct new song (song-03) so it does not dedupe against
+      // A's existing song-00..02.
+      await addSongs(pageB, 1, 1, 3);
+      logTs("[e2e] peerB: song-03 added (3 songs total on B)");
 
       // --- A and C should converge to B's state ---
       // description change visible on A
@@ -541,7 +595,7 @@ test(
       );
       logTs("[e2e] peerA: confirmed description update from B");
 
-      // description change visible on C (disabled but still has the value)
+      // description change visible on C as well
       await expect(pageC.getByTestId("input-playlist-description")).toHaveValue(
         "collab-edited-by-b",
         { timeout: 60_000 }
@@ -556,7 +610,9 @@ test(
       // ---------------------------------------------------------------
       // round 2: peer A adds 2 more songs → all peers see 5
       // ---------------------------------------------------------------
-      await addSongs(pageA, 2, 1);
+      // distinct indices (song-04, song-05) so they don't dedupe against
+      // existing songs.
+      await addSongs(pageA, 2, 1, 4);
       logTs("[e2e] peerA: 2 more songs added (5 total)");
 
       await expect(pageA.getByTestId("song-row")).toHaveCount(5, { timeout: 30_000 });
@@ -567,15 +623,12 @@ test(
       await expect(pageC.getByTestId("song-row")).toHaveCount(5, { timeout: 60_000 });
       logTs("[e2e] peerC: confirmed 5 songs from peerA");
 
-      // A's two new songs will be in "pending" blob state on B and C since the
-      // audio data travels via p2p blob transfer, not the doc itself.
-      // verify the song rows are present (entries synced) even if blobs aren't cached yet.
-      // songs with a non-empty data-download-state have arrived in the doc and are queued for fetch.
-      const bNewSongCount = await pageB.evaluate(() =>
-        document.querySelectorAll('[data-testid="song-duration"][data-download-state]').length
-      );
-      expect(bNewSongCount).toBe(2);
-      logTs("[e2e] peerB: A's 2 new songs have download state (blob transfer queued)");
+      // confirm A's two specific new songs (song-04, song-05) reached B as doc
+      // entries. the audio blobs transfer separately via p2p, so we assert on
+      // the synced entries rather than a transient blob-download snapshot.
+      await expect(pageB.getByText("song-04")).toBeVisible({ timeout: 60_000 });
+      await expect(pageB.getByText("song-05")).toBeVisible({ timeout: 60_000 });
+      logTs("[e2e] peerB: A's new songs (song-04, song-05) synced as entries");
     } finally {
       await Promise.allSettled([ctxA.close(), ctxB.close(), ctxC.close()]);
     }
@@ -670,9 +723,13 @@ test("peer B fetches audio and image blobs from peer A @p2p", async ({ browser }
     logTs("[e2e] peerB: p2p online");
 
     await pageB.getByTestId("btn-all-playlists").click();
-    // give the iroh relay time to propagate this node's addresses before connecting;
-    // open_bi has a ~2-minute internal timeout when the peer is not yet discoverable
-    await pageB.waitForTimeout(20_000);
+    // hand peer a's reachable addr to peer b so the dial skips discovery
+    // propagation instead of blindly waiting for it.
+    {
+      const sharerNodeId = await getP2PNodeId(pageA);
+      const sharerAddr = await getP2PNodeAddr(pageA);
+      await seedP2PPeerAddr(pageB, sharerNodeId, sharerAddr);
+    }
     await pageB.getByTestId("input-search-playlists").fill(shareUrl);
     logTs("[e2e] peerB: opening share link...");
     await expect(pageB.getByTestId("all-playlists-panel")).not.toBeVisible({ timeout: 120_000 });

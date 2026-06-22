@@ -131,3 +131,41 @@ export async function patchDocIndexEntry(
     { docId, patch }
   );
 }
+
+// --- p2p addr-exchange hooks ---
+// let tests hand one peer's reachable addr to another so connections are
+// deterministic without blind waits for discovery propagation.
+
+// wait until this tab's p2p node is up and exposes a reachable addr, then
+// return the node id. resolves the readiness race instead of a fixed wait.
+export async function getP2PNodeId(page: Page): Promise<string> {
+  await page.waitForFunction(() => !!window.__p2pNodeId?.(), { timeout: 180_000 });
+  const id = await page.evaluate(() => window.__p2pNodeId!());
+  if (!id) throw new Error("p2p node id not available");
+  return id;
+}
+
+// wait until this tab's p2p node is up and return its full serialized
+// endpoint addr (node id + relay url).
+export async function getP2PNodeAddr(page: Page): Promise<string> {
+  await page.waitForFunction(() => !!window.__p2pNodeAddr?.(), { timeout: 180_000 });
+  const addr = await page.evaluate(() => window.__p2pNodeAddr!());
+  if (!addr) throw new Error("p2p node addr not available");
+  return addr;
+}
+
+// seed a peer's reachable addr into this tab so subsequent dials to that
+// node id skip discovery lookup. best-effort: a no-op when the dev hook is
+// absent (e.g. a production standalone bundle), in which case the peer relies
+// on the transport's bounded connect + background reconnect instead.
+export async function seedP2PPeerAddr(
+  page: Page,
+  nodeId: string,
+  addr: string
+): Promise<void> {
+  await page.evaluate(
+    ({ nodeId, addr }) => window.__seedP2PPeerAddr?.(nodeId, addr),
+    { nodeId, addr }
+  );
+}
+

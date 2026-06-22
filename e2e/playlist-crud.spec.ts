@@ -69,7 +69,9 @@ test("playlist cover image persists across reload", async ({ page }) => {
 
   // open the edit panel and upload a cover
   await page.getByTestId("btn-edit-playlist").click();
-  const fileInput = page.locator("input[type='file']").first();
+  // target the cover input specifically - the page also has an audio
+  // add-songs file input, so a bare input[type=file] selector is ambiguous.
+  const fileInput = page.getByTestId("input-cover-image");
   await fileInput.waitFor({ state: "attached", timeout: 5000 });
 
   const png = await makePng(page, { color: "#00ffcc", label: "cover" });
@@ -80,18 +82,18 @@ test("playlist cover image persists across reload", async ({ page }) => {
   });
 
   // cover preview appears in the edit panel
-  await expect(page.getByTestId("edit-panel").locator("img[alt='playlist cover']").first()).toBeVisible(
-    { timeout: 10000 }
-  );
+  await expect(
+    page.getByTestId("edit-panel").getByTestId("img-playlist-cover")
+  ).toBeVisible({ timeout: 10000 });
 
   await page.reload();
   await waitForApp(page);
 
   // re-open edit panel and confirm the cover is still there from blob store
   await page.getByTestId("btn-edit-playlist").click();
-  await expect(page.getByTestId("edit-panel").locator("img[alt='playlist cover']").first()).toBeVisible({
-    timeout: 10000,
-  });
+  await expect(
+    page.getByTestId("edit-panel").getByTestId("img-playlist-cover")
+  ).toBeVisible({ timeout: 10000 });
 });
 
 test("selected playlist is restored after a page reload", async ({ page }) => {

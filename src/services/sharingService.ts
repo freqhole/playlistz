@@ -33,6 +33,7 @@ import {
   startP2P,
   getIdentity,
   getNode,
+  getPeerDialAddr,
   waitForNode,
   onLeadershipChange,
   hasExistingIdentity,
@@ -378,46 +379,56 @@ async function syncSharedDoc(
   // best-effort: failures are silently ignored so the main sync still proceeds.
   let peerName: string | undefined;
   let peerAvatarDataUrl: string | undefined;
+  // bound the whole hello exchange (open + write + read) with one timeout. the
+  // stream can open before its path is validated, leaving a subsequent write or
+  // read blocked indefinitely; cap it so the flow falls through to the automerge
+  // sync below instead of hanging.
   try {
-    const stream = await openPlaylistzStream(payload.n);
-    try {
-      await sendMessage(stream, {
-        v: 1,
-        type: "hello",
-        nodeId: identity?.node_id ?? "",
-        ...(mySettings.name ? { name: mySettings.name } : {}),
-      });
-      const reply = await readMessage(stream);
-      if (reply?.type === "hello_ok") {
-        peerName = reply.name;
-        peerAvatarDataUrl = reply.avatarDataUrl;
-      }
-    } finally {
-      stream.close();
-    }
+    const helloDeadline = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("hello timed out")), 8_000)
+    );
+    await Promise.race([
+      (async () => {
+        const stream = await openPlaylistzStream(payload.n);
+        try {
+          await sendMessage(stream, {
+            v: 1,
+            type: "hello",
+            nodeId: identity?.node_id ?? "",
+            ...(mySettings.name ? { name: mySettings.name } : {}),
+          });
+          const reply = await readMessage(stream);
+          if (reply?.type === "hello_ok") {
+            peerName = reply.name;
+            peerAvatarDataUrl = reply.avatarDataUrl;
+          }
+        } finally {
+          stream.close();
+        }
+      })(),
+      helloDeadline,
+    ]);
   } catch {
     // peer may be offline or reject hello - not fatal
   }
 
   const alreadyLocal = await getDocIndexEntry(payload.d).catch(() => null);
   if (!alreadyLocal) {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await Promise.race([
-          adapter.addPeer(payload.n),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("addPeer timed out")), 10_000)
-          ),
-        ]);
-        break;
-      } catch (err) {
-        if (attempt >= 3) {
-          log.warn("p2p.connect", "could not connect to sharing peer:", err);
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-      }
-    }
+    // dial the sharing peer. addPeer hands off to a background reconnect loop
+    // with backoff on failure, so a single call is enough; pass any known dial
+    // addr hint so the transport can skip discovery.
+    const hint = getPeerDialAddr(payload.n);
+    const dial = hint
+      ? adapter.addPeer(payload.n, hint)
+      : adapter.addPeer(payload.n);
+    await Promise.race([
+      dial,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("addPeer timed out")), 10_000)
+      ),
+    ]).catch((err) => {
+      log.warn("p2p.connect", "initial dial to sharing peer failed:", err);
+    });
   }
 
   // wait up to 30s for the doc to arrive; if it times out, proceed anyway -
@@ -544,9 +555,12 @@ async function openPlaylistzStream(nodeId: string): Promise<BiStreamLike> {
     throw new Error("p2p node is not running in this tab");
   }
   // race against a timeout so open_bi doesn't hang indefinitely when the
-  // iroh relay hasn't yet propagated the peer's address
+  // iroh relay hasn't yet propagated the peer's address. when a dial addr
+  // hint is known for this peer we dial the full endpoint addr to skip the
+  // discovery lookup entirely.
+  const dialTarget = getPeerDialAddr(nodeId) ?? nodeId;
   return await Promise.race([
-    node.open_bi(nodeId, PLAYLISTZ_ALPN) as unknown as Promise<BiStreamLike>,
+    node.open_bi(dialTarget, PLAYLISTZ_ALPN) as unknown as Promise<BiStreamLike>,
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("stream open timed out")), 15_000)
     ),
@@ -750,26 +764,36 @@ export async function acceptKnock(
   const knock = knocks.find((k) => k.id === knockId);
   if (!knock) throw new Error("knock not found");
 
-  // try to get the peer's avatar from any docIndex entry we already have
-  const allEntries = await getAllDocIndexEntries().catch(
-    () => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>
-  );
-  const peerEntry = allEntries.find((e) => e.remoteNodeId === knock.nodeId);
-
+  // persist the grant and mark the knock accepted up front, so a peer that
+  // re-checks ("check if accepted") immediately after sees the grant rather
+  // than racing the rest of this function.
   await upsertAccessGrant({
     nodeId: knock.nodeId,
     name: knock.name,
     grantedAt: Date.now(),
     docIds,
-    ...(peerEntry?.remoteAvatarDataUrl
-      ? { avatarDataUrl: peerEntry.remoteAvatarDataUrl }
-      : {}),
   });
   await upsertKnock({
     ...knock,
     status: "accepted",
     processedAt: Date.now(),
   });
+
+  // best-effort: enrich the grant with the peer's avatar from a docIndex entry
+  // if we already have one. not on the critical path for access.
+  const allEntries = await getAllDocIndexEntries().catch(
+    () => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>
+  );
+  const peerEntry = allEntries.find((e) => e.remoteNodeId === knock.nodeId);
+  if (peerEntry?.remoteAvatarDataUrl) {
+    await upsertAccessGrant({
+      nodeId: knock.nodeId,
+      name: knock.name,
+      grantedAt: Date.now(),
+      docIds,
+      avatarDataUrl: peerEntry.remoteAvatarDataUrl,
+    });
+  }
 
   for (const docId of docIds) {
     try {
@@ -938,9 +962,11 @@ async function handleProtocolMessage(
       const existing = await getAccessGrant(msg.nodeId);
 
       if (isDocAccessKnock && msg.docId) {
-        // doc_access knock: auto-accept only if the doc has collaborative editing
-        // enabled. in public mode any peer qualifies; in knock mode the peer must
-        // already have an accepted grant covering this doc.
+        // doc_access knock: confirm access when either the doc allows
+        // collaborative editing (auto-accept) or the owner has already granted
+        // this peer explicit access to the doc (e.g. accepted the knock from the
+        // inbox). in public mode collaborative docs auto-accept; in knock mode the
+        // peer needs a grant covering this doc.
         let isCollaborative = false;
         try {
           const handle = await findPlaylistDoc(msg.docId as AutomergeUrl);
@@ -950,17 +976,18 @@ async function handleProtocolMessage(
           /* doc not available */
         }
 
-        const peerQualifies =
-          settings.mode === "public" ||
-          (existing &&
-            (!existing.docIds || existing.docIds.includes(msg.docId)));
+        const hasExplicitGrant =
+          !!existing &&
+          (!existing.docIds || existing.docIds.includes(msg.docId));
+        const autoAccept =
+          isCollaborative && (settings.mode === "public" || hasExplicitGrant);
 
-        if (isCollaborative && peerQualifies) {
+        if (autoAccept) {
           await sendMessage(stream, {
             v: 1,
             type: "knock_status",
             status: "accepted",
-            grantedDocIds: [msg.docId],
+            grantedDocIds: existing?.docIds ?? [msg.docId],
           });
           break;
         }
@@ -990,6 +1017,17 @@ async function handleProtocolMessage(
           v: 1,
           type: "knock_status",
           status: "denied",
+        });
+        break;
+      }
+      if (prior?.status === "accepted") {
+        // the owner already approved this peer's request (e.g. accepted the
+        // knock from the inbox), so confirm access on re-check.
+        await sendMessage(stream, {
+          v: 1,
+          type: "knock_status",
+          status: "accepted",
+          grantedDocIds: existing?.docIds ?? (msg.docId ? [msg.docId] : []),
         });
         break;
       }

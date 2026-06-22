@@ -34,6 +34,11 @@ declare global {
     // docIndex test hooks (registered in src/dev-hooks.ts)
     __getDocIndexEntries?: () => Promise<unknown[]>;
     __patchDocIndexEntry?: (docId: string, patch: unknown) => Promise<void>;
+
+    // p2p test hooks (registered in src/dev-hooks.ts)
+    __p2pNodeId?: () => string | null;
+    __p2pNodeAddr?: () => string | null;
+    __seedP2PPeerAddr?: (nodeId: string, addr: string) => void;
   }
 }
 

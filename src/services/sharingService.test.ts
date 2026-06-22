@@ -37,6 +37,7 @@ const { docs, adapter, p2p, blobs } = vi.hoisted(() => {
     }),
     hasExistingIdentity: vi.fn(async () => false),
     waitForNode: vi.fn(async (): Promise<unknown> => null),
+    getPeerDialAddr: vi.fn((): string | undefined => undefined),
   };
   const blobs = {
     serveBlobRequest: vi.fn(async () => {}),
@@ -66,6 +67,7 @@ vi.mock("./p2pService.js", () => ({
   onLeadershipChange: p2p.onLeadershipChange,
   hasExistingIdentity: p2p.hasExistingIdentity,
   waitForNode: p2p.waitForNode,
+  getPeerDialAddr: p2p.getPeerDialAddr,
 }));
 
 vi.mock("./blobTransferService.js", () => ({
