@@ -7,6 +7,10 @@
     "type": "git",
     "url": "https://github.com/freqhole/playlistz"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "exports": {
     ".": "./src/web-component.tsx",
     "./zip-bundle": "./src/zip-bundle/index.ts",

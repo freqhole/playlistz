@@ -13,19 +13,21 @@ vi.mock("../services/automergeRepo.js", () => ({
   getRepo: vi.fn(),
 }));
 
-vi.mock("@freqhole/api-client/playlistz", () => ({
+vi.mock("../types/playlistz", () => ({
   parsePlaylistDoc: vi.fn((raw: any) => raw ?? {}),
 }));
 
 vi.mock("../services/playlistDocService.js", () => ({
-  docToPlaylist: vi.fn((docId: string, _doc: any): Playlist => ({
-    id: docId,
-    title: "mocked playlist",
-    description: undefined,
-    createdAt: 0,
-    updatedAt: 0,
-    songIds: [],
-  })),
+  docToPlaylist: vi.fn(
+    (docId: string, _doc: any): Playlist => ({
+      id: docId,
+      title: "mocked playlist",
+      description: undefined,
+      createdAt: 0,
+      updatedAt: 0,
+      songIds: [],
+    })
+  ),
 }));
 
 describe("usePlaylistsQuery", () => {

@@ -22,14 +22,15 @@ export interface Playlist {
   coverFilterEnabled?: boolean; // default: true
   coverFilterBlur?: number; // default: 3 (px)
   // background image layout
-  bgSize?: string;     // css background-size, default: "cover"
+  bgSize?: string; // css background-size, default: "cover"
   bgPosition?: string; // css background-position, default: "top"
-  bgRepeat?: string;   // css background-repeat, default: "no-repeat"
+  bgRepeat?: string; // css background-repeat, default: "no-repeat"
   // remote source metadata: set for playlists received from a remote peer
   remoteNodeId?: string; // iroh node id of the peer who shared this
   remoteName?: string; // their display name at time of sync
   remoteAvatarDataUrl?: string; // their avatar data url at time of sync
   isForked?: boolean; // true once the user has forked to a local editable copy
+  collaborative?: boolean; // when true, subscribers can edit in place (changes sync back)
 }
 
 export interface Song {

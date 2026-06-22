@@ -21,13 +21,19 @@ import {
   type Message,
   type BiStreamLike,
   type SharePayloadV1,
-} from "@freqhole/api-client/playlistz";
+} from "../types/playlistz";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { getIrohAdapter, findPlaylistDoc, flushDoc, authorizePeerForDoc } from "./automergeRepo.js";
+import {
+  getIrohAdapter,
+  findPlaylistDoc,
+  flushDoc,
+  authorizePeerForDoc,
+} from "./automergeRepo.js";
 import {
   startP2P,
   getIdentity,
   getNode,
+  getPeerDialAddr,
   waitForNode,
   onLeadershipChange,
   hasExistingIdentity,
@@ -84,7 +90,9 @@ async function notifyPeersOfIdentityUpdate(
   } catch {
     return;
   }
-  const entries = await getAllDocIndexEntries().catch(() => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>);
+  const entries = await getAllDocIndexEntries().catch(
+    () => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>
+  );
   const seen = new Set<string>();
   const myNodeId = getIdentity()?.node_id ?? "";
   for (const entry of entries) {
@@ -167,7 +175,10 @@ export async function ensureSharingReady(): Promise<void> {
         // periodic reconnect: re-dial known peers every 90s so automerge
         // can sync changes that arrived while the connection was down
         if (!reconnectIntervalId) {
-          reconnectIntervalId = setInterval(() => void reconnectKnownPeers(), 90_000);
+          reconnectIntervalId = setInterval(
+            () => void reconnectKnownPeers(),
+            90_000
+          );
         }
       }
     });
@@ -197,9 +208,10 @@ export async function resumeSharingIfEnabled(): Promise<void> {
  */
 async function refreshPeerIdentity(nodeId: string): Promise<void> {
   const identity = getIdentity();
-  const settings = await getShareSettings().catch(
-    () => ({ name: "", mode: "knock" as const })
-  );
+  const settings = await getShareSettings().catch(() => ({
+    name: "",
+    mode: "knock" as const,
+  }));
   let peerName: string | undefined;
   let peerAvatarDataUrl: string | undefined;
   try {
@@ -280,12 +292,20 @@ export async function reconnectKnownPeers(): Promise<void> {
       for (const nodeId of Object.keys(doc.peers ?? {})) {
         if (nodeId && nodeId !== myNodeId && !seen.has(nodeId)) {
           seen.add(nodeId);
-          void adapter.addPeer(nodeId).then(async () => {
-            // refresh the peer's identity in docIndex + grant after connecting
-            void refreshPeerIdentity(nodeId);
-          }).catch((err) => {
-            log.warn("p2p.reconnect", "reconnect to peer failed:", nodeId.slice(0, 16), err);
-          });
+          void adapter
+            .addPeer(nodeId)
+            .then(async () => {
+              // refresh the peer's identity in docIndex + grant after connecting
+              void refreshPeerIdentity(nodeId);
+            })
+            .catch((err) => {
+              log.warn(
+                "p2p.reconnect",
+                "reconnect to peer failed:",
+                nodeId.slice(0, 16),
+                err
+              );
+            });
         }
       }
     } catch {
@@ -359,48 +379,75 @@ async function syncSharedDoc(
   // best-effort: failures are silently ignored so the main sync still proceeds.
   let peerName: string | undefined;
   let peerAvatarDataUrl: string | undefined;
+  // bound the whole hello exchange (open + write + read) with one timeout. the
+  // stream can open before its path is validated, leaving a subsequent write or
+  // read blocked indefinitely; cap it so the flow falls through to the automerge
+  // sync below instead of hanging.
   try {
-    const stream = await openPlaylistzStream(payload.n);
-    try {
-      await sendMessage(stream, {
-        v: 1,
-        type: "hello",
-        nodeId: identity?.node_id ?? "",
-        ...(mySettings.name ? { name: mySettings.name } : {}),
-      });
-      const reply = await readMessage(stream);
-      if (reply?.type === "hello_ok") {
-        peerName = reply.name;
-        peerAvatarDataUrl = reply.avatarDataUrl;
-      }
-    } finally {
-      stream.close();
-    }
+    const helloDeadline = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("hello timed out")), 8_000)
+    );
+    await Promise.race([
+      (async () => {
+        const stream = await openPlaylistzStream(payload.n);
+        try {
+          await sendMessage(stream, {
+            v: 1,
+            type: "hello",
+            nodeId: identity?.node_id ?? "",
+            ...(mySettings.name ? { name: mySettings.name } : {}),
+          });
+          const reply = await readMessage(stream);
+          if (reply?.type === "hello_ok") {
+            peerName = reply.name;
+            peerAvatarDataUrl = reply.avatarDataUrl;
+          }
+        } finally {
+          stream.close();
+        }
+      })(),
+      helloDeadline,
+    ]);
   } catch {
     // peer may be offline or reject hello - not fatal
   }
 
   const alreadyLocal = await getDocIndexEntry(payload.d).catch(() => null);
   if (!alreadyLocal) {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await adapter.addPeer(payload.n);
-        break;
-      } catch (err) {
-        if (attempt >= 5) {
-          log.warn("p2p.connect", "could not connect to sharing peer:", err);
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-      }
-    }
+    // dial the sharing peer. addPeer hands off to a background reconnect loop
+    // with backoff on failure, so a single call is enough; pass any known dial
+    // addr hint so the transport can skip discovery.
+    const hint = getPeerDialAddr(payload.n);
+    const dial = hint
+      ? adapter.addPeer(payload.n, hint)
+      : adapter.addPeer(payload.n);
+    await Promise.race([
+      dial,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("addPeer timed out")), 10_000)
+      ),
+    ]).catch((err) => {
+      log.warn("p2p.connect", "initial dial to sharing peer failed:", err);
+    });
   }
 
-  const handle = await findPlaylistDoc(payload.d as AutomergeUrl);
-  const doc = handle.doc();
+  // wait up to 30s for the doc to arrive; if it times out, proceed anyway -
+  // automerge will sync in the background once a peer connection establishes
+  let handle: Awaited<ReturnType<typeof findPlaylistDoc>> | undefined;
+  try {
+    handle = await Promise.race([
+      findPlaylistDoc(payload.d as AutomergeUrl),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("doc sync timed out")), 30_000)
+      ),
+    ]);
+  } catch {
+    // doc not yet available - will sync in background
+  }
+  const doc = handle?.doc() ?? null;
 
   const myNodeId = identity?.node_id;
-  if (doc) {
+  if (doc && handle) {
     const peers = doc.peers ?? {};
     const missingSelf = !!myNodeId && !(myNodeId in peers);
     const missingSharer = !(payload.n in peers);
@@ -507,10 +554,17 @@ async function openPlaylistzStream(nodeId: string): Promise<BiStreamLike> {
   if (!node) {
     throw new Error("p2p node is not running in this tab");
   }
-  return (await node.open_bi(
-    nodeId,
-    PLAYLISTZ_ALPN
-  )) as unknown as BiStreamLike;
+  // race against a timeout so open_bi doesn't hang indefinitely when the
+  // iroh relay hasn't yet propagated the peer's address. when a dial addr
+  // hint is known for this peer we dial the full endpoint addr to skip the
+  // discovery lookup entirely.
+  const dialTarget = getPeerDialAddr(nodeId) ?? nodeId;
+  return await Promise.race([
+    node.open_bi(dialTarget, PLAYLISTZ_ALPN) as unknown as Promise<BiStreamLike>,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("stream open timed out")), 15_000)
+    ),
+  ]);
 }
 
 /**
@@ -686,7 +740,12 @@ export async function knockForDocAccess(
   if (reply.status === "accepted") {
     const granted = reply.grantedDocIds ?? [docId];
     if (granted.includes(docId)) {
-      await syncSharedDoc({ v: 1, n: ownerNodeId, d: docId, ...(titleHint ? { t: titleHint } : {}) });
+      await syncSharedDoc({
+        v: 1,
+        n: ownerNodeId,
+        d: docId,
+        ...(titleHint ? { t: titleHint } : {}),
+      });
     }
   }
 
@@ -705,24 +764,36 @@ export async function acceptKnock(
   const knock = knocks.find((k) => k.id === knockId);
   if (!knock) throw new Error("knock not found");
 
-  // try to get the peer's avatar from any docIndex entry we already have
-  const allEntries = await getAllDocIndexEntries().catch(() => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>);
-  const peerEntry = allEntries.find((e) => e.remoteNodeId === knock.nodeId);
-
+  // persist the grant and mark the knock accepted up front, so a peer that
+  // re-checks ("check if accepted") immediately after sees the grant rather
+  // than racing the rest of this function.
   await upsertAccessGrant({
     nodeId: knock.nodeId,
     name: knock.name,
     grantedAt: Date.now(),
     docIds,
-    ...(peerEntry?.remoteAvatarDataUrl
-      ? { avatarDataUrl: peerEntry.remoteAvatarDataUrl }
-      : {}),
   });
   await upsertKnock({
     ...knock,
     status: "accepted",
     processedAt: Date.now(),
   });
+
+  // best-effort: enrich the grant with the peer's avatar from a docIndex entry
+  // if we already have one. not on the critical path for access.
+  const allEntries = await getAllDocIndexEntries().catch(
+    () => [] as Awaited<ReturnType<typeof getAllDocIndexEntries>>
+  );
+  const peerEntry = allEntries.find((e) => e.remoteNodeId === knock.nodeId);
+  if (peerEntry?.remoteAvatarDataUrl) {
+    await upsertAccessGrant({
+      nodeId: knock.nodeId,
+      name: knock.name,
+      grantedAt: Date.now(),
+      docIds,
+      avatarDataUrl: peerEntry.remoteAvatarDataUrl,
+    });
+  }
 
   for (const docId of docIds) {
     try {
@@ -832,7 +903,7 @@ export async function handlePlaylistzStream(
       await handleProtocolMessage(stream, peerNodeId, msg);
     }
   } catch (err) {
-      log.warn("p2p.protocol", "protocol stream error:", err);
+    log.warn("p2p.protocol", "protocol stream error:", err);
   } finally {
     try {
       stream.close();
@@ -857,7 +928,9 @@ async function handleProtocolMessage(
         type: "hello_ok",
         nodeId: identity?.node_id ?? "",
         ...(settings.name ? { name: settings.name } : {}),
-        ...(settings.avatarDataUrl ? { avatarDataUrl: settings.avatarDataUrl } : {}),
+        ...(settings.avatarDataUrl
+          ? { avatarDataUrl: settings.avatarDataUrl }
+          : {}),
         public: settings.mode === "public",
       });
       break;
@@ -889,27 +962,32 @@ async function handleProtocolMessage(
       const existing = await getAccessGrant(msg.nodeId);
 
       if (isDocAccessKnock && msg.docId) {
-        // doc_access knock: auto-accept only if the doc has collaborative editing
-        // enabled. in public mode any peer qualifies; in knock mode the peer must
-        // already have an accepted grant covering this doc.
+        // doc_access knock: confirm access when either the doc allows
+        // collaborative editing (auto-accept) or the owner has already granted
+        // this peer explicit access to the doc (e.g. accepted the knock from the
+        // inbox). in public mode collaborative docs auto-accept; in knock mode the
+        // peer needs a grant covering this doc.
         let isCollaborative = false;
         try {
           const handle = await findPlaylistDoc(msg.docId as AutomergeUrl);
           const doc = handle.doc() as Record<string, unknown> | undefined;
-          isCollaborative = !!(doc?.collaborative);
-        } catch { /* doc not available */ }
+          isCollaborative = !!doc?.collaborative;
+        } catch {
+          /* doc not available */
+        }
 
-        const peerQualifies =
-          settings.mode === "public" ||
-          (existing &&
-            (!existing.docIds || existing.docIds.includes(msg.docId)));
+        const hasExplicitGrant =
+          !!existing &&
+          (!existing.docIds || existing.docIds.includes(msg.docId));
+        const autoAccept =
+          isCollaborative && (settings.mode === "public" || hasExplicitGrant);
 
-        if (isCollaborative && peerQualifies) {
+        if (autoAccept) {
           await sendMessage(stream, {
             v: 1,
             type: "knock_status",
             status: "accepted",
-            grantedDocIds: [msg.docId],
+            grantedDocIds: existing?.docIds ?? [msg.docId],
           });
           break;
         }
@@ -942,6 +1020,17 @@ async function handleProtocolMessage(
         });
         break;
       }
+      if (prior?.status === "accepted") {
+        // the owner already approved this peer's request (e.g. accepted the
+        // knock from the inbox), so confirm access on re-check.
+        await sendMessage(stream, {
+          v: 1,
+          type: "knock_status",
+          status: "accepted",
+          grantedDocIds: existing?.docIds ?? (msg.docId ? [msg.docId] : []),
+        });
+        break;
+      }
       if (!prior) {
         await upsertKnock({
           id: crypto.randomUUID(),
@@ -952,7 +1041,9 @@ async function handleProtocolMessage(
           status: "pending",
           createdAt: Date.now(),
           knockType: isDocAccessKnock ? "doc_access" : "browse",
-          ...(isDocAccessKnock && msg.docId ? { requestedDocId: msg.docId } : {}),
+          ...(isDocAccessKnock && msg.docId
+            ? { requestedDocId: msg.docId }
+            : {}),
         });
         notifyKnocksChanged();
       }
@@ -1002,14 +1093,27 @@ async function handleProtocolMessage(
             });
           }
         } catch (err) {
-          log.warn("p2p.knock", "failed to sync granted doc from notify:", docId, err);
+          log.warn(
+            "p2p.knock",
+            "failed to sync granted doc from notify:",
+            docId,
+            err
+          );
         }
       }
       // mark any matching outbound knock as accepted
       const allKnocks = await getAllKnocks();
       for (const k of allKnocks) {
-        if (k.direction === "outbound" && k.nodeId === peerNodeId && k.status === "pending") {
-          await upsertKnock({ ...k, status: "accepted", processedAt: Date.now() });
+        if (
+          k.direction === "outbound" &&
+          k.nodeId === peerNodeId &&
+          k.status === "pending"
+        ) {
+          await upsertKnock({
+            ...k,
+            status: "accepted",
+            processedAt: Date.now(),
+          });
         }
       }
       notifyKnocksChanged();

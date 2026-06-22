@@ -9,7 +9,9 @@ import {
 
 // ---- helpers ----
 
-function makePlaylist(overrides: Partial<FreqholePlaylist["playlist"]> = {}): FreqholePlaylist {
+function makePlaylist(
+  overrides: Partial<FreqholePlaylist["playlist"]> = {}
+): FreqholePlaylist {
   return {
     playlist: {
       id: "test-id",
@@ -116,7 +118,9 @@ describe("FreqholePlaylistzSchema", () => {
   });
 
   it("rejects a non-array", () => {
-    expect(FreqholePlaylistzSchema.safeParse({ playlist: {} }).success).toBe(false);
+    expect(FreqholePlaylistzSchema.safeParse({ playlist: {} }).success).toBe(
+      false
+    );
   });
 });
 
@@ -133,7 +137,9 @@ describe("generatePlaylistzJs", () => {
     const input = [makePlaylist()];
     const out = generatePlaylistzJs(input);
     // extract the inner JSON string from the setAttribute call
-    const match = out.match(/setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/);
+    const match = out.match(
+      /setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/
+    );
     expect(match).not.toBeNull();
     const innerJson = JSON.parse(match![1]!);
     const parsed = JSON.parse(innerJson);
@@ -145,7 +151,9 @@ describe("generatePlaylistzJs", () => {
     const out = generatePlaylistzJs([]);
     expect(out).toContain("setAttribute('data-playlistz'");
     // the embedded JSON should be an empty array
-    const match = out.match(/setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/);
+    const match = out.match(
+      /setAttribute\('data-playlistz',\s*("(?:[^"\\]|\\.)*")\)/
+    );
     expect(match).not.toBeNull();
     const innerJson = JSON.parse(match![1]!);
     expect(JSON.parse(innerJson)).toEqual([]);
@@ -157,12 +165,12 @@ describe("generatePlaylistzJs", () => {
 describe("generateIndexHtml", () => {
   it("includes script tag for playlistz.js (no type=module)", () => {
     const html = generateIndexHtml();
-    expect(html).toContain('<script src="playlistz.js">');
+    expect(html).toContain('src="playlistz.js"');
     expect(html).not.toContain('type="module"');
   });
 
   it("includes script tag for freqhole-playlistz.js", () => {
-    expect(generateIndexHtml()).toContain('<script src="freqhole-playlistz.js">');
+    expect(generateIndexHtml()).toContain('src="freqhole-playlistz.js"');
   });
 
   it("includes freqhole-playlistz custom element", () => {

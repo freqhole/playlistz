@@ -1,4 +1,3 @@
-
 // hover-triggered marquee for long text in constrained rows.
 // ported from tomb/client/spume/src/components/text/MarqueeText.tsx.
 // scrolls on hover when content overflows; does nothing when it fits.
@@ -62,6 +61,7 @@ export function MarqueeText(props: Props) {
   });
 
   createEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     props.text;
     requestAnimationFrame(checkOverflow);
   });

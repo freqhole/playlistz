@@ -10,20 +10,19 @@ test.beforeEach(async ({ page }) => {
   await resetAppState(page);
 });
 
-// the playlist edit panel is identified by its delete-confirm + cover upload area;
-// the simplest stable marker is the close button rendered inside the panel
+// detect the edit panel by its root testid
 const panel = (page: import("@playwright/test").Page) =>
-  page.locator("input[type='file']");
+  page.getByTestId("edit-panel");
 
 test("edit panel opens on every toggle (empty playlist)", async ({ page }) => {
   await createPlaylistViaUI(page);
 
   for (let i = 0; i < 4; i++) {
     await page.getByTestId("btn-edit-playlist").click();
-    await expect(panel(page).first()).toBeAttached({ timeout: 3000 });
+    await expect(panel(page)).toBeAttached({ timeout: 3000 });
 
     await page.getByTestId("btn-edit-playlist").click();
-    await expect(panel(page)).toHaveCount(0, { timeout: 3000 });
+    await expect(panel(page)).not.toBeAttached({ timeout: 3000 });
     await expect(page.getByTestId("btn-edit-playlist")).toBeVisible();
   }
 });
@@ -36,10 +35,10 @@ test("edit panel opens on every toggle (playlist with songs)", async ({
 
   for (let i = 0; i < 4; i++) {
     await page.getByTestId("btn-edit-playlist").click();
-    await expect(panel(page).first()).toBeAttached({ timeout: 3000 });
+    await expect(panel(page)).toBeAttached({ timeout: 3000 });
 
     await page.getByTestId("btn-edit-playlist").click();
-    await expect(panel(page)).toHaveCount(0, { timeout: 3000 });
+    await expect(panel(page)).not.toBeAttached({ timeout: 3000 });
     // rows fly back in
     await expect(page.getByText("song-00")).toBeVisible({ timeout: 3000 });
   }
@@ -57,16 +56,16 @@ test("rapid double-toggle does not wedge the panel", async ({ page }) => {
   // re-open
   await page.getByTestId("btn-edit-playlist").click();
 
-  await expect(panel(page).first()).toBeAttached({ timeout: 3000 });
+  await expect(panel(page)).toBeAttached({ timeout: 3000 });
 });
 
 test("escape closes the edit panel", async ({ page }) => {
   await createPlaylistViaUI(page);
   await page.getByTestId("btn-edit-playlist").click();
-  await expect(panel(page).first()).toBeAttached({ timeout: 3000 });
+  await expect(panel(page)).toBeAttached({ timeout: 3000 });
 
   await page.keyboard.press("Escape");
-  await expect(panel(page)).toHaveCount(0, { timeout: 3000 });
+  await expect(panel(page)).not.toBeAttached({ timeout: 3000 });
 });
 
 test("song edit panel opens from a row and shows the title", async ({

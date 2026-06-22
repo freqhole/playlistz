@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, onMount } from "solid-js";
+import { createSignal, createEffect, For, Show, onMount } from "solid-js";
 import {
   updatePlaylist,
   deletePlaylist,
@@ -127,7 +127,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         image?: unknown;
       };
       props.onSave({ ...rest, ...updates });
-    } catch (err) {
+    } catch (_err) {
       setError("failed to remove image");
     } finally {
       setIsLoading(false);
@@ -159,6 +159,10 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
 
   const isSubscribed = () =>
     !!props.playlist.remoteNodeId && !props.playlist.isForked;
+
+  // read-only subscriptions show fork / request-collaboration. collaborative
+  // subscriptions are editable in place, so that box is hidden for them.
+  const isReadOnly = () => isSubscribed() && !props.playlist.collaborative;
 
   const handleFork = async () => {
     try {
@@ -352,6 +356,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
               }
               fallback={
                 <img
+                  data-testid="img-playlist-cover"
                   src={selectedImageUrl()}
                   alt="playlist cover"
                   class="w-full h-auto"
@@ -365,6 +370,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                 title="set the page background to this playlist's cover image"
               >
                 <img
+                  data-testid="img-playlist-cover"
                   src={selectedImageUrl()}
                   alt="playlist cover"
                   class="w-full h-auto"
@@ -377,6 +383,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
           </Show>
 
           <input
+            data-testid="input-cover-image"
             type="file"
             accept="image/*"
             onChange={handleImageUpload}
@@ -406,7 +413,7 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
         {/* filter controls + playlist info */}
         <div class="flex flex-col gap-5 min-w-0 sm:order-1">
           {/* subscribed playlist: fork or request collaboration */}
-          <Show when={isSubscribed()}>
+          <Show when={isReadOnly()}>
             <div class="space-y-2 border border-gray-700 p-3">
               <p class="text-xs text-gray-400">
                 this is a subscribed playlist from{" "}
@@ -658,9 +665,9 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                 }}
                 class="bg-black text-white text-xs border border-gray-700 px-2 py-1 focus:outline-none focus:border-magenta-500"
               >
-                {BG_SIZE_OPTIONS.map((o) => (
-                  <option value={o}>{o}</option>
-                ))}
+                <For each={BG_SIZE_OPTIONS}>
+                  {(o) => <option value={o}>{o}</option>}
+                </For>
               </select>
             </div>
             <div class="grid grid-cols-[5rem_1fr] items-center gap-2">
@@ -675,9 +682,9 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                 }}
                 class="bg-black text-white text-xs border border-gray-700 px-2 py-1 focus:outline-none focus:border-magenta-500"
               >
-                {BG_POSITION_OPTIONS.map((o) => (
-                  <option value={o}>{o}</option>
-                ))}
+                <For each={BG_POSITION_OPTIONS}>
+                  {(o) => <option value={o}>{o}</option>}
+                </For>
               </select>
             </div>
             <div class="grid grid-cols-[5rem_1fr] items-center gap-2">
@@ -692,9 +699,9 @@ export function PlaylistEditPanel(props: PlaylistEditPanelProps) {
                 }}
                 class="bg-black text-white text-xs border border-gray-700 px-2 py-1 focus:outline-none focus:border-magenta-500"
               >
-                {BG_REPEAT_OPTIONS.map((o) => (
-                  <option value={o}>{o}</option>
-                ))}
+                <For each={BG_REPEAT_OPTIONS}>
+                  {(o) => <option value={o}>{o}</option>}
+                </For>
               </select>
             </div>
           </div>

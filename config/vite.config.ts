@@ -13,12 +13,19 @@ function serveDistAssets() {
     configureServer(server: import("vite").ViteDevServer) {
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split("?")[0] ?? "/";
-        const distPath = path.resolve(__dirname, "../dist", url.replace(/^\//, ""));
+        const distPath = path.resolve(
+          __dirname,
+          "../dist",
+          url.replace(/^\//, "")
+        );
         if (fs.existsSync(distPath) && fs.statSync(distPath).isFile()) {
           const ext = path.extname(distPath);
-          const mime = ext === ".js" || ext === ".mjs" ? "application/javascript"
-            : ext === ".map" ? "application/json"
-            : "application/octet-stream";
+          const mime =
+            ext === ".js" || ext === ".mjs"
+              ? "application/javascript"
+              : ext === ".map"
+                ? "application/json"
+                : "application/octet-stream";
           res.setHeader("Content-Type", mime);
           fs.createReadStream(distPath).pipe(res);
           return;

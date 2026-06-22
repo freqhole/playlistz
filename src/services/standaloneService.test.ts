@@ -42,7 +42,7 @@ vi.mock("./playlistDocService.js", () => ({
   getSongById: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("@freqhole/api-client/playlistz", () => ({
+vi.mock("../types/playlistz", () => ({
   emptyPlaylistDoc: vi.fn().mockReturnValue({}),
   upsertSong: vi.fn(),
   setMetadata: vi.fn(),
@@ -238,7 +238,9 @@ describe("Standalone Service", () => {
 
       await initializeStandalonePlaylist(mockPlaylistData, mockCallbacks);
 
-      expect(loadSetting).toHaveBeenCalledWith("standalone:standalone-playlist");
+      expect(loadSetting).toHaveBeenCalledWith(
+        "standalone:standalone-playlist"
+      );
       expect(createPlaylistDoc).toHaveBeenCalled();
       expect(addDocIndexEntry).toHaveBeenCalled();
       expect(saveSetting).toHaveBeenCalledWith(
@@ -512,9 +514,7 @@ describe("Standalone Service", () => {
     });
 
     it("should return true on blob store error", async () => {
-      vi.mocked(getBlobMetadata).mockRejectedValue(
-        new Error("storage error")
-      );
+      vi.mocked(getBlobMetadata).mockRejectedValue(new Error("storage error"));
 
       const mockSong = createMockSong({
         id: "test-song",
@@ -724,7 +724,10 @@ describe("Standalone Service", () => {
   describe("Advanced Playlist Scenarios", () => {
     describe("initializeStandalonePlaylist with existing data", () => {
       it("should handle playlist revision updates", async () => {
-        vi.mocked(loadSetting).mockResolvedValue({ rev: 1, docId: "automerge:old" });
+        vi.mocked(loadSetting).mockResolvedValue({
+          rev: 1,
+          docId: "automerge:old",
+        });
 
         const playlistData = {
           playlist: {
@@ -765,7 +768,10 @@ describe("Standalone Service", () => {
       });
 
       it("should skip update when revision is same", async () => {
-        vi.mocked(loadSetting).mockResolvedValue({ rev: 1, docId: "automerge:same" });
+        vi.mocked(loadSetting).mockResolvedValue({
+          rev: 1,
+          docId: "automerge:same",
+        });
 
         const playlistData = {
           playlist: {
@@ -881,7 +887,10 @@ describe("Standalone Service", () => {
       it("should return false when blob metadata exists", async () => {
         vi.mocked(getBlobMetadata).mockResolvedValue({ size: 5000 } as any);
 
-        const mockSong = createMockSong({ id: "valid-audio-song", sha: "valid-sha" });
+        const mockSong = createMockSong({
+          id: "valid-audio-song",
+          sha: "valid-sha",
+        });
 
         const result = await songNeedsAudioData(mockSong);
 

@@ -2,10 +2,13 @@
 // and the m3u generator. no external dependencies.
 
 export function sanitizeFilename(name: string): string {
-  return name
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
-    .replace(/\s+/g, "_")
-    .substring(0, 200);
+  return (
+    name
+      // eslint-disable-next-line no-control-regex
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+      .replace(/\s+/g, "_")
+      .substring(0, 200)
+  );
 }
 
 export function createSafeTitle(title: string): string {

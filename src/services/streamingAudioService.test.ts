@@ -226,9 +226,7 @@ describe("downloadSongIfNeeded", () => {
 
   it("proceeds with download when the cache check throws", async () => {
     vi.mocked(getBlobMetadata).mockRejectedValue(new Error("idb broke"));
-    mockFetch.mockResolvedValue(
-      makeStreamResponse([new Uint8Array([1])], {})
-    );
+    mockFetch.mockResolvedValue(makeStreamResponse([new Uint8Array([1])], {}));
 
     const result = await downloadSongIfNeeded(
       makeSong({ sha: "whatever" }),
@@ -261,9 +259,7 @@ describe("downloadSongIfNeeded", () => {
   });
 
   it("clears the active download tracker when finished", async () => {
-    mockFetch.mockResolvedValue(
-      makeStreamResponse([new Uint8Array([1])], {})
-    );
+    mockFetch.mockResolvedValue(makeStreamResponse([new Uint8Array([1])], {}));
 
     const song = makeSong();
     await downloadSongIfNeeded(song, "https://example.com/a.mp3");

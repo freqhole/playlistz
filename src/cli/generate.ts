@@ -1,17 +1,25 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-import { FreqholePlaylistzSchema, generatePlaylistzJs, type FreqholePlaylist, type FreqholePlaylistz } from "../utils/standaloneTemplates.js";
+import {
+  FreqholePlaylistzSchema,
+  generatePlaylistzJs,
+  type FreqholePlaylist,
+  type FreqholePlaylistz,
+} from "../utils/standaloneTemplates.js";
 import { parseM3U, serializeM3U } from "../utils/m3u.js";
 
 // deterministic uuid v5 from a string (dns namespace)
 function uuidv5(name: string): string {
   const ns = Buffer.from("6ba7b8109dad11d180b400c04fd430c8", "hex");
-  const hash = crypto.createHash("sha1").update(Buffer.concat([ns, Buffer.from(name)])).digest();
+  const hash = crypto
+    .createHash("sha1")
+    .update(Buffer.concat([ns, Buffer.from(name)]))
+    .digest();
   hash[6] = (hash[6]! & 0x0f) | 0x50;
   hash[8] = (hash[8]! & 0x3f) | 0x80;
   const h = hash.toString("hex");
-  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20,32)}`;
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
 
 function extOf(filePath: string): string {
@@ -20,8 +28,12 @@ function extOf(filePath: string): string {
 
 function mimeForExt(ext: string): string {
   const map: Record<string, string> = {
-    ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav",
-    ".flac": "audio/flac", ".ogg": "audio/ogg", ".webm": "audio/webm",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".webm": "audio/webm",
   };
   return map[ext] ?? "audio/mpeg";
 }
@@ -31,15 +43,21 @@ function loadExistingPlaylistz(playlistzPath: string): FreqholePlaylistz {
   if (!fs.existsSync(playlistzPath)) return [];
   try {
     const src = fs.readFileSync(playlistzPath, "utf-8");
-    const attrMatch = src.match(/setAttribute\s*\(\s*'data-playlistz'\s*,\s*("(?:[^"\\]|\\.)*")\s*\)/);
+    const attrMatch = src.match(
+      /setAttribute\s*\(\s*'data-playlistz'\s*,\s*("(?:[^"\\]|\\.)*")\s*\)/
+    );
     if (!attrMatch) {
-      console.warn("existing playlistz.js has unrecognised format - treating as empty");
+      console.warn(
+        "existing playlistz.js has unrecognised format - treating as empty"
+      );
       return [];
     }
     const raw = JSON.parse(JSON.parse(attrMatch[1]!));
     const parsed = FreqholePlaylistzSchema.safeParse(raw);
     if (parsed.success) return parsed.data;
-    console.warn("existing playlistz.js failed schema validation - treating as empty");
+    console.warn(
+      "existing playlistz.js failed schema validation - treating as empty"
+    );
     return [];
   } catch {
     console.warn("could not parse existing playlistz.js - treating as empty");
@@ -56,9 +74,15 @@ export function generateData(dir: string): void {
 
   // find .m3u8 files in dir or data/ subdir
   const candidates = [
-    ...fs.readdirSync(resolved).filter((f) => f.endsWith(".m3u8")).map((f) => path.join(resolved, f)),
+    ...fs
+      .readdirSync(resolved)
+      .filter((f) => f.endsWith(".m3u8"))
+      .map((f) => path.join(resolved, f)),
     ...(fs.existsSync(path.join(resolved, "data"))
-      ? fs.readdirSync(path.join(resolved, "data")).filter((f) => f.endsWith(".m3u8")).map((f) => path.join(resolved, "data", f))
+      ? fs
+          .readdirSync(path.join(resolved, "data"))
+          .filter((f) => f.endsWith(".m3u8"))
+          .map((f) => path.join(resolved, "data", f))
       : []),
   ];
 
@@ -101,12 +125,19 @@ export function generateData(dir: string): void {
     console.log(`  updated: ${path.relative(resolved, m3uPath)}`);
 
     // resolve playlist cover image metadata
-    const coverExt = parsed.playlistImageFile ? extOf(parsed.playlistImageFile) : undefined;
-    const coverMime = coverExt === ".gif" ? "image/gif"
-      : coverExt === ".png" ? "image/png"
-      : coverExt === ".webp" ? "image/webp"
-      : coverExt ? "image/jpeg"
+    const coverExt = parsed.playlistImageFile
+      ? extOf(parsed.playlistImageFile)
       : undefined;
+    const coverMime =
+      coverExt === ".gif"
+        ? "image/gif"
+        : coverExt === ".png"
+          ? "image/png"
+          : coverExt === ".webp"
+            ? "image/webp"
+            : coverExt
+              ? "image/jpeg"
+              : undefined;
 
     // build songs array
     const songs = parsed.songs.map((s, i) => {
@@ -115,13 +146,19 @@ export function generateData(dir: string): void {
       const audioExt = extOf(audioFilename);
 
       // image: strip "data/" prefix and figure out extension
-      const imageBasename = s.imageFile ? path.basename(s.imageFile) : undefined;
+      const imageBasename = s.imageFile
+        ? path.basename(s.imageFile)
+        : undefined;
       const imageExt = imageBasename ? extOf(imageBasename) : undefined;
-      const imageMime = !imageExt ? undefined
-        : imageExt === ".gif" ? "image/gif"
-        : imageExt === ".png" ? "image/png"
-        : imageExt === ".webp" ? "image/webp"
-        : "image/jpeg";
+      const imageMime = !imageExt
+        ? undefined
+        : imageExt === ".gif"
+          ? "image/gif"
+          : imageExt === ".png"
+            ? "image/png"
+            : imageExt === ".webp"
+              ? "image/webp"
+              : "image/jpeg";
 
       // check file exists on disk
       const audioPath = path.join(m3uDir, audioFilename);

@@ -1,4 +1,3 @@
-
 import { createSignal, batch } from "solid-js";
 import type { Song, Playlist } from "../types/playlist.js";
 import { updateSongInDoc } from "../services/playlistDocService.js";
@@ -46,7 +45,11 @@ export function useSongState() {
     try {
       setError(null);
       // song.playlistId is the docId for doc-backed songs
-      await updateSongInDoc(updatedSong.playlistId, updatedSong.id, updatedSong);
+      await updateSongInDoc(
+        updatedSong.playlistId,
+        updatedSong.id,
+        updatedSong
+      );
       setEditingSong(updatedSong);
     } catch (err) {
       log.error("song.save", "error saving song:", err);

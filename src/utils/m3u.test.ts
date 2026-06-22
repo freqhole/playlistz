@@ -117,7 +117,12 @@ describe("serializeM3U", () => {
 
 describe("generateM3UContent", () => {
   const getExt = (mime: string) => {
-    const map: Record<string, string> = { "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp" };
+    const map: Record<string, string> = {
+      "image/jpeg": ".jpg",
+      "image/png": ".png",
+      "image/gif": ".gif",
+      "image/webp": ".webp",
+    };
     return map[mime] ?? ".jpg";
   };
 
@@ -166,7 +171,12 @@ describe("generateM3UContent", () => {
   });
 
   it("skips songs with no filename", () => {
-    const out = generateM3UContent(playlist, songs, [undefined as unknown as string], getExt);
+    const out = generateM3UContent(
+      playlist,
+      songs,
+      [undefined as unknown as string],
+      getExt
+    );
     expect(out).not.toContain("#EXTINF");
   });
 });

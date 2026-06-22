@@ -6,16 +6,24 @@ import {
   docToPlaylist,
 } from "./playlistDocService.js";
 import { findPlaylistDoc } from "./automergeRepo.js";
-import { parsePlaylistDoc } from "@freqhole/api-client/playlistz";
+import { parsePlaylistDoc } from "../types/playlistz";
 import JSZip from "jszip";
 import { getBlob } from "@freqhole/api-client/storage";
-import { buildPlaylistZip, cleanupOpfsTempFile } from "../zip-bundle/zipBuilder.js";
-import type { PlaylistZipEntry, PlaylistZipOptions } from "../zip-bundle/types.js";
+import {
+  buildPlaylistZip,
+  cleanupOpfsTempFile,
+} from "../zip-bundle/zipBuilder.js";
+import type {
+  PlaylistZipEntry,
+  PlaylistZipOptions,
+} from "../zip-bundle/types.js";
 
 export type PlaylistDownloadOptions = PlaylistZipOptions;
 
 // fetches a blob from IDB by sha256 key.
-async function idbBlobFetcher(sha256: string): Promise<ArrayBuffer | undefined> {
+async function idbBlobFetcher(
+  sha256: string
+): Promise<ArrayBuffer | undefined> {
   const blob = await getBlob(sha256);
   return blob?.arrayBuffer();
 }
@@ -94,11 +102,14 @@ export async function downloadPlaylistAsZip(
   // (which lacks _primaryImageSha)
   const handle = await findPlaylistDoc(playlist.id as AutomergeUrl);
   const raw = handle.doc();
-  const docPlaylist = raw ? docToPlaylist(playlist.id, parsePlaylistDoc(raw)) : null;
+  const docPlaylist = raw
+    ? docToPlaylist(playlist.id, parsePlaylistDoc(raw))
+    : null;
   const updatedPlaylist = {
     ...playlist,
     rev: newRev,
-    _primaryImageSha: docPlaylist?._primaryImageSha ?? playlist._primaryImageSha,
+    _primaryImageSha:
+      docPlaylist?._primaryImageSha ?? playlist._primaryImageSha,
     imageType: playlist.imageType ?? docPlaylist?.imageType,
   };
 
@@ -117,7 +128,8 @@ export async function downloadPlaylistAsZip(
     appBundleUrl,
   });
 
-  const safeTitle = entry.playlist.title.replace(/[^a-zA-Z0-9_-]/g, "_") || "playlist";
+  const safeTitle =
+    entry.playlist.title.replace(/[^a-zA-Z0-9_-]/g, "_") || "playlist";
   triggerDownload(zipBlob, `${safeTitle}.zip`);
 }
 

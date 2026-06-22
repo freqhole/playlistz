@@ -413,9 +413,7 @@ export async function mutateAndNotify<T extends Playlist | Song>(
 export async function getSongsWithAudioData(
   _songIds: string[]
 ): Promise<Song[]> {
-  console.warn(
-    "getsongswithaudiodata: stub - use playlistDocService instead"
-  );
+  console.warn("getsongswithaudiodata: stub - use playlistDocService instead");
   return [];
 }
 

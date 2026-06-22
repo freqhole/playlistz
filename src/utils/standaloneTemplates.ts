@@ -46,7 +46,9 @@ export const FreqholePlaylistSchema = z.object({
 export const FreqholePlaylistzSchema = z.array(FreqholePlaylistSchema);
 
 export type FreqholePlaylistSong = z.infer<typeof FreqholePlaylistSongSchema>;
-export type FreqholePlaylistHeader = z.infer<typeof FreqholePlaylistHeaderSchema>;
+export type FreqholePlaylistHeader = z.infer<
+  typeof FreqholePlaylistHeaderSchema
+>;
 export type FreqholePlaylist = z.infer<typeof FreqholePlaylistSchema>;
 export type FreqholePlaylistz = z.infer<typeof FreqholePlaylistzSchema>;
 

@@ -67,6 +67,11 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
   const isSubscribed = () =>
     !!props.playlist().remoteNodeId && !props.playlist().isForked;
 
+  // editing is locked for subscriptions unless the playlist is collaborative.
+  // collaborative playlists let subscribers edit in place (changes sync back);
+  // non-collaborative subscriptions stay read-only (fork to edit).
+  const isReadOnly = () => isSubscribed() && !props.playlist().collaborative;
+
   const {
     handleEditSong,
     handleEditPlaylist,
@@ -422,7 +427,7 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                         title: e.currentTarget.value,
                       });
                     }}
-                    disabled={isSubscribed()}
+                    disabled={isReadOnly()}
                     class="text-3xl font-bold text-white bg-transparent border-none outline-none focus:bg-gray-800 px-2 py-1 rounded w-full disabled:opacity-60 disabled:cursor-not-allowed"
                     placeholder="playlist title"
                   />
@@ -438,13 +443,13 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                         description: e.currentTarget.value,
                       });
                     }}
-                    disabled={isSubscribed()}
+                    disabled={isReadOnly()}
                     class="text-white bg-transparent border-none focus:bg-gray-800 px-2 py-1 rounded w-full disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
 
                 {/* read-only banner for subscribed playlists */}
-                <Show when={isSubscribed()}>
+                <Show when={isReadOnly()}>
                   <SubscribedBanner
                     playlist={props.playlist()}
                     onFork={(newDocId) => {
@@ -598,9 +603,11 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                   onClick={() => {
                     if (showAllPlaylists()) setShowAllPlaylists(false);
                     if (showingShare()) closeShare();
-                    editingPlaylist()
-                      ? handleCloseEdit()
-                      : handleEditPlaylist();
+                    if (editingPlaylist()) {
+                      handleCloseEdit();
+                    } else {
+                      handleEditPlaylist();
+                    }
                   }}
                   class={`p-2 hover:text-white hover:bg-gray-700 transition-colors bg-black/90 border ${editingPlaylist() ? "text-magenta-400 border-magenta-500" : "text-gray-400 border-transparent"}`}
                   title={
@@ -1122,13 +1129,13 @@ export function PlaylistContainer(props: { playlist: Accessor<Playlist> }) {
                             <SongRow
                               songId={songId}
                               index={index()}
-                              showRemoveButton={!isSubscribed()}
+                              showRemoveButton={!isReadOnly()}
                               onRemove={handleRemoveSong}
                               onPlay={handlePlaySongWithPlaylist}
                               onPause={handlePauseSong}
                               onEdit={handleEditSong}
                               onReorder={
-                                isSubscribed() ? undefined : handleReorderSongs
+                                isReadOnly() ? undefined : handleReorderSongs
                               }
                             />
                           </div>

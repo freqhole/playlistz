@@ -13,7 +13,7 @@ import {
   type P2PIdentity,
   type IdentityStore,
 } from "@freqhole/api-client/storage";
-import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN } from "@freqhole/api-client/playlistz";
+import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN } from "../types/playlistz";
 import type {
   MiddenStreamNode,
   IrohNetworkAdapterOptions,
@@ -67,9 +67,16 @@ function getLocalStore(): IdentityStore {
 
 let currentIdentity: P2PIdentity | null = null;
 let currentNode: MiddenStreamNode | null = null;
+let currentNodeAddr: string | null = null;
 let leaderState = false;
 let started = false;
 let cancelLeadership: (() => void) | null = null;
+
+// optional per-peer dial address hints keyed by node id. a hint is the full
+// serialized endpoint addr (node id + relay url) which lets a dial skip
+// discovery (pkarr/dns) lookup. empty in normal operation; only populated by
+// callers that already know a peer's reachable addr (e.g. tests via dev hooks).
+const peerDialAddrHints = new Map<string, string>();
 
 // leadership phase: "unknown" until the lock request settles, then
 // "leader" / "waiting" / "unsupported". used by waitForNode to short-circuit
@@ -179,6 +186,13 @@ export async function startP2P(): Promise<void> {
         // expose the node BEFORE notifying listeners - the iroh adapter's
         // identity listener calls getNode() and would otherwise throw
         currentNode = node;
+        // capture our own reachable addr (node id + relay url) so peers we
+        // hand a share link to can dial us deterministically when available.
+        try {
+          currentNodeAddr = node.node_addr?.() ?? null;
+        } catch {
+          currentNodeAddr = null;
+        }
 
         // update node_id from the real iroh public key
         const realNodeId = node.node_id();
@@ -220,6 +234,7 @@ export function stopP2P(): void {
   cancelLeadership?.();
   cancelLeadership = null;
   currentNode = null;
+  currentNodeAddr = null;
   if (leaderState) {
     leaderState = false;
     notifyLeadershipListeners();
@@ -229,6 +244,30 @@ export function stopP2P(): void {
 /** get the running midden node, or null if not leader or not yet started. */
 export function getNode(): MiddenStreamNode | null {
   return currentNode;
+}
+
+/**
+ * get this node's full serialized endpoint addr (node id + relay url), or null
+ * if the node is not up or the binding does not expose it.
+ */
+export function getNodeAddr(): string | null {
+  return currentNodeAddr;
+}
+
+/**
+ * seed a dial address hint for a peer. the hint is the full serialized
+ * endpoint addr; dials keyed by this node id can then skip discovery. used by
+ * tests (via dev hooks) to make peer connections deterministic. no-op effect
+ * on production share links, which only carry node ids.
+ */
+export function seedPeerAddr(nodeId: string, addr: string): void {
+  if (!nodeId || !addr) return;
+  peerDialAddrHints.set(nodeId, addr);
+}
+
+/** get a previously seeded dial address hint for a peer, if any. */
+export function getPeerDialAddr(nodeId: string): string | undefined {
+  return peerDialAddrHints.get(nodeId);
 }
 
 /**

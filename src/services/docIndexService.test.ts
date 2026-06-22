@@ -18,7 +18,11 @@ import {
   getAllAccessGrants,
   deleteAccessGrant,
 } from "./docIndexService.js";
-import type { DocIndexEntry, KnockRecord, AccessGrantRecord } from "./indexedDBService.js";
+import type {
+  DocIndexEntry,
+  KnockRecord,
+  AccessGrantRecord,
+} from "./indexedDBService.js";
 
 // fresh idb + db connection for each test (avoids data leaking across tests)
 beforeEach(() => {
@@ -51,7 +55,9 @@ function makeKnock(overrides: Partial<KnockRecord> = {}): KnockRecord {
   };
 }
 
-function makeGrant(overrides: Partial<AccessGrantRecord> = {}): AccessGrantRecord {
+function makeGrant(
+  overrides: Partial<AccessGrantRecord> = {}
+): AccessGrantRecord {
   return {
     nodeId: "node-abc",
     name: "alice",

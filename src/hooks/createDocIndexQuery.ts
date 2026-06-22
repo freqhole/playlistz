@@ -7,7 +7,10 @@
 
 import { createSignal, onCleanup } from "solid-js";
 import type { Accessor } from "solid-js";
-import { getAllDocIndexEntries, DOC_INDEX_CHANGE_EVENT } from "../services/docIndexService.js";
+import {
+  getAllDocIndexEntries,
+  DOC_INDEX_CHANGE_EVENT,
+} from "../services/docIndexService.js";
 import { DB_NAME, DOC_INDEX_STORE } from "../services/indexedDBService.js";
 import type { DocIndexEntry } from "../services/indexedDBService.js";
 import { log } from "../utils/log.js";
@@ -24,7 +27,14 @@ export function createDocIndexQuery(): Accessor<DocIndexEntry[]> {
     _refreshCalls++;
     log.debug("docindex", "refresh #", String(_refreshCalls));
     const all = await getAllDocIndexEntries();
-    log.debug("docindex", "refresh #", String(_refreshCalls), "got", String(all.length), "entries");
+    log.debug(
+      "docindex",
+      "refresh #",
+      String(_refreshCalls),
+      "got",
+      String(all.length),
+      "entries"
+    );
     setEntries(all);
   }
 
@@ -41,7 +51,9 @@ export function createDocIndexQuery(): Accessor<DocIndexEntry[]> {
 
   // CustomEvent: same-page invalidation - works on file:// (null origin)
   // where BroadcastChannel may not deliver same-page messages reliably.
-  const onDocIndexChanged = () => { void refresh(); };
+  const onDocIndexChanged = () => {
+    void refresh();
+  };
   window.addEventListener(DOC_INDEX_CHANGE_EVENT, onDocIndexChanged);
 
   onCleanup(() => {

@@ -1,4 +1,3 @@
-
 import { createSignal, onMount, onCleanup } from "solid-js";
 
 export function useUIState() {

@@ -11,7 +11,7 @@ import {
   decodeMessage,
   type Message,
   type BiStreamLike,
-} from "@freqhole/api-client/playlistz";
+} from "../types/playlistz";
 import type { Playlist, Song } from "../types/playlist.js";
 
 // --- mocks (hoisted before module imports) ---

@@ -98,7 +98,7 @@ import {
 import { _resetRepoForTests, findPlaylistDoc } from "./automergeRepo.js";
 import { resetDBCache } from "./indexedDBService.js";
 import { getAllDocIndexEntries, getDocIndexEntry } from "./docIndexService.js";
-import { parsePlaylistDoc } from "@freqhole/api-client/playlistz";
+import { parsePlaylistDoc } from "../types/playlistz";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 
 function makeAudioFile(name = "track.mp3", content = "fake audio"): File {
@@ -321,9 +321,18 @@ describe("playlistDocService", () => {
   describe("reorderSongsInDoc", () => {
     it("moves a song to a new position", async () => {
       const playlist = await createPlaylist({ title: "order" });
-      const a = await addSongToPlaylist(playlist.id, makeAudioFile("a.mp3", "aaa"));
-      const b = await addSongToPlaylist(playlist.id, makeAudioFile("b.mp3", "bbb"));
-      const c = await addSongToPlaylist(playlist.id, makeAudioFile("c.mp3", "ccc"));
+      const a = await addSongToPlaylist(
+        playlist.id,
+        makeAudioFile("a.mp3", "aaa")
+      );
+      const b = await addSongToPlaylist(
+        playlist.id,
+        makeAudioFile("b.mp3", "bbb")
+      );
+      const c = await addSongToPlaylist(
+        playlist.id,
+        makeAudioFile("c.mp3", "ccc")
+      );
 
       await reorderSongsInDoc(playlist.id, 0, 2);
 

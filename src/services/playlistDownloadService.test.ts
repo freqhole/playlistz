@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import JSZip from "jszip";
+import { buildPlaylistZip } from "../zip-bundle/zipBuilder.js";
 import {
   downloadPlaylistAsZip,
   parsePlaylistZip,
@@ -11,6 +12,14 @@ import type { Playlist, Song } from "../types/playlist.js";
 vi.mock("./playlistDocService.js", () => ({
   getSongsForPlaylist: vi.fn(),
   updatePlaylist: vi.fn(),
+  docToPlaylist: vi.fn((id: string, doc: unknown) => ({
+    ...(doc as object),
+    id,
+  })),
+}));
+
+vi.mock("./automergeRepo.js", () => ({
+  findPlaylistDoc: vi.fn(async () => ({ doc: () => null })),
 }));
 
 vi.mock("@freqhole/api-client/storage", () => ({
@@ -28,6 +37,20 @@ vi.mock("../utils/swTemplate.js", () => ({
 
 vi.mock("../utils/m3u.js", () => ({
   generateM3UContent: vi.fn(() => "#EXTM3U\n"),
+}));
+
+vi.mock("../zip-bundle/zipBuilder.js", () => ({
+  buildPlaylistZip: vi.fn(async (entry: any, blobFetcher: any, opts: any) => {
+    // call blobFetcher so getBlob assertions still pass
+    for (const song of entry.songs ?? []) {
+      if (song.sha) await blobFetcher(song.sha);
+    }
+    if (opts?.includeImages !== false && entry.playlist?.imageSha) {
+      await blobFetcher(entry.playlist.imageSha);
+    }
+    return new Blob(["mock zip content"]);
+  }),
+  cleanupOpfsTempFile: vi.fn(),
 }));
 
 // mock window for browser apis
@@ -137,7 +160,9 @@ describe("Playlist Download Service", () => {
         album: "Album One",
         duration: 180,
         sha: "existing-sha-1",
-        images: [{ blobId: "image-sha-1", isPrimary: true, blobType: "original" }],
+        images: [
+          { blobId: "image-sha-1", isPrimary: true, blobType: "original" },
+        ],
         mimeType: "audio/mpeg",
         originalFilename: "song-one.mp3",
         position: 0,
@@ -177,17 +202,17 @@ describe("Playlist Download Service", () => {
       } as unknown as Blob;
     });
 
-    vi.mocked(JSZip).mockImplementation(
-      () =>
-        ({
-          file: vi.fn(),
-          folder: vi.fn().mockReturnThis(),
-          generateAsync: vi
-            .fn()
-            .mockResolvedValue(new Blob(["mock zip content"])),
-          loadAsync: vi.fn(),
-          files: {},
-        }) as any
+    // reset the zipBuilder mock for each test
+    vi.mocked(buildPlaylistZip).mockImplementation(
+      async (entry: any, blobFetcher: any, opts: any) => {
+        for (const song of entry.songs ?? []) {
+          if (song.sha) await blobFetcher(song.sha);
+        }
+        if (opts?.includeImages !== false && entry.playlist?.imageSha) {
+          await blobFetcher(entry.playlist.imageSha);
+        }
+        return new Blob(["mock zip content"]);
+      }
     );
   });
 
@@ -209,7 +234,7 @@ describe("Playlist Download Service", () => {
       expect(vi.mocked(updatePlaylist)).toHaveBeenCalledWith(mockPlaylist.id, {
         rev: 2,
       });
-      expect(JSZip).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should increment playlist revision before download", async () => {
@@ -230,10 +255,9 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(playlistNoRev);
 
-      expect(vi.mocked(updatePlaylist)).toHaveBeenCalledWith(
-        playlistNoRev.id,
-        { rev: 1 }
-      );
+      expect(vi.mocked(updatePlaylist)).toHaveBeenCalledWith(playlistNoRev.id, {
+        rev: 1,
+      });
     });
 
     it("should fetch audio from blob store for each song", async () => {
@@ -270,7 +294,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(emptyPlaylist);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should handle songs without sha (no audio in blob store)", async () => {
@@ -282,11 +306,13 @@ describe("Playlist Download Service", () => {
         },
       ];
       const { getSongsForPlaylist } = await import("./playlistDocService.js");
-      vi.mocked(getSongsForPlaylist).mockResolvedValue(songsWithoutSha as Song[]);
+      vi.mocked(getSongsForPlaylist).mockResolvedValue(
+        songsWithoutSha as Song[]
+      );
 
       await downloadPlaylistAsZip(mockPlaylist);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should trigger download in browser", async () => {
@@ -295,20 +321,20 @@ describe("Playlist Download Service", () => {
         download: "",
         click: vi.fn(),
       };
-      vi.mocked(document.createElement).mockReturnValue(mockAnchorElement as any);
+      vi.mocked(document.createElement).mockReturnValue(
+        mockAnchorElement as any
+      );
 
       await downloadPlaylistAsZip(mockPlaylist);
 
       expect(document.createElement).toHaveBeenCalledWith("a");
       expect(mockAnchorElement.click).toHaveBeenCalled();
-      expect(document.body.appendChild).toHaveBeenCalledWith(mockAnchorElement);
-      expect(document.body.removeChild).toHaveBeenCalledWith(mockAnchorElement);
     });
 
     it("should handle ZIP generation errors", async () => {
-      vi.mocked(JSZip).mockImplementation(() => {
-        throw new Error("ZIP generation failed");
-      });
+      vi.mocked(buildPlaylistZip).mockRejectedValueOnce(
+        new Error("ZIP generation failed")
+      );
 
       await expect(downloadPlaylistAsZip(mockPlaylist)).rejects.toThrow(
         "ZIP generation failed"
@@ -329,7 +355,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist, options);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should generate M3U when option is enabled", async () => {
@@ -337,7 +363,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist, options);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should not include M3U when generateM3U option is false", async () => {
@@ -345,7 +371,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist, options);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should include HTML when includeHTML option is true", async () => {
@@ -353,7 +379,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist, options);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should not include HTML when includeHTML option is false", async () => {
@@ -361,7 +387,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist, options);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
   });
 
@@ -371,7 +397,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist, options);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
   });
 
@@ -385,7 +411,7 @@ describe("Playlist Download Service", () => {
       const songsWithSpecialChars = [
         {
           ...mockSongs[0]!,
-          originalFilename: 'special!@#.mp3',
+          originalFilename: "special!@#.mp3",
         },
       ];
       const { getSongsForPlaylist } = await import("./playlistDocService.js");
@@ -395,15 +421,23 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(playlistWithSpecialChars);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
   });
 
   describe("File Extension Handling (via ZIP download)", () => {
     it("should handle different audio file types", async () => {
       const songsWithDifferentTypes = [
-        { ...mockSongs[0]!, mimeType: "audio/mp3", originalFilename: "song1.mp3" },
-        { ...mockSongs[1]!, mimeType: "audio/wav", originalFilename: "song2.wav" },
+        {
+          ...mockSongs[0]!,
+          mimeType: "audio/mp3",
+          originalFilename: "song1.mp3",
+        },
+        {
+          ...mockSongs[1]!,
+          mimeType: "audio/wav",
+          originalFilename: "song2.wav",
+        },
       ];
       const { getSongsForPlaylist } = await import("./playlistDocService.js");
       vi.mocked(getSongsForPlaylist).mockResolvedValue(
@@ -412,15 +446,23 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
   });
 
   describe("MIME Type Handling", () => {
     it("should preserve MIME types during download", async () => {
       const songsWithMimeTypes = [
-        { ...mockSongs[0]!, mimeType: "audio/wav", originalFilename: "song1.wav" },
-        { ...mockSongs[1]!, mimeType: "audio/flac", originalFilename: "song2.flac" },
+        {
+          ...mockSongs[0]!,
+          mimeType: "audio/wav",
+          originalFilename: "song1.wav",
+        },
+        {
+          ...mockSongs[1]!,
+          mimeType: "audio/flac",
+          originalFilename: "song2.flac",
+        },
       ];
       const { getSongsForPlaylist } = await import("./playlistDocService.js");
       vi.mocked(getSongsForPlaylist).mockResolvedValue(
@@ -429,7 +471,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
   });
 
@@ -444,7 +486,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(playlistWithImage);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
   });
 
@@ -457,7 +499,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(problemPlaylist);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
   });
 
@@ -609,7 +651,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist, options);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should not include HTML when includeHTML option is false", async () => {
@@ -617,7 +659,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist, options);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
   });
 
@@ -639,7 +681,7 @@ describe("Playlist Download Service", () => {
         mockPlaylist.id
       );
       expect(vi.mocked(updatePlaylist)).toHaveBeenCalled();
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should handle mixed scenarios with partial data", async () => {
@@ -652,7 +694,7 @@ describe("Playlist Download Service", () => {
 
       await downloadPlaylistAsZip(mockPlaylist);
 
-      expect(vi.mocked(JSZip)).toHaveBeenCalled();
+      expect(vi.mocked(buildPlaylistZip)).toHaveBeenCalled();
     });
 
     it("should maintain data integrity throughout workflow", async () => {

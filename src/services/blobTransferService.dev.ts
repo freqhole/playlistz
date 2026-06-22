@@ -18,11 +18,10 @@ import { storeBlob } from "@freqhole/api-client/storage";
 
 // the behaviour union mirrors global.d.ts Window["__mockBlobFetch"] parameter.
 // keeping it here means the mock impl and its type live together.
-export type MockBlobBehaviour = NonNullable<
-  Window["__mockBlobFetch"]
-> extends (b: infer B) => void
-  ? B
-  : never;
+export type MockBlobBehaviour =
+  NonNullable<Window["__mockBlobFetch"]> extends (b: infer B) => void
+    ? B
+    : never;
 
 // --- synthetic blob data ---
 
@@ -36,12 +35,18 @@ function makeSyntheticWav(): Uint8Array {
   const s = (o: number, t: string) => {
     for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i));
   };
-  s(0, "RIFF"); v.setUint32(4, 36 + dataSize, true);
-  s(8, "WAVE"); s(12, "fmt ");
-  v.setUint32(16, 16, true); v.setUint16(20, 1, true);  // PCM mono
-  v.setUint16(22, 1, true); v.setUint32(24, 8000, true); // 8kHz
-  v.setUint32(28, 16000, true); v.setUint16(32, 2, true);
-  v.setUint16(34, 16, true); s(36, "data");
+  s(0, "RIFF");
+  v.setUint32(4, 36 + dataSize, true);
+  s(8, "WAVE");
+  s(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM mono
+  v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); // 8kHz
+  v.setUint32(28, 16000, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  s(36, "data");
   v.setUint32(40, dataSize, true);
   return new Uint8Array(buf);
 }

@@ -3,7 +3,13 @@
 
 import { createSignal } from "solid-js";
 import type { Song, Playlist, AudioState } from "../types/playlist.js";
-import { loadAllPlaybackPositions, savePlaybackPosition, deletePlaybackPosition, saveLastPlayed, loadLastPlayed } from "./indexedDBService.js";
+import {
+  loadAllPlaybackPositions,
+  savePlaybackPosition,
+  deletePlaybackPosition,
+  saveLastPlayed,
+  loadLastPlayed,
+} from "./indexedDBService.js";
 import { getBlobObjectURL } from "@freqhole/api-client/storage";
 import { fetchSongBlob, prefetchUpcoming } from "./blobTransferService.js";
 import { getSongsForPlaylist } from "./playlistDocService.js";
@@ -48,7 +54,9 @@ const [cachingSongIds, setCachingSongIds] = createSignal<Set<string>>(
 );
 
 // per-song saved playback positions (songId -> seconds), persists across pause/track switch
-const [songPlaybackPositions, setSongPlaybackPositions] = createSignal<Map<string, number>>(new Map());
+const [songPlaybackPositions, setSongPlaybackPositions] = createSignal<
+  Map<string, number>
+>(new Map());
 
 // pending seek time to apply after loadedmetadata fires for the new song
 let pendingSeekTime = 0;
@@ -611,9 +619,14 @@ export async function playSong(song: Song, skipResume = false): Promise<void> {
     // if the saved position is <95% of the song's known duration, resume from there.
     // otherwise (near end or unknown duration) start from the beginning.
     // skipResume=true when auto-advancing (song ended naturally) - always start fresh.
-    const savedPos = skipResume ? 0 : (songPlaybackPositions().get(song.id) ?? 0);
+    const savedPos = skipResume
+      ? 0
+      : (songPlaybackPositions().get(song.id) ?? 0);
     const knownDuration = song.duration ?? 0;
-    if (savedPos > 0 && (knownDuration === 0 || savedPos < knownDuration * 0.95)) {
+    if (
+      savedPos > 0 &&
+      (knownDuration === 0 || savedPos < knownDuration * 0.95)
+    ) {
       pendingSeekTime = savedPos;
     } else {
       pendingSeekTime = 0;
@@ -1259,9 +1272,10 @@ async function preloadNextSong(): Promise<void> {
 
   try {
     // check if song already has audio cached in the blob store
-    const blobUrl = (nextSong.sha ?? nextSong.sha256)
-      ? await getBlobObjectURL((nextSong.sha ?? nextSong.sha256)!)
-      : null;
+    const blobUrl =
+      (nextSong.sha ?? nextSong.sha256)
+        ? await getBlobObjectURL((nextSong.sha ?? nextSong.sha256)!)
+        : null;
     if (blobUrl) {
       setLoadingSongIds((prev) => {
         const newSet = new Set(prev);
