@@ -1,5 +1,11 @@
 # @freqhole/playlistz
 
+## 0.0.5
+
+### Patch Changes
+
+- 87db914: fiddle with ci
+
 ## 0.0.4
 
 ### Patch Changes
