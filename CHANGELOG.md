@@ -1,5 +1,11 @@
 # @freqhole/playlistz
 
+## 0.0.4
+
+### Patch Changes
+
+- 9be16d4: don't re-export playlistz shit from @freqhole/api-client
+
 ## 0.0.3
 
 ### Patch Changes
