@@ -1,14 +1,12 @@
 # on every push to main, run the changesets action:
 #   - changesets pending  -> open/update the "Version Packages" PR on
 #     changeset-release/main (runs `npm run version` = changeset version).
-#     while that PR is open, release.yml builds the DRAFT github release for the
-#     upcoming version (tag + notes + standalone bundle).
 #   - no changesets pending (that PR was just merged) -> run
-#     `npm run release:publish`, which flips the already-built draft release to
-#     published (creating the v$VERSION tag) AND publishes the npm package via
-#     npm trusted publishing (oidc). the npm publish happens here so the oidc
-#     token's workflow filename (changesets.yml) matches the trusted publisher
-#     configured on npmjs.com - no npm token needed.
+#     `npm run release:publish`, which builds dist, creates the github release
+#     `v$VERSION` (creating the tag + notes + standalone bundle) AND publishes
+#     the npm package via npm trusted publishing (oidc). the npm publish happens
+#     here so the oidc token's workflow filename (changesets.yml) matches the
+#     trusted publisher configured on npmjs.com - no npm token needed.
 #
 # after a successful npm publish, the bump-tomb job opens a PR in freqhole/tomb
 # bumping @freqhole/playlistz to the new version.
@@ -56,10 +54,10 @@ jobs:
         uses: changesets/action@v1
         with:
           version: npm run version
-          # runs when the version PR merges (no changesets pending). flips the
-          # draft github release to published (creating the v$VERSION tag) and
-          # publishes the npm package via oidc. emits released_version on a
-          # successful npm publish.
+          # runs when the version PR merges (no changesets pending). builds dist,
+          # creates the github release (tag + notes + bundle) and publishes the
+          # npm package via oidc. emits released_version on a successful npm
+          # publish.
           publish: npm run release:publish
           commit: "chore: version packages"
           title: "chore: version packages"
@@ -107,17 +105,35 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: open PR in tomb
+      # one stable branch (no version suffix) so there is only ever a single
+      # "bump playlistz" PR in tomb: if it is already open we roll it forward to
+      # the new version, otherwise we open it. avoids a pile of per-version PRs.
+      - name: open or update bump PR in tomb
         run: |
-          BRANCH="chore/bump-playlistz-${VERSION}"
-          git checkout -b "$BRANCH"
+          BRANCH="chore/bump-playlistz"
+          # rebuild the branch from main so it carries only the bump commit.
+          git checkout -B "$BRANCH"
+          if git diff --quiet -- client/spume/package.json; then
+            echo "tomb already on @freqhole/playlistz ${VERSION}; nothing to do"
+            exit 0
+          fi
           git add client/spume/package.json
           git commit -m "chore: bump @freqhole/playlistz to ${VERSION}"
-          git push origin "$BRANCH"
-          gh pr create \
-            --title "chore: bump @freqhole/playlistz to ${VERSION}" \
-            --body "automated bump of @freqhole/playlistz to ${VERSION} after npm publish." \
-            --base main \
-            --head "$BRANCH"
+          # force-push so an existing PR rolls forward to the latest version.
+          git push --force origin "$BRANCH"
+          # update the open PR if there is one, otherwise open a new one.
+          if gh pr view "$BRANCH" --json state --jq .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit "$BRANCH" \
+              --title "chore: bump @freqhole/playlistz to ${VERSION}" \
+              --body "automated bump of @freqhole/playlistz to ${VERSION} after npm publish."
+            echo "updated existing bump PR to ${VERSION}"
+          else
+            gh pr create \
+              --title "chore: bump @freqhole/playlistz to ${VERSION}" \
+              --body "automated bump of @freqhole/playlistz to ${VERSION} after npm publish." \
+              --base main \
+              --head "$BRANCH"
+            echo "opened new bump PR for ${VERSION}"
+          fi
         env:
           GH_TOKEN: ${{ secrets.TOMB_PAT }}

@@ -3,22 +3,23 @@
 // the changesets action's `publish` step once the "Version Packages" PR has
 // merged (no changesets pending).
 //
-// this does two things, in order:
-//   1. flips the draft github release `v$VERSION` to published, which creates
-//      the `v$VERSION` tag at the current main HEAD and marks it latest. the
-//      standalone bundle was already built + uploaded to this draft while the
-//      version PR was open (see .github/workflows/release.yml).
-//   2. builds dist and publishes the npm package via npm trusted publishing
-//      (oidc). the changesets job runs with `id-token: write`, so `npm publish`
-//      performs the oidc exchange itself - no npm token needed. npm matches the
-//      oidc token's workflow filename (changesets.yml) against the trusted
-//      publisher configured on npmjs.com.
+// everything happens here at merge time (playlistz has a single fast artifact,
+// so there is no draft-during-the-PR build step):
+//   1. builds dist (needed for the npm package and the standalone bundle asset).
+//   2. creates the github release `v$VERSION` at main HEAD - this creates the
+//      tag - sets its body to the changeset changelog + github generated notes,
+//      and uploads dist/freqhole-playlistz.js.
+//   3. publishes the npm package via npm trusted publishing (oidc). the
+//      changesets job runs with `id-token: write`, so `npm publish` performs the
+//      oidc exchange itself - no npm token needed. npm matches the oidc token's
+//      workflow filename (changesets.yml) against the trusted publisher on
+//      npmjs.com.
 //
 // on a successful npm publish it appends `released_version=$VERSION` to
 // $GITHUB_OUTPUT so the bump-tomb job can open the downstream dependency PR.
 //
-// safe to re-run: skips the draft flip if already published, and skips the npm
-// publish if that version is already on the registry.
+// safe to re-run: reuses an existing github release (refreshing notes + bundle)
+// and skips the npm publish if that version is already on the registry.
 //
 // requires the `gh` cli with GH_TOKEN / GITHUB_TOKEN in the environment.
 
@@ -46,29 +47,32 @@ function run(cmd, args) {
     execFileSync(cmd, args, { cwd: root, stdio: "inherit" });
 }
 
-// the release should already exist as a draft created by release.yml during the
-// version PR. if it doesn't, the build never ran - fail loudly so a human can
-// re-run release.yml (or build + upload locally) before publishing.
-let view;
+// build dist: needed for the npm package (files: dist) and the standalone
+// bundle asset attached to the github release.
+console.log("building dist");
+run("npm", ["run", "build"]);
+
+// create the github release (and its v$VERSION tag at main HEAD) if it does not
+// already exist. idempotent: a re-run reuses the existing release.
+let releaseExists = false;
 try {
-    view = JSON.parse(gh(["release", "view", tag, "--json", "isDraft,tagName"]));
+    gh(["release", "view", tag, "--json", "tagName"]);
+    releaseExists = true;
 } catch {
-    console.error(`no release found for ${tag}.`);
-    console.error("the release workflow should have created a draft while the version PR was open.");
-    console.error("re-run .github/workflows/release.yml for this version, then publish.");
-    process.exit(1);
+    releaseExists = false;
 }
 
-if (view.isDraft === false) {
-    console.log(`release ${tag} already published; leaving it as-is`);
+if (releaseExists) {
+    console.log(`release ${tag} already exists; refreshing notes + bundle`);
 } else {
-    // refresh the body (changeset changelog + generated notes) in case the
-    // version PR changed after the draft was first built, then flip it live.
-    applyReleaseNotes(tag);
-    console.log(`publishing draft release ${tag}`);
-    gh(["release", "edit", tag, "--draft=false", "--latest"]);
-    console.log(`published ${tag}`);
+    console.log(`creating release ${tag}`);
+    gh(["release", "create", tag, "--target", "main", "--generate-notes", "--title", tag]);
 }
+
+// set the body to the changeset changelog + github generated notes, then attach
+// the single-file standalone player (--clobber so re-runs overwrite cleanly).
+applyReleaseNotes(tag);
+gh(["release", "upload", tag, "dist/freqhole-playlistz.js", "--clobber"]);
 
 // publish the npm package. skip if this version is already on the registry so
 // re-runs stay idempotent.
@@ -87,9 +91,6 @@ if (alreadyOnNpm) {
     console.log(`${pkg.name}@${pkg.version} already on npm; skipping publish`);
     process.exit(0);
 }
-
-console.log("building dist for npm publish");
-run("npm", ["run", "build"]);
 
 console.log(`publishing ${pkg.name}@${pkg.version} to npm`);
 run("npm", ["publish", "--access", "public", "--provenance"]);
