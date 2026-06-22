@@ -15,16 +15,13 @@
 //      workflow filename (changesets.yml) against the trusted publisher on
 //      npmjs.com.
 //
-// on a successful npm publish it appends `released_version=$VERSION` to
-// $GITHUB_OUTPUT so the bump-tomb job can open the downstream dependency PR.
-//
 // safe to re-run: reuses an existing github release (refreshing notes + bundle)
 // and skips the npm publish if that version is already on the registry.
 //
 // requires the `gh` cli with GH_TOKEN / GITHUB_TOKEN in the environment.
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -95,8 +92,3 @@ if (alreadyOnNpm) {
 console.log(`publishing ${pkg.name}@${pkg.version} to npm`);
 run("npm", ["publish", "--access", "public", "--provenance"]);
 console.log(`published ${pkg.name}@${pkg.version}`);
-
-// signal the freshly published version so the bump-tomb job runs.
-if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(process.env.GITHUB_OUTPUT, `released_version=${pkg.version}\n`);
-}
