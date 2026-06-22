@@ -1,6 +1,10 @@
-# publish @freqhole/playlistz to npm when a version tag is pushed.
-# the version tag is created by the "Version Packages" PR merge
-# (changesets/action creates it via the version PR).
+# publish @freqhole/playlistz to npm via npm trusted publishing (oidc).
+# runs on the v*.*.* tag, which changesets.yml creates when it flips the draft
+# github release to published (after the "Version Packages" PR merges).
+#
+# that tag is created with GITHUB_TOKEN, so github's recursion guard won't
+# auto-start this workflow - trigger it from the run's "approve" button or via
+# workflow_dispatch (selecting the tag or main).
 #
 # after publishing, opens a PR in tomb/ to bump @freqhole/playlistz
 # to the new version so consumers stay up-to-date.
