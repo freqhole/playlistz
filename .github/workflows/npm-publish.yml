@@ -28,19 +28,6 @@ jobs:
         with:
           node-version: 24
 
-      - name: ensure npm supports oidc trusted publishing
-        # trusted-publishing (oidc) needs npm >= 11.5.1; the node 24 bundled
-        # npm can be older, which silently falls back to token auth (eneedauth)
-        run: |
-          npm install -g npm@latest
-          echo "node: $(node -v)"
-          echo "npm:  $(npm -v)"
-          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
-            echo "oidc id-token: available (id-token: write is effective)"
-          else
-            echo "oidc id-token: MISSING (id-token permission not effective)"
-          fi
-
       - name: install deps
         run: npm ci
 
