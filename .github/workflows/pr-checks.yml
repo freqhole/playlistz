@@ -21,7 +21,7 @@ jobs:
     if: github.head_ref != 'changeset-release/main'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
 
@@ -42,7 +42,7 @@ jobs:
     if: github.head_ref != 'changeset-release/main'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
 
       - name: setup node
         uses: actions/setup-node@v6
@@ -64,7 +64,7 @@ jobs:
     if: github.head_ref != 'changeset-release/main'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
 
       - name: setup node
         uses: actions/setup-node@v6
@@ -83,7 +83,7 @@ jobs:
     if: github.head_ref != 'changeset-release/main'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
 
       - name: setup node
         uses: actions/setup-node@v6
