@@ -1,4 +1,4 @@
-// p2p blob transfer for playlistz (phase 6).
+// p2p blob transfer service for playlistz.
 //
 // docs carry sha256 hashes; bytes live in the shared blob store. when a
 // blob is missing locally, this service fetches it from a doc's peers

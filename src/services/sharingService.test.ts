@@ -1,4 +1,4 @@
-// tests for the p2p sharing service (phase 5).
+// tests for the p2p sharing service.
 //
 // uses fake-indexeddb for the real docIndex/knocks/grants/settings stores,
 // with mocked p2pService, automergeRepo, and blobTransferService. protocol

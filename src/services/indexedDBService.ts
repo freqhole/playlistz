@@ -1,4 +1,4 @@
-// indexeddb service - phase 4+ schema.
+// indexeddb service for non-doc state.
 // musicPlaylistDB v1 contains only non-doc state:
 //   playbackPositions, lastPlayed, settings, docIndex, knocks, accessGrants.
 // playlist and song data live in automerge docs (freqhole-automerge idb via

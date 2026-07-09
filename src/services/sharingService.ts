@@ -1,13 +1,13 @@
 // p2p sharing service for playlistz.
 //
-// covers the phase 5 surface:
+// provides:
 //   - endpoint settings (name, avatar, public/knock mode)
 //   - share link generation + the open-share-link flow
 //   - peer reconnect on boot (registerAndReconnectPeers pattern)
 //   - knock protocol requester + responder on the playlistz ALPN
 //
 // the responder also dispatches blob_request messages to the blob
-// transfer service (phase 6) so a single stream handler covers the
+// transfer service so a single stream handler covers the
 // whole freqhole-playlistz/1 protocol.
 
 import {

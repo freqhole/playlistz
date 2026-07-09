@@ -1,4 +1,4 @@
-// tests for p2p blob transfer (phase 6).
+// tests for p2p blob transfer.
 //
 // mocks the midden node (import_blob / download_verified_streaming),
 // the iroh adapter, doc lookups, and the blob store. the serving and

@@ -1,5 +1,4 @@
 // hover-triggered marquee for long text in constrained rows.
-// ported from tomb/client/spume/src/components/text/MarqueeText.tsx.
 // scrolls on hover when content overflows; does nothing when it fits.
 
 import {
