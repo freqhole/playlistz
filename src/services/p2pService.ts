@@ -189,7 +189,7 @@ export async function startP2P(): Promise<void> {
         // capture our own reachable addr (node id + relay url) so peers we
         // hand a share link to can dial us deterministically when available.
         try {
-          currentNodeAddr = node.node_addr?.() ?? null;
+          currentNodeAddr = (node as any).node_addr?.() ?? null;
         } catch {
           currentNodeAddr = null;
         }

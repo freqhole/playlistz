@@ -11,10 +11,12 @@ import {
   PLAYLISTZ_ALPN,
   encodeMessage,
   decodeMessage,
-  decodeShareToken,
   type Message,
   type BiStreamLike,
 } from "../types/playlistz";
+import {
+  decodeShareToken,
+} from "@freqhole/haruspex/share";
 
 // --- mocks (hoisted before module imports) ---
 
@@ -88,6 +90,7 @@ import {
   acceptKnock,
   denyKnock,
   getInboundKnocks,
+  getOutboundKnocks,
   handlePlaylistzStream,
   _resetSharingForTests,
 } from "./sharingService.js";
@@ -95,7 +98,6 @@ import { resetDBCache } from "./indexedDBService.js";
 import {
   addDocIndexEntry,
   getDocIndexEntry,
-  getAllKnocks,
   getAccessGrant,
   upsertAccessGrant,
 } from "./docIndexService.js";
@@ -215,10 +217,10 @@ describe("sharingService", () => {
       const { token, url, fragment } = await buildShareLink(DOC_ID, "tunez");
       const decoded = decodeShareToken(token);
       expect(decoded).toMatchObject({
-        v: 1,
-        n: "me-node",
-        d: DOC_ID,
-        t: "tunez",
+        kind: "doc",
+        nodeId: "me-node",
+        docId: DOC_ID,
+        title: "tunez",
       });
       expect(fragment.startsWith("#share/")).toBe(true);
       expect(url.endsWith(fragment)).toBe(true);
@@ -736,8 +738,8 @@ describe("sharingService", () => {
       const result = await knockOnPeer("peer-a", "lemme in");
 
       expect(result).toEqual({ status: "accepted", docIds: [DOC_ID] });
-      const knocks = await getAllKnocks();
-      expect(knocks.find((k) => k.id === "out:peer-a")).toMatchObject({
+      const knocks = await getOutboundKnocks();
+      expect(knocks.find((k) => k.nodeId === "peer-a")).toMatchObject({
         direction: "outbound",
         status: "accepted",
         message: "lemme in",
@@ -756,8 +758,8 @@ describe("sharingService", () => {
       const result = await knockOnPeer("peer-a");
 
       expect(result).toEqual({ status: "pending", docIds: [] });
-      const knocks = await getAllKnocks();
-      expect(knocks.find((k) => k.id === "out:peer-a")?.status).toBe("pending");
+      const knocks = await getOutboundKnocks();
+      expect(knocks.find((k) => k.nodeId === "peer-a")?.status).toBe("pending");
     });
 
     it("knockForDocAccess sends a doc_access knock and syncs on acceptance", async () => {
@@ -786,13 +788,12 @@ describe("sharingService", () => {
         docId: DOC_ID,
         message: "please let me in",
       });
-      const outKnock = (await getAllKnocks()).find(
-        (k) => k.id === `out:peer-a:doc:${DOC_ID}`
+      const outKnock = (await getOutboundKnocks()).find(
+        (k) => k.nodeId === "peer-a" && k.scope.kind === "resource" && k.scope.resourceId === DOC_ID
       );
       expect(outKnock).toMatchObject({
         direction: "outbound",
-        knockType: "doc_access",
-        requestedDocId: DOC_ID,
+        scope: { kind: "resource", resourceId: DOC_ID },
         status: "accepted",
       });
       // doc should have been synced + indexed
