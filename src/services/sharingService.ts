@@ -96,26 +96,13 @@ export interface PlaylistzKnockRecord extends Omit<KnockRecord, 'status'> {
   status: "pending" | "accepted" | "rejected";
 }
 
-// haruspex's KnockRecord has one "message" field and no room for the
-// sender's display name - inbound knocks carry both over the wire, so the
-// pair is packed into that one field here rather than requiring a package
-// change for app-specific display data. outbound records (created without
-// this encoding) and anything that fails to decode fall back to an empty
-// name with the raw string treated as the message.
-function encodeInboundMessage(name: string | undefined, message: string | undefined): string {
-  return JSON.stringify({ n: name ?? "", m: message ?? "" });
-}
-
-function decodeInboundMessage(raw: string): { name: string; message: string } {
-  try {
-    const parsed = JSON.parse(raw) as { n?: unknown; m?: unknown };
-    if (typeof parsed.n === "string" && typeof parsed.m === "string") {
-      return { name: parsed.n, message: parsed.m };
-    }
-  } catch {
-    // not an encoded inbound message - fall through to the plain-string case
-  }
-  return { name: "", message: raw };
+// an inbound knock's sender carries their display name alongside the wire
+// message; haruspex's KnockRecord has no dedicated field for it, so it's
+// stored in the record's generic metadata bag instead (see
+// CreateKnockInput.metadata). outbound records never set this.
+function inboundSenderName(record: KnockRecord): string {
+  const name = record.metadata?.name;
+  return typeof name === "string" ? name : "";
 }
 
 /** true when two knock scopes describe the same request (same kind and,
@@ -136,12 +123,9 @@ function toPlaylistzKnock(record: KnockRecord): PlaylistzKnockRecord {
     : undefined;
   // map haruspex's "denied" to playlistz's "rejected" for UI compat
   const status = record.status === "denied" ? "rejected" : record.status;
-  const { name, message } = record.direction === "inbound"
-    ? decodeInboundMessage(record.message)
-    : { name: "", message: record.message };
+  const name = record.direction === "inbound" ? inboundSenderName(record) : "";
   return {
     ...record,
-    message,
     name,
     knockType,
     requestedDocId,
@@ -881,7 +865,7 @@ export async function acceptKnock(
     // than racing the rest of this function.
     await upsertAccessGrant({
       nodeId: record.nodeId,
-      name: record.message,
+      name: inboundSenderName(record),
       grantedAt: Date.now(),
       docIds,
     });
@@ -903,7 +887,7 @@ export async function acceptKnock(
   if (peerEntry?.remoteAvatarDataUrl) {
     await upsertAccessGrant({
       nodeId: record.nodeId,
-      name: record.message,
+      name: inboundSenderName(record),
       grantedAt: Date.now(),
       docIds,
       avatarDataUrl: peerEntry.remoteAvatarDataUrl,
@@ -1166,7 +1150,8 @@ async function handleProtocolMessage(
           nodeId: msg.nodeId,
           direction: "inbound",
           scope,
-          message: encodeInboundMessage(msg.name, msg.message),
+          message: msg.message ?? "",
+          ...(msg.name ? { metadata: { name: msg.name } } : {}),
         });
         notifyKnocksChanged();
       } catch (err) {
