@@ -13,7 +13,7 @@ import {
   type P2PIdentity,
   type IdentityStore,
 } from "@freqhole/api-client/storage";
-import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN } from "../types/playlistz";
+import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN, FRIENDZ_ALPN } from "../types/playlistz";
 import type {
   MiddenStreamNode,
   IrohNetworkAdapterOptions,
@@ -145,6 +145,7 @@ async function bootMidden(
     const node = await midden.MiddenNode.create_with_alpns(secretKey, [
       AUTOMERGE_ALPN,
       PLAYLISTZ_ALPN,
+      FRIENDZ_ALPN,
     ]);
     return node as unknown as MiddenStreamNode;
   } catch (err) {

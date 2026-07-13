@@ -4,14 +4,16 @@
 //   - endpoint settings (name, avatar, public/knock mode)
 //   - share link generation + the open-share-link flow
 //   - peer reconnect on boot (registerAndReconnectPeers pattern)
-//   - knock protocol requester + responder on the playlistz ALPN
+//   - knock requester + responder, delivered over haruspex's shared friendz
+//     protocol (freqhole-friendz/1) rather than a playlistz-specific message
 //
-// the responder also dispatches blob_request messages to the blob
-// transfer service so a single stream handler covers the
-// whole freqhole-playlistz/1 protocol.
+// the freqhole-playlistz/1 responder handles hello, playlist listing, and
+// blob_request dispatch to the blob transfer service - discovery concerns
+// unrelated to knock delivery, which lives entirely on the friendz side.
 
 import {
   PLAYLISTZ_ALPN,
+  FRIENDZ_ALPN,
   sendMessage,
   readMessage,
   addPeer as addPeerToDoc,
@@ -38,6 +40,14 @@ import {
   type KnockPolicy,
   type KnockPolicyResult,
 } from "@freqhole/haruspex/knock";
+import {
+  createFriendzClient,
+  type FriendzClient,
+  type FriendzMessage,
+  type KnockRequestMessage,
+  type KnockOutcomeMessage,
+  type WireKnockScope,
+} from "@freqhole/haruspex/protocol";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import {
   getIrohAdapter,
@@ -86,6 +96,359 @@ function getKnockStore(): KnockStore {
   return knockStore;
 }
 
+// --- knock transport: haruspex's shared friendz protocol ---
+//
+// knocks travel as knock-request/knock-ack/knock-outcome core messages on
+// freqhole-friendz/1, via a single FriendzClient instance per tab (lazily
+// created, matching the knock store's own lazy-singleton pattern). this
+// class only ever exchanges knock messages here - no heartbeat, presence,
+// or friend-list concept, since playlistz has none of those.
+
+let friendzClient: FriendzClient | null = null;
+let friendzHandlerRegistered = false;
+
+function getFriendzClient(): FriendzClient {
+  if (!friendzClient) {
+    friendzClient = createFriendzClient({
+      getNode: async () => {
+        await waitForNode();
+        const node = getNode();
+        if (!node) {
+          throw new Error("p2p node is not running in this tab");
+        }
+        return node;
+      },
+      alpn: FRIENDZ_ALPN,
+      localNodeId: getIdentity()?.node_id ?? "",
+      localUsername: "",
+      onMessage: handleFriendzMessage,
+    });
+  }
+  return friendzClient;
+}
+
+// a requester's own translation of haruspex's KnockScope into the wire's
+// WireKnockScope - built explicitly rather than forwarded as-is, since a
+// requested role (never set by playlistz today) is a plain string on the
+// local type but a closed role enum on the wire.
+function toWireKnockScope(scope: KnockScope): WireKnockScope {
+  if (scope.kind === "resource") {
+    return { kind: "resource", resourceId: scope.resourceId };
+  }
+  if (scope.kind === "account") {
+    return {
+      kind: "account",
+      ...(scope.requestedUsername
+        ? { requestedUsername: scope.requestedUsername }
+        : {}),
+    };
+  }
+  return { kind: "browse" };
+}
+
+// an inbound knock's wire knockId, stashed in the record's metadata bag at
+// creation time so a later accept/deny can echo it back on knock-outcome.
+function wireKnockId(record: KnockRecord): string | undefined {
+  const id = record.metadata?.wireKnockId;
+  return typeof id === "string" ? id : undefined;
+}
+
+interface PendingKnockWait {
+  resolve: (reply: KnockStatusReply) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+// knockId -> the requester-side promise waiting on a knock-ack/knock-outcome
+// reply for that specific request. purely in-memory and short-lived: it
+// only needs to outlive one sendKnock/checkKnockStatus call, never a reload.
+const pendingKnockWaits = new Map<string, PendingKnockWait>();
+const KNOCK_REPLY_TIMEOUT_MS = 15_000;
+
+function resolvePendingKnockWait(
+  knockId: string,
+  reply: KnockStatusReply
+): boolean {
+  const pending = pendingKnockWaits.get(knockId);
+  if (!pending) return false;
+  clearTimeout(pending.timer);
+  pendingKnockWaits.delete(knockId);
+  pending.resolve(reply);
+  return true;
+}
+
+/**
+ * send a knock-request and wait for its correlated knock-ack (still
+ * pending) or knock-outcome (resolved) reply. used as both `sendKnock` and
+ * `checkKnockStatus` on the KnockTransport below - re-checking a knock is
+ * just sending a fresh knock-request with the same scope, exactly as the
+ * old playlistz-specific transport did.
+ */
+async function sendKnockRequestAwaitingReply(
+  targetNodeId: string,
+  request: KnockRequest
+): Promise<KnockStatusReply> {
+  const client = getFriendzClient();
+  const identity = getIdentity();
+  const settings = await getShareSettings();
+  const knockId = crypto.randomUUID();
+
+  const reply = new Promise<KnockStatusReply>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingKnockWaits.delete(knockId);
+      reject(new Error("knock request timed out"));
+    }, KNOCK_REPLY_TIMEOUT_MS);
+    pendingKnockWaits.set(knockId, { resolve, reject, timer });
+  });
+
+  await client.sendMessage(targetNodeId, {
+    kind: "core",
+    message: {
+      type: "knock-request",
+      v: 1,
+      knockId,
+      nodeId: identity?.node_id ?? "",
+      ...(settings.name ? { username: settings.name } : {}),
+      message: request.message ?? "",
+      scope: toWireKnockScope(request.scope),
+    },
+  });
+
+  return reply;
+}
+
+const friendzKnockTransport: KnockTransport = {
+  sendKnock: sendKnockRequestAwaitingReply,
+  checkKnockStatus: sendKnockRequestAwaitingReply,
+};
+
+/**
+ * answer an inbound knock-request: auto-accept when the request already
+ * matches a known grant (mirroring the old playlistz-specific responder),
+ * otherwise record it and reply with an ack. mirrors the accept rules the
+ * freqhole-playlistz/1 responder used to apply directly.
+ */
+async function handleInboundKnockRequest(
+  fromNodeId: string,
+  core: KnockRequestMessage
+): Promise<void> {
+  const client = getFriendzClient();
+  const myNodeId = getIdentity()?.node_id ?? "";
+  const settings = await getShareSettings();
+
+  const docId = core.scope.kind === "resource" ? core.scope.resourceId : undefined;
+  const isDocAccessKnock = core.scope.kind === "resource";
+  const existing = await getAccessGrant(fromNodeId);
+
+  const sendOutcome = (
+    status: "accepted" | "denied",
+    grantedResourceIds?: string[]
+  ): Promise<void> =>
+    client.sendMessage(fromNodeId, {
+      kind: "core",
+      message: {
+        type: "knock-outcome",
+        v: 1,
+        knockId: core.knockId,
+        status,
+        grantedResourceIds: grantedResourceIds ?? [],
+        byNodeId: myNodeId,
+      },
+    });
+
+  const sendAck = (): Promise<void> =>
+    client.sendMessage(fromNodeId, {
+      kind: "core",
+      message: {
+        type: "knock-ack",
+        v: 1,
+        knockId: core.knockId,
+        ackerNodeId: myNodeId,
+        ...(docId ? { resourceId: docId } : {}),
+      },
+    });
+
+  try {
+    if (isDocAccessKnock && docId) {
+      // doc_access knock: confirm access when either the doc allows
+      // collaborative editing (auto-accept) or the owner has already granted
+      // this peer explicit access to the doc (e.g. accepted the knock from
+      // the inbox). in public mode collaborative docs auto-accept; in knock
+      // mode the peer needs a grant covering this doc.
+      let isCollaborative = false;
+      try {
+        const handle = await findPlaylistDoc(docId as AutomergeUrl);
+        const doc = handle.doc() as Record<string, unknown> | undefined;
+        isCollaborative = !!doc?.collaborative;
+      } catch {
+        /* doc not available */
+      }
+
+      const hasExplicitGrant =
+        !!existing && (!existing.docIds || existing.docIds.includes(docId));
+      const autoAccept =
+        isCollaborative && (settings.mode === "public" || hasExplicitGrant);
+
+      if (autoAccept) {
+        await sendOutcome("accepted", existing?.docIds ?? [docId]);
+        return;
+      }
+    } else if (existing) {
+      // browse knock: check if any grant exists
+      await sendOutcome("accepted", existing.docIds ?? []);
+      return;
+    }
+
+    // determine the scope for the knock record
+    const scope: KnockScope =
+      isDocAccessKnock && docId
+        ? { kind: "resource", resourceId: docId }
+        : { kind: "browse" };
+
+    // check for a prior knock of the SAME scope from this node - browse
+    // and doc_access knocks from the same peer are tracked separately.
+    const priorForScope = (await getKnockStore().listAll()).find(
+      (k) =>
+        k.direction === "inbound" &&
+        k.nodeId === fromNodeId &&
+        scopesMatch(k.scope, scope)
+    );
+
+    if (priorForScope) {
+      if (priorForScope.status === "denied") {
+        await sendOutcome("denied");
+        return;
+      }
+      if (priorForScope.status === "accepted") {
+        await sendOutcome(
+          "accepted",
+          priorForScope.grantedResourceIds ?? (docId ? [docId] : [])
+        );
+        return;
+      }
+      // prior knock is pending - ack again
+      await sendAck();
+      return;
+    }
+
+    // no prior knock found - create a new one
+    try {
+      await getKnockStore().createKnock({
+        nodeId: fromNodeId,
+        direction: "inbound",
+        scope,
+        message: core.message ?? "",
+        metadata: {
+          wireKnockId: core.knockId,
+          ...(core.username ? { name: core.username } : {}),
+        },
+      });
+      notifyKnocksChanged();
+    } catch (err) {
+      // knock already exists (dedup rule) - this can happen in a race
+      // between two concurrent knock requests. just ack.
+      log.trace("p2p.knock", "knock dedup on create:", err);
+    }
+
+    await sendAck();
+  } catch (err) {
+    log.warn("p2p.knock", "failed to answer knock-request:", err);
+  }
+}
+
+/**
+ * a knock-outcome that arrives without a matching pending wait is a late
+ * decision on a knock this tab already returned "pending" for (the owner
+ * took their time in the inbox UI). apply it to every matching pending
+ * outbound record from that peer, and sync any granted docs - the same
+ * best-effort proactive notification the old playlistz-specific
+ * knock_notify message provided.
+ */
+async function handleUnsolicitedKnockOutcome(
+  fromNodeId: string,
+  core: KnockOutcomeMessage
+): Promise<void> {
+  const myNodeId = getIdentity()?.node_id ?? "";
+
+  if (core.status === "accepted" && core.grantedResourceIds.length > 0) {
+    for (const docId of core.grantedResourceIds) {
+      try {
+        const handle = await findPlaylistDoc(docId as AutomergeUrl);
+        const doc = handle.doc();
+        if (myNodeId && doc && !(myNodeId in (doc.peers ?? {}))) {
+          handle.change((d) => addPeerToDoc(d, myNodeId));
+          await flushDoc(docId as AutomergeUrl);
+        }
+        if (!(await getDocIndexEntry(docId))) {
+          await addDocIndexEntry({
+            docId,
+            title: doc?.title || "shared playlist",
+            addedAt: Date.now(),
+            source: "shared",
+            remoteNodeId: fromNodeId,
+          });
+        }
+      } catch (err) {
+        log.warn(
+          "p2p.knock",
+          "failed to sync granted doc from outcome:",
+          docId,
+          err
+        );
+      }
+    }
+  }
+
+  const allKnocks = await getKnockStore().listAll();
+  for (const k of allKnocks) {
+    if (
+      k.direction === "outbound" &&
+      k.nodeId === fromNodeId &&
+      k.status === "pending" &&
+      core.status !== "pending"
+    ) {
+      await getKnockStore().recordDecision(
+        k.id,
+        { byNodeId: fromNodeId, outcome: core.status, at: Date.now() },
+        { grantedResourceIds: core.grantedResourceIds }
+      );
+    }
+  }
+  notifyKnocksChanged();
+}
+
+/** hand an inbound freqhole-friendz/1 stream to the shared client. exported for tests. */
+export function handleFriendzStream(stream: BiStreamLike): void {
+  getFriendzClient().handleIncomingStream(stream);
+}
+
+function handleFriendzMessage(message: FriendzMessage, fromNodeId: string): void {
+  if (message.kind !== "core") return;
+  const core = message.message;
+
+  switch (core.type) {
+    case "knock-ack":
+      resolvePendingKnockWait(core.knockId, { status: "pending" });
+      return;
+    case "knock-outcome":
+      if (
+        core.knockId &&
+        resolvePendingKnockWait(core.knockId, {
+          status: core.status,
+          grantedResourceIds: core.grantedResourceIds,
+        })
+      ) {
+        return;
+      }
+      void handleUnsolicitedKnockOutcome(fromNodeId, core);
+      return;
+    case "knock-request":
+      void handleInboundKnockRequest(fromNodeId, core);
+      return;
+    default:
+      return;
+  }
+}
 
 // playlistz-specific extension of haruspex's KnockRecord for UI compatibility.
 // adds fields the UI expects but haruspex's core record doesn't track.
@@ -243,6 +606,14 @@ export async function ensureSharingReady(): Promise<void> {
     const adapter = getIrohAdapter();
     adapter.registerAlpnHandler(PLAYLISTZ_ALPN, (stream) => {
       void handlePlaylistzStream(stream);
+    });
+  }
+
+  if (!friendzHandlerRegistered) {
+    friendzHandlerRegistered = true;
+    const adapter = getIrohAdapter();
+    adapter.registerAlpnHandler(FRIENDZ_ALPN, (stream) => {
+      handleFriendzStream(stream);
     });
   }
 
@@ -705,35 +1076,6 @@ export async function knockOnPeer(
 ): Promise<{ status: "pending" | "accepted" | "denied"; docIds: string[] }> {
   const identity = getIdentity();
   const settings = await getShareSettings();
-  
-  // implement the transport for sending knocks over the playlistz protocol
-  const transport: KnockTransport = {
-    async sendKnock(targetNodeId: string, request: KnockRequest): Promise<KnockStatusReply> {
-      const stream = await openPlaylistzStream(targetNodeId);
-      try {
-        await sendMessage(stream, {
-          v: 1,
-          type: "knock",
-          nodeId: identity?.node_id ?? "",
-          ...(settings.name ? { name: settings.name } : {}),
-          ...(request.message ? { message: request.message } : {}),
-        });
-        const reply = await readMessage(stream);
-        if (reply?.type !== "knock_status") {
-          throw new Error("peer did not answer knock");
-        }
-        return {
-          status: reply.status,
-          grantedResourceIds: reply.grantedDocIds,
-        };
-      } finally {
-        stream.close();
-      }
-    },
-    async checkKnockStatus(targetNodeId: string, request: KnockRequest): Promise<KnockStatusReply> {
-      return this.sendKnock(targetNodeId, request);
-    },
-  };
 
   const scope: KnockScope = { kind: "browse" };
   const request: KnockRequest = {
@@ -742,7 +1084,7 @@ export async function knockOnPeer(
     requesterName: settings.name,
   };
 
-  const record = await sendKnock(getKnockStore(), transport, nodeId, request);
+  const record = await sendKnock(getKnockStore(), friendzKnockTransport, nodeId, request);
   const docIds = record.grantedResourceIds ?? [];
 
   if (record.status === "accepted" && docIds.length > 0) {
@@ -786,39 +1128,7 @@ export async function knockForDocAccess(
   message: string,
   titleHint?: string
 ): Promise<{ status: "pending" | "accepted" | "denied" }> {
-  const identity = getIdentity();
   const settings = await getShareSettings();
-
-  // implement the transport for sending knocks over the playlistz protocol
-  const transport: KnockTransport = {
-    async sendKnock(targetNodeId: string, request: KnockRequest): Promise<KnockStatusReply> {
-      const stream = await openPlaylistzStream(targetNodeId);
-      try {
-        await sendMessage(stream, {
-          v: 1,
-          type: "knock",
-          nodeId: identity?.node_id ?? "",
-          ...(settings.name ? { name: settings.name } : {}),
-          ...(request.message ? { message: request.message } : {}),
-          knockType: "doc_access",
-          docId: (request.scope as { kind: "resource"; resourceId: string }).resourceId,
-        });
-        const reply = await readMessage(stream);
-        if (reply?.type !== "knock_status") {
-          throw new Error("peer did not answer knock");
-        }
-        return {
-          status: reply.status,
-          grantedResourceIds: reply.grantedDocIds,
-        };
-      } finally {
-        stream.close();
-      }
-    },
-    async checkKnockStatus(targetNodeId: string, request: KnockRequest): Promise<KnockStatusReply> {
-      return this.sendKnock(targetNodeId, request);
-    },
-  };
 
   const scope: KnockScope = { kind: "resource", resourceId: docId };
   const request: KnockRequest = {
@@ -827,7 +1137,7 @@ export async function knockForDocAccess(
     requesterName: settings.name,
   };
 
-  const record = await sendKnock(getKnockStore(), transport, ownerNodeId, request);
+  const record = await sendKnock(getKnockStore(), friendzKnockTransport, ownerNodeId, request);
 
   if (record.status === "accepted") {
     const granted = record.grantedResourceIds ?? [docId];
@@ -912,24 +1222,21 @@ export async function acceptKnock(
 
   // fire-and-forget: notify the peer they've been accepted so they don't
   // have to poll. if the peer is offline this fails silently.
-  void (async () => {
-    try {
-      const stream = await openPlaylistzStream(record.nodeId);
-      try {
-        await sendMessage(stream, {
-          v: 1,
-          type: "knock_notify",
-          status: "accepted",
-          docIds,
-          ownerNodeId: identity?.node_id ?? "",
-        });
-      } finally {
-        stream.close();
-      }
-    } catch {
+  void getFriendzClient()
+    .sendMessage(record.nodeId, {
+      kind: "core",
+      message: {
+        type: "knock-outcome",
+        v: 1,
+        ...(wireKnockId(record) ? { knockId: wireKnockId(record) } : {}),
+        status: "accepted",
+        grantedResourceIds: docIds,
+        byNodeId: myNodeId,
+      },
+    })
+    .catch(() => {
       // peer offline or unreachable - they'll get the status on their next knock
-    }
-  })();
+    });
 
   notifyKnocksChanged();
 }
@@ -938,7 +1245,29 @@ export async function acceptKnock(
 export async function denyKnock(knockId: string): Promise<void> {
   const identity = getIdentity();
   const myNodeId = identity?.node_id ?? "";
+  const record = await getKnockStore().getKnock(knockId);
   await haruspexDenyKnock(getKnockStore(), knockId, myNodeId);
+
+  // fire-and-forget: notify the peer they've been denied so they don't have
+  // to poll.
+  if (record) {
+    void getFriendzClient()
+      .sendMessage(record.nodeId, {
+        kind: "core",
+        message: {
+          type: "knock-outcome",
+          v: 1,
+          ...(wireKnockId(record) ? { knockId: wireKnockId(record) } : {}),
+          status: "denied",
+          grantedResourceIds: [],
+          byNodeId: myNodeId,
+        },
+      })
+      .catch(() => {
+        // peer offline or unreachable - they'll get the status on their next knock
+      });
+  }
+
   notifyKnocksChanged();
 }
 
@@ -1052,122 +1381,6 @@ async function handleProtocolMessage(
       break;
     }
 
-    case "knock": {
-      const isDocAccessKnock = msg.knockType === "doc_access" && !!msg.docId;
-      const existing = await getAccessGrant(msg.nodeId);
-
-      if (isDocAccessKnock && msg.docId) {
-        // doc_access knock: confirm access when either the doc allows
-        // collaborative editing (auto-accept) or the owner has already granted
-        // this peer explicit access to the doc (e.g. accepted the knock from the
-        // inbox). in public mode collaborative docs auto-accept; in knock mode the
-        // peer needs a grant covering this doc.
-        let isCollaborative = false;
-        try {
-          const handle = await findPlaylistDoc(msg.docId as AutomergeUrl);
-          const doc = handle.doc() as Record<string, unknown> | undefined;
-          isCollaborative = !!doc?.collaborative;
-        } catch {
-          /* doc not available */
-        }
-
-        const hasExplicitGrant =
-          !!existing &&
-          (!existing.docIds || existing.docIds.includes(msg.docId));
-        const autoAccept =
-          isCollaborative && (settings.mode === "public" || hasExplicitGrant);
-
-        if (autoAccept) {
-          await sendMessage(stream, {
-            v: 1,
-            type: "knock_status",
-            status: "accepted",
-            grantedDocIds: existing?.docIds ?? [msg.docId],
-          });
-          break;
-        }
-      } else if (existing) {
-        // browse knock: check if any grant exists
-        await sendMessage(stream, {
-          v: 1,
-          type: "knock_status",
-          status: "accepted",
-          grantedDocIds: existing.docIds ?? [],
-        });
-        break;
-      }
-
-      // determine the scope for the knock record
-      const scope: KnockScope = isDocAccessKnock && msg.docId
-        ? { kind: "resource", resourceId: msg.docId }
-        : { kind: "browse" };
-
-      // check for a prior knock of the SAME scope from this node - browse
-      // and doc_access knocks from the same peer are tracked separately.
-      // findByNodeId only supports a nodeId-only lookup (deliberately, per
-      // its own docs - it's a "most recent regardless of status" query),
-      // so scope-matching is done here against the full inbound history.
-      const priorForScope = (await getKnockStore().listAll()).find(
-        (k) =>
-          k.direction === "inbound" &&
-          k.nodeId === msg.nodeId &&
-          scopesMatch(k.scope, scope)
-      );
-
-      if (priorForScope) {
-        const prior = priorForScope;
-        if (prior.status === "denied") {
-          await sendMessage(stream, {
-            v: 1,
-            type: "knock_status",
-            status: "denied",
-          });
-          break;
-        }
-        if (prior.status === "accepted") {
-          // the owner already approved this peer's request (e.g. accepted the
-          // knock from the inbox), so confirm access on re-check.
-          await sendMessage(stream, {
-            v: 1,
-            type: "knock_status",
-            status: "accepted",
-            grantedDocIds: prior.grantedResourceIds ?? (msg.docId ? [msg.docId] : []),
-          });
-          break;
-        }
-        // prior knock is pending - reply with pending status
-        await sendMessage(stream, {
-          v: 1,
-          type: "knock_status",
-          status: "pending",
-        });
-        break;
-      }
-
-      // no prior knock found - create a new one
-      try {
-        await getKnockStore().createKnock({
-          nodeId: msg.nodeId,
-          direction: "inbound",
-          scope,
-          message: msg.message ?? "",
-          ...(msg.name ? { metadata: { name: msg.name } } : {}),
-        });
-        notifyKnocksChanged();
-      } catch (err) {
-        // knock already exists (dedup rule) - this can happen in a race
-        // between two concurrent knock requests. just reply pending.
-        log.trace("p2p.knock", "knock dedup on create:", err);
-      }
-
-      await sendMessage(stream, {
-        v: 1,
-        type: "knock_status",
-        status: "pending",
-      });
-      break;
-    }
-
     case "blob_request": {
       // only serve blobs to peers who have an accepted grant (or if public mode)
       const blobGrant = await getAccessGrant(peerNodeId);
@@ -1184,58 +1397,7 @@ async function handleProtocolMessage(
       break;
     }
 
-    case "knock_notify": {
-      // the peer owner has accepted our knock and is notifying us proactively.
-      // update our outbound knock record and sync the granted docs.
-      const myNodeId = getIdentity()?.node_id ?? "";
-      for (const docId of msg.docIds) {
-        try {
-          const handle = await findPlaylistDoc(docId as AutomergeUrl);
-          const doc = handle.doc();
-          if (myNodeId && doc && !(myNodeId in (doc.peers ?? {}))) {
-            handle.change((d) => addPeerToDoc(d, myNodeId));
-            await flushDoc(docId as AutomergeUrl);
-          }
-          if (!(await getDocIndexEntry(docId))) {
-            await addDocIndexEntry({
-              docId,
-              title: doc?.title || "shared playlist",
-              addedAt: Date.now(),
-              source: "shared",
-              remoteNodeId: msg.ownerNodeId,
-            });
-          }
-        } catch (err) {
-          log.warn(
-            "p2p.knock",
-            "failed to sync granted doc from notify:",
-            docId,
-            err
-          );
-        }
-      }
-      // mark any matching outbound knock as accepted
-      const allKnocks = await getKnockStore().listAll();
-      for (const k of allKnocks) {
-        if (
-          k.direction === "outbound" &&
-          k.nodeId === peerNodeId &&
-          k.status === "pending"
-        ) {
-          await getKnockStore().recordDecision(
-            k.id,
-            {
-              byNodeId: peerNodeId,
-              outcome: "accepted",
-              at: Date.now(),
-            },
-            { grantedResourceIds: msg.docIds }
-          );
-        }
-      }
-      notifyKnocksChanged();
-      break;
-    }
+
 
     case "identity_update": {
       // peer changed their name or avatar - update all our docIndex entries
@@ -1284,6 +1446,7 @@ async function handleProtocolMessage(
 /** reset module state. for use in tests only. */
 export function _resetSharingForTests(): void {
   protocolHandlerRegistered = false;
+  friendzHandlerRegistered = false;
   reconnectDone = false;
   leadershipWatched = false;
   if (reconnectIntervalId !== null) {
@@ -1293,4 +1456,13 @@ export function _resetSharingForTests(): void {
   knockListeners.clear();
   // reset knock store so it gets re-created with the test's fresh indexedDB
   knockStore = null;
+  // reset the friendz client and any in-flight knock waits between tests
+  if (friendzClient) {
+    friendzClient.destroy();
+    friendzClient = null;
+  }
+  for (const pending of pendingKnockWaits.values()) {
+    clearTimeout(pending.timer);
+  }
+  pendingKnockWaits.clear();
 }

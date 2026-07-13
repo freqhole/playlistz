@@ -9,6 +9,7 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import {
   PLAYLISTZ_ALPN,
+  FRIENDZ_ALPN,
   encodeMessage,
   decodeMessage,
   type Message,
@@ -17,6 +18,12 @@ import {
 import {
   decodeShareToken,
 } from "@freqhole/haruspex/share";
+import {
+  encodeMessage as encodeFriendzMessage,
+  decodeMessage as decodeFriendzMessage,
+  type FriendzMessage,
+  type CoreMessage,
+} from "@freqhole/haruspex/protocol";
 
 // --- mocks (hoisted before module imports) ---
 
@@ -92,6 +99,7 @@ import {
   getInboundKnocks,
   getOutboundKnocks,
   handlePlaylistzStream,
+  handleFriendzStream,
   _resetSharingForTests,
 } from "./sharingService.js";
 import { resetDBCache } from "./indexedDBService.js";
@@ -139,6 +147,160 @@ class MockStream implements BiStreamLike {
   }
 }
 
+// scripted BiStreamLike for the freqhole-friendz/1 knock protocol. once the
+// scripted incoming messages are exhausted, read_message hangs rather than
+// returning null - a real p2p stream stays open awaiting more data (or an
+// explicit close), it doesn't EOF the instant the last queued reply is
+// read. this matters here because FriendzClient's read loop calls
+// onMessage without awaiting it, then immediately calls read_message()
+// again - an EOF-on-empty mock would let the loop race ahead and remove
+// the stream from the client's internal peer map before this test's own
+// reply (an ack or outcome written back on the same stream) is sent.
+class MockFriendzStream implements BiStreamLike {
+  sent: FriendzMessage[] = [];
+  closed = false;
+  private incoming: FriendzMessage[];
+
+  constructor(
+    private peer: string,
+    incoming: FriendzMessage[] = []
+  ) {
+    this.incoming = [...incoming];
+  }
+
+  async write_message(data: Uint8Array): Promise<void> {
+    this.sent.push(decodeFriendzMessage(data));
+  }
+
+  async read_message(): Promise<Uint8Array | null> {
+    if (this.incoming.length === 0) {
+      return new Promise<Uint8Array | null>(() => {
+        // never resolves - mirrors a real stream blocked awaiting more data
+      });
+    }
+    return encodeFriendzMessage(this.incoming.shift()!);
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+
+  peer_node_id(): string {
+    return this.peer;
+  }
+
+  alpn(): string {
+    return FRIENDZ_ALPN;
+  }
+}
+
+function coreMsg(message: CoreMessage): FriendzMessage {
+  return { kind: "core", message };
+}
+
+// scripted BiStreamLike for the requester side of the friendz knock
+// protocol: echoes a computed reply back for each written knock-request,
+// keyed by the request's own knockId (generated internally by the
+// transport, so the reply can't be pre-scripted before the request is
+// sent). unlike MockFriendzStream, read_message can be called before a
+// reply exists yet, so this uses a proper waiter queue rather than a
+// fixed incoming array.
+class MockFriendzPeerStream implements BiStreamLike {
+  sent: FriendzMessage[] = [];
+  closed = false;
+  private queue: FriendzMessage[] = [];
+  private waiters: Array<(msg: FriendzMessage) => void> = [];
+
+  constructor(
+    private peer: string,
+    private replyFor: (request: CoreMessage) => CoreMessage | null
+  ) {}
+
+  private push(msg: FriendzMessage): void {
+    const waiter = this.waiters.shift();
+    if (waiter) waiter(msg);
+    else this.queue.push(msg);
+  }
+
+  async write_message(data: Uint8Array): Promise<void> {
+    const msg = decodeFriendzMessage(data);
+    this.sent.push(msg);
+    if (msg.kind === "core") {
+      const reply = this.replyFor(msg.message);
+      if (reply) this.push(coreMsg(reply));
+    }
+  }
+
+  async read_message(): Promise<Uint8Array | null> {
+    const queued = this.queue.shift();
+    if (queued) return encodeFriendzMessage(queued);
+    return new Promise<Uint8Array | null>((resolve) => {
+      this.waiters.push((msg) => resolve(encodeFriendzMessage(msg)));
+    });
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+
+  peer_node_id(): string {
+    return this.peer;
+  }
+
+  alpn(): string {
+    return FRIENDZ_ALPN;
+  }
+}
+
+// a peer that immediately accepts every knock-request with the given
+// granted resource ids.
+function replyAccepted(
+  grantedResourceIds: string[],
+  byNodeId: string
+): (request: CoreMessage) => CoreMessage | null {
+  return (request) => {
+    if (request.type !== "knock-request") return null;
+    return {
+      type: "knock-outcome",
+      v: 1,
+      knockId: request.knockId,
+      status: "accepted",
+      grantedResourceIds,
+      byNodeId,
+    };
+  };
+}
+
+// a peer that queues the knock-request for later review (a plain ack,
+// no decision yet).
+function replyAck(
+  ackerNodeId: string
+): (request: CoreMessage) => CoreMessage | null {
+  return (request) => {
+    if (request.type !== "knock-request") return null;
+    return {
+      type: "knock-ack",
+      v: 1,
+      knockId: request.knockId,
+      ackerNodeId,
+    };
+  };
+}
+
+// poll for the mock stream to have received at least `count` replies -
+// the responder's own processing runs as unawaited async work off the
+// client's read loop, so it completes over a handful of real event-loop
+// ticks rather than within a single microtask flush.
+async function waitForSent(
+  stream: { sent: unknown[] },
+  count = 1
+): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    if (stream.sent.length >= count) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 function makeDoc(
   docId: string,
   overrides: Record<string, unknown> = {}
@@ -183,13 +345,17 @@ describe("sharingService", () => {
   });
 
   describe("ensureSharingReady", () => {
-    it("starts p2p and registers the protocol handler once", async () => {
+    it("starts p2p and registers the protocol handlers once", async () => {
       await ensureSharingReady();
       await ensureSharingReady();
       expect(p2p.startP2P).toHaveBeenCalledTimes(2);
-      expect(adapter.registerAlpnHandler).toHaveBeenCalledTimes(1);
+      expect(adapter.registerAlpnHandler).toHaveBeenCalledTimes(2);
       expect(adapter.registerAlpnHandler).toHaveBeenCalledWith(
         PLAYLISTZ_ALPN,
+        expect.any(Function)
+      );
+      expect(adapter.registerAlpnHandler).toHaveBeenCalledWith(
+        FRIENDZ_ALPN,
         expect.any(Function)
       );
     });
@@ -447,214 +613,6 @@ describe("sharingService", () => {
       });
     });
 
-    it("records an inbound knock and replies pending", async () => {
-      const stream = new MockStream("peer-a", [
-        { v: 1, type: "knock", nodeId: "peer-a", name: "viz", message: "yo" },
-      ]);
-
-      await handlePlaylistzStream(stream);
-
-      expect(stream.sent[0]).toEqual({
-        v: 1,
-        type: "knock_status",
-        status: "pending",
-      });
-      const knocks = await getInboundKnocks();
-      expect(knocks).toHaveLength(1);
-      expect(knocks[0]).toMatchObject({
-        nodeId: "peer-a",
-        name: "viz",
-        message: "yo",
-        status: "pending",
-        knockType: "browse",
-      });
-    });
-
-    it("records an inbound doc_access knock with the requested docId", async () => {
-      const stream = new MockStream("peer-a", [
-        {
-          v: 1,
-          type: "knock",
-          nodeId: "peer-a",
-          name: "viz",
-          message: "let me in",
-          knockType: "doc_access",
-          docId: DOC_ID,
-        },
-      ]);
-
-      await handlePlaylistzStream(stream);
-
-      expect(stream.sent[0]).toMatchObject({
-        type: "knock_status",
-        status: "pending",
-      });
-      const knocks = await getInboundKnocks();
-      expect(knocks[0]).toMatchObject({
-        knockType: "doc_access",
-        requestedDocId: DOC_ID,
-        status: "pending",
-      });
-    });
-
-    it("queues doc_access knock as pending even when peer has a grant (no collaborative flag)", async () => {
-      makeDoc(DOC_ID);
-      await upsertAccessGrant({
-        nodeId: "peer-a",
-        name: "",
-        grantedAt: 1,
-        docIds: [DOC_ID],
-      });
-      const stream = new MockStream("peer-a", [
-        {
-          v: 1,
-          type: "knock",
-          nodeId: "peer-a",
-          knockType: "doc_access",
-          docId: DOC_ID,
-        },
-      ]);
-
-      await handlePlaylistzStream(stream);
-
-      // without collaborative flag the owner must approve explicitly
-      expect(stream.sent[0]).toMatchObject({
-        type: "knock_status",
-        status: "pending",
-      });
-      const knocks = await getInboundKnocks();
-      expect(knocks[0]).toMatchObject({
-        knockType: "doc_access",
-        requestedDocId: DOC_ID,
-        status: "pending",
-      });
-    });
-
-    it("auto-accepts doc_access knock when collaborative is true and peer has a grant", async () => {
-      makeDoc(DOC_ID, { collaborative: true });
-      await upsertAccessGrant({
-        nodeId: "peer-a",
-        name: "",
-        grantedAt: 1,
-        docIds: [DOC_ID],
-      });
-      const stream = new MockStream("peer-a", [
-        {
-          v: 1,
-          type: "knock",
-          nodeId: "peer-a",
-          knockType: "doc_access",
-          docId: DOC_ID,
-        },
-      ]);
-
-      await handlePlaylistzStream(stream);
-
-      expect(stream.sent[0]).toEqual({
-        v: 1,
-        type: "knock_status",
-        status: "accepted",
-        grantedDocIds: [DOC_ID],
-      });
-    });
-
-    it("auto-accepts doc_access knock when collaborative is true and mode is public", async () => {
-      await saveShareSettings({ name: "", mode: "public" });
-      makeDoc(DOC_ID, { collaborative: true });
-      const stream = new MockStream("peer-a", [
-        {
-          v: 1,
-          type: "knock",
-          nodeId: "peer-a",
-          knockType: "doc_access",
-          docId: DOC_ID,
-        },
-      ]);
-
-      await handlePlaylistzStream(stream);
-
-      expect(stream.sent[0]).toEqual({
-        v: 1,
-        type: "knock_status",
-        status: "accepted",
-        grantedDocIds: [DOC_ID],
-      });
-    });
-
-    it("browse and doc_access knocks from same node are tracked separately", async () => {
-      const browseStream = new MockStream("peer-a", [
-        { v: 1, type: "knock", nodeId: "peer-a" },
-      ]);
-      await handlePlaylistzStream(browseStream);
-
-      const docStream = new MockStream("peer-a", [
-        {
-          v: 1,
-          type: "knock",
-          nodeId: "peer-a",
-          knockType: "doc_access",
-          docId: DOC_ID,
-        },
-      ]);
-      await handlePlaylistzStream(docStream);
-
-      const knocks = await getInboundKnocks();
-      expect(knocks).toHaveLength(2);
-      expect(knocks.find((k) => k.knockType === "browse")).toBeDefined();
-      expect(knocks.find((k) => k.knockType === "doc_access")).toBeDefined();
-    });
-
-    it("does not duplicate a repeated knock", async () => {
-      for (let i = 0; i < 2; i++) {
-        const stream = new MockStream("peer-a", [
-          { v: 1, type: "knock", nodeId: "peer-a" },
-        ]);
-        await handlePlaylistzStream(stream);
-      }
-      expect(await getInboundKnocks()).toHaveLength(1);
-    });
-
-    it("answers accepted with granted docIds when a grant exists", async () => {
-      await upsertAccessGrant({
-        nodeId: "peer-a",
-        name: "",
-        grantedAt: 1,
-        docIds: [DOC_ID],
-      });
-      const stream = new MockStream("peer-a", [
-        { v: 1, type: "knock", nodeId: "peer-a" },
-      ]);
-
-      await handlePlaylistzStream(stream);
-
-      expect(stream.sent[0]).toEqual({
-        v: 1,
-        type: "knock_status",
-        status: "accepted",
-        grantedDocIds: [DOC_ID],
-      });
-    });
-
-    it("answers denied after a knock was rejected", async () => {
-      const knockStream = new MockStream("peer-a", [
-        { v: 1, type: "knock", nodeId: "peer-a" },
-      ]);
-      await handlePlaylistzStream(knockStream);
-      const knock = (await getInboundKnocks())[0]!;
-      await denyKnock(knock.id);
-
-      const retry = new MockStream("peer-a", [
-        { v: 1, type: "knock", nodeId: "peer-a" },
-      ]);
-      await handlePlaylistzStream(retry);
-
-      expect(retry.sent[0]).toEqual({
-        v: 1,
-        type: "knock_status",
-        status: "denied",
-      });
-    });
-
     it("dispatches blob_request to the blob transfer service", async () => {
       await saveShareSettings({ name: "", mode: "public" });
       const stream = new MockStream("peer-a", [
@@ -680,8 +638,291 @@ describe("sharingService", () => {
     });
   });
 
+  describe("friendz knock responder", () => {
+    it("records an inbound knock-request and replies with a knock-ack", async () => {
+      const stream = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-1",
+          nodeId: "peer-a",
+          username: "viz",
+          message: "yo",
+          scope: { kind: "browse" },
+        }),
+      ]);
+
+      handleFriendzStream(stream);
+      await waitForSent(stream);
+
+      expect(stream.sent[0]).toMatchObject({
+        kind: "core",
+        message: {
+          type: "knock-ack",
+          knockId: "wire-1",
+          ackerNodeId: "me-node",
+        },
+      });
+      const knocks = await getInboundKnocks();
+      expect(knocks).toHaveLength(1);
+      expect(knocks[0]).toMatchObject({
+        nodeId: "peer-a",
+        name: "viz",
+        message: "yo",
+        status: "pending",
+        knockType: "browse",
+      });
+    });
+
+    it("records an inbound doc_access knock-request with the requested docId", async () => {
+      const stream = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-2",
+          nodeId: "peer-a",
+          username: "viz",
+          message: "let me in",
+          scope: { kind: "resource", resourceId: DOC_ID },
+        }),
+      ]);
+
+      handleFriendzStream(stream);
+      await waitForSent(stream);
+
+      expect(stream.sent[0]).toMatchObject({
+        kind: "core",
+        message: { type: "knock-ack", knockId: "wire-2", resourceId: DOC_ID },
+      });
+      const knocks = await getInboundKnocks();
+      expect(knocks[0]).toMatchObject({
+        knockType: "doc_access",
+        requestedDocId: DOC_ID,
+        status: "pending",
+      });
+    });
+
+    it("queues doc_access knock-request as pending even when peer has a grant (no collaborative flag)", async () => {
+      makeDoc(DOC_ID);
+      await upsertAccessGrant({
+        nodeId: "peer-a",
+        name: "",
+        grantedAt: 1,
+        docIds: [DOC_ID],
+      });
+      const stream = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-3",
+          nodeId: "peer-a",
+          message: "",
+          scope: { kind: "resource", resourceId: DOC_ID },
+        }),
+      ]);
+
+      handleFriendzStream(stream);
+      await waitForSent(stream);
+
+      // without collaborative flag the owner must approve explicitly
+      expect(stream.sent[0]).toMatchObject({
+        kind: "core",
+        message: { type: "knock-ack" },
+      });
+      const knocks = await getInboundKnocks();
+      expect(knocks[0]).toMatchObject({
+        knockType: "doc_access",
+        requestedDocId: DOC_ID,
+        status: "pending",
+      });
+    });
+
+    it("auto-accepts doc_access knock-request when collaborative is true and peer has a grant", async () => {
+      makeDoc(DOC_ID, { collaborative: true });
+      await upsertAccessGrant({
+        nodeId: "peer-a",
+        name: "",
+        grantedAt: 1,
+        docIds: [DOC_ID],
+      });
+      const stream = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-4",
+          nodeId: "peer-a",
+          message: "",
+          scope: { kind: "resource", resourceId: DOC_ID },
+        }),
+      ]);
+
+      handleFriendzStream(stream);
+      await waitForSent(stream);
+
+      expect(stream.sent[0]).toMatchObject({
+        kind: "core",
+        message: {
+          type: "knock-outcome",
+          knockId: "wire-4",
+          status: "accepted",
+          grantedResourceIds: [DOC_ID],
+        },
+      });
+    });
+
+    it("auto-accepts doc_access knock-request when collaborative is true and mode is public", async () => {
+      await saveShareSettings({ name: "", mode: "public" });
+      makeDoc(DOC_ID, { collaborative: true });
+      const stream = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-5",
+          nodeId: "peer-a",
+          message: "",
+          scope: { kind: "resource", resourceId: DOC_ID },
+        }),
+      ]);
+
+      handleFriendzStream(stream);
+      await waitForSent(stream);
+
+      expect(stream.sent[0]).toMatchObject({
+        kind: "core",
+        message: {
+          type: "knock-outcome",
+          status: "accepted",
+          grantedResourceIds: [DOC_ID],
+        },
+      });
+    });
+
+    it("browse and doc_access knock-requests from same node are tracked separately", async () => {
+      const browseStream = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-6a",
+          nodeId: "peer-a",
+          message: "",
+          scope: { kind: "browse" },
+        }),
+      ]);
+      handleFriendzStream(browseStream);
+      await waitForSent(browseStream);
+
+      const docStream = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-6b",
+          nodeId: "peer-a",
+          message: "",
+          scope: { kind: "resource", resourceId: DOC_ID },
+        }),
+      ]);
+      handleFriendzStream(docStream);
+      await waitForSent(docStream);
+
+      const knocks = await getInboundKnocks();
+      expect(knocks).toHaveLength(2);
+      expect(knocks.find((k) => k.knockType === "browse")).toBeDefined();
+      expect(knocks.find((k) => k.knockType === "doc_access")).toBeDefined();
+    });
+
+    it("does not duplicate a repeated knock-request", async () => {
+      for (let i = 0; i < 2; i++) {
+        const stream = new MockFriendzStream("peer-a", [
+          coreMsg({
+            type: "knock-request",
+            v: 1,
+            knockId: `wire-7-${i}`,
+            nodeId: "peer-a",
+            message: "",
+            scope: { kind: "browse" },
+          }),
+        ]);
+        handleFriendzStream(stream);
+        await waitForSent(stream);
+      }
+      expect(await getInboundKnocks()).toHaveLength(1);
+    });
+
+    it("answers accepted with granted docIds when a grant exists", async () => {
+      await upsertAccessGrant({
+        nodeId: "peer-a",
+        name: "",
+        grantedAt: 1,
+        docIds: [DOC_ID],
+      });
+      const stream = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-8",
+          nodeId: "peer-a",
+          message: "",
+          scope: { kind: "browse" },
+        }),
+      ]);
+
+      handleFriendzStream(stream);
+      await waitForSent(stream);
+
+      expect(stream.sent[0]).toMatchObject({
+        kind: "core",
+        message: {
+          type: "knock-outcome",
+          status: "accepted",
+          grantedResourceIds: [DOC_ID],
+        },
+      });
+    });
+
+    it("answers denied after a knock-request was rejected", async () => {
+      const knockStream = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-9",
+          nodeId: "peer-a",
+          message: "",
+          scope: { kind: "browse" },
+        }),
+      ]);
+      handleFriendzStream(knockStream);
+      await waitForSent(knockStream);
+      const knock = (await getInboundKnocks())[0]!;
+      await denyKnock(knock.id);
+
+      const retry = new MockFriendzStream("peer-a", [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: "wire-10",
+          nodeId: "peer-a",
+          message: "",
+          scope: { kind: "browse" },
+        }),
+      ]);
+      handleFriendzStream(retry);
+      await waitForSent(retry);
+
+      expect(retry.sent[0]).toMatchObject({
+        kind: "core",
+        message: { type: "knock-outcome", status: "denied" },
+      });
+    });
+  });
+
   describe("knock requester", () => {
     function givePeerNode(stream: MockStream): void {
+      p2p.getNode.mockReturnValue({
+        open_bi: vi.fn(async () => stream),
+      });
+    }
+
+    function givePeerFriendzNode(stream: MockFriendzPeerStream): void {
       p2p.getNode.mockReturnValue({
         open_bi: vi.fn(async () => stream),
       });
@@ -725,15 +966,11 @@ describe("sharingService", () => {
 
     it("knockOnPeer records the outbound knock and opens granted docs", async () => {
       makeDoc(DOC_ID, { title: "granted tunez" });
-      const stream = new MockStream("peer-a", [
-        {
-          v: 1,
-          type: "knock_status",
-          status: "accepted",
-          grantedDocIds: [DOC_ID],
-        },
-      ]);
-      givePeerNode(stream);
+      const stream = new MockFriendzPeerStream(
+        "peer-a",
+        replyAccepted([DOC_ID], "peer-a")
+      );
+      givePeerFriendzNode(stream);
 
       const result = await knockOnPeer("peer-a", "lemme in");
 
@@ -750,10 +987,11 @@ describe("sharingService", () => {
     });
 
     it("knockOnPeer records a pending knock", async () => {
-      const stream = new MockStream("peer-a", [
-        { v: 1, type: "knock_status", status: "pending" },
-      ]);
-      givePeerNode(stream);
+      const stream = new MockFriendzPeerStream(
+        "peer-a",
+        replyAck("peer-a")
+      );
+      givePeerFriendzNode(stream);
 
       const result = await knockOnPeer("peer-a");
 
@@ -762,17 +1000,13 @@ describe("sharingService", () => {
       expect(knocks.find((k) => k.nodeId === "peer-a")?.status).toBe("pending");
     });
 
-    it("knockForDocAccess sends a doc_access knock and syncs on acceptance", async () => {
+    it("knockForDocAccess sends a doc_access knock-request and syncs on acceptance", async () => {
       makeDoc(DOC_ID, { title: "locked tunez" });
-      const stream = new MockStream("peer-a", [
-        {
-          v: 1,
-          type: "knock_status",
-          status: "accepted",
-          grantedDocIds: [DOC_ID],
-        },
-      ]);
-      givePeerNode(stream);
+      const stream = new MockFriendzPeerStream(
+        "peer-a",
+        replyAccepted([DOC_ID], "peer-a")
+      );
+      givePeerFriendzNode(stream);
 
       const result = await knockForDocAccess(
         "peer-a",
@@ -783,10 +1017,12 @@ describe("sharingService", () => {
       expect(result.status).toBe("accepted");
       const sentKnock = stream.sent[0];
       expect(sentKnock).toMatchObject({
-        type: "knock",
-        knockType: "doc_access",
-        docId: DOC_ID,
-        message: "please let me in",
+        kind: "core",
+        message: {
+          type: "knock-request",
+          message: "please let me in",
+          scope: { kind: "resource", resourceId: DOC_ID },
+        },
       });
       const outKnock = (await getOutboundKnocks()).find(
         (k) => k.nodeId === "peer-a" && k.scope.kind === "resource" && k.scope.resourceId === DOC_ID
@@ -802,10 +1038,11 @@ describe("sharingService", () => {
     });
 
     it("knockForDocAccess returns pending when owner queues the request", async () => {
-      const stream = new MockStream("peer-a", [
-        { v: 1, type: "knock_status", status: "pending" },
-      ]);
-      givePeerNode(stream);
+      const stream = new MockFriendzPeerStream(
+        "peer-a",
+        replyAck("peer-a")
+      );
+      givePeerFriendzNode(stream);
 
       const result = await knockForDocAccess("peer-a", DOC_ID, "");
 
@@ -816,8 +1053,18 @@ describe("sharingService", () => {
 
   describe("knock inbox", () => {
     async function recordInboundKnock(nodeId: string): Promise<string> {
-      const stream = new MockStream(nodeId, [{ v: 1, type: "knock", nodeId }]);
-      await handlePlaylistzStream(stream);
+      const stream = new MockFriendzStream(nodeId, [
+        coreMsg({
+          type: "knock-request",
+          v: 1,
+          knockId: `wire-${nodeId}`,
+          nodeId,
+          message: "",
+          scope: { kind: "browse" },
+        }),
+      ]);
+      handleFriendzStream(stream);
+      await waitForSent(stream);
       const knock = (await getInboundKnocks()).find(
         (k) => k.nodeId === nodeId
       )!;
