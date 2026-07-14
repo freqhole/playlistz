@@ -11,7 +11,7 @@ const { MockIrohNetworkAdapterClass } = vi.hoisted(() => {
   return { MockIrohNetworkAdapterClass: vi.fn() };
 });
 
-vi.mock("@freqhole/api-client/automerge", async () => {
+vi.mock("@freqhole/reliquary/automerge", async () => {
   const { NetworkAdapter } = await vi.importActual<
     typeof import("@automerge/automerge-repo")
   >("@automerge/automerge-repo");

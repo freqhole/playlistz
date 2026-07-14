@@ -18,7 +18,7 @@ import {
 } from "@automerge/automerge-repo";
 import { IndexedDBStorageAdapter } from "@automerge/automerge-repo-storage-indexeddb";
 import { BroadcastChannelNetworkAdapter } from "@automerge/automerge-repo-network-broadcastchannel";
-import { IrohNetworkAdapter } from "@freqhole/api-client/automerge";
+import { IrohNetworkAdapter } from "@freqhole/reliquary/automerge";
 import {
   parsePlaylistDoc,
   emptyPlaylistDoc,

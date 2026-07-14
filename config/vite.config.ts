@@ -70,13 +70,21 @@ export default defineConfig({
     host: true,
     open: true,
     fs: {
-      // @freqhole/haruspex and @freqhole/reliquary are file: deps pointing
-      // at sibling repos (../haruspex/ts, ../reliquary/ts), so vite's
-      // default dev-server file allowlist (project root + node_modules
-      // only) blocks serving their real, non-symlink-resolved source/dist
-      // files - matching spume's and skein/loam's vite configs, which
-      // need the same allowance for the same reason.
-      allow: [".", "../haruspex", "../reliquary"],
+      // @freqhole/haruspex, @freqhole/reliquary, @freqhole/midden, and
+      // @freqhole/api-client are file: deps pointing at sibling repos
+      // (../haruspex/ts, ../reliquary/ts, ../midden/pkg,
+      // ../tomb/client-codegen/freqhole-api-client), so vite's default
+      // dev-server file allowlist (project root + node_modules only)
+      // blocks serving their real, non-symlink-resolved source/dist files -
+      // matching spume's and skein/loam's vite configs, which need the
+      // same allowance for the same reason.
+      allow: [
+        ".",
+        "../haruspex",
+        "../reliquary",
+        "../midden",
+        "../tomb/client-codegen/freqhole-api-client",
+      ],
     },
   },
   // @freqhole/midden contains a .wasm file that esbuild can't pre-bundle;

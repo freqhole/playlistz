@@ -14,7 +14,7 @@ import { IDBFactory } from "fake-indexeddb";
 
 // --- mocks (hoisted before module imports) ---
 
-vi.mock("@freqhole/api-client/automerge", async () => {
+vi.mock("@freqhole/reliquary/automerge", async () => {
   const { NetworkAdapter } = await vi.importActual<
     typeof import("@automerge/automerge-repo")
   >("@automerge/automerge-repo");

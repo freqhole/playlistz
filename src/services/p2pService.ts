@@ -18,7 +18,7 @@ import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN, FRIENDZ_ALPN } from "../types/playlistz
 import type {
   MiddenStreamNode,
   IrohNetworkAdapterOptions,
-} from "@freqhole/api-client/automerge";
+} from "@freqhole/reliquary/automerge";
 
 // --- local settings db for identity fallback ---
 
@@ -128,11 +128,10 @@ async function bootMidden(
   try {
     // bundler target: wasm init happens at import time via vite-plugin-wasm.
     const midden = await import("@freqhole/midden");
-    const node = await midden.MiddenNode.create_with_alpns(secretKey, [
-      AUTOMERGE_ALPN,
-      PLAYLISTZ_ALPN,
-      FRIENDZ_ALPN,
-    ]);
+    const options = new midden.MiddenNodeOptions();
+    options.secret_key = secretKey;
+    options.extra_alpns = [AUTOMERGE_ALPN, PLAYLISTZ_ALPN, FRIENDZ_ALPN];
+    const node = await midden.MiddenNode.create_with_options(options);
     return node as unknown as MiddenStreamNode;
   } catch (err) {
     console.warn("[p2p] midden boot failed - p2p unavailable:", err);

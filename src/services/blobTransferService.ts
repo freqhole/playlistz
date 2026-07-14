@@ -45,7 +45,7 @@ import { getSongsForPlaylist } from "./playlistDocService.js";
 import type { Playlist, Song } from "../types/playlist.js";
 
 // midden node surface used here, beyond the stream interface declared in
-// freqhole-api-client/automerge. structural cast - midden provides these.
+// @freqhole/reliquary/automerge. structural cast - midden provides these.
 // `on_chunk`'s buffer type is narrowed to plain ArrayBuffer (never
 // SharedArrayBuffer) to match `BlobCapableNode`'s own contract - midden's
 // wasm-bindgen bindings only ever hand back ArrayBuffer-backed views.

@@ -1,6 +1,6 @@
 // indexeddb service for non-doc state.
 // musicPlaylistDB v1 contains only non-doc state:
-//   playbackPositions, lastPlayed, settings, docIndex, knocks, accessGrants.
+//   playbackPositions, lastPlayed, settings, docIndex, accessGrants.
 // playlist and song data live in automerge docs (freqhole-automerge idb via
 // IndexedDBStorageAdapter). see playlistDocService for doc-backed crud.
 
@@ -46,7 +46,6 @@ export const PLAYBACK_POSITIONS_STORE = "playbackPositions";
 export const LAST_PLAYED_STORE = "lastPlayed";
 export const SETTINGS_STORE = "settings";
 export const DOC_INDEX_STORE = "docIndex";
-export const KNOCKS_STORE = "knocks";
 export const ACCESS_GRANTS_STORE = "accessGrants";
 
 // record shape stored per-song in the playbackPositions store
@@ -86,6 +85,8 @@ export interface DocIndexEntry {
 }
 
 // inbound or outbound knock request record for the knock inbox/outbox ui.
+// used only as a type for ui-facing signals now - haruspex's own knock
+// store (see sharingService.ts) owns the actual persistence.
 export interface KnockRecord {
   id: string; // uuid
   nodeId: string; // requester (inbound) or responder (outbound) iroh node id
@@ -126,10 +127,6 @@ interface PlaylistDB extends DBSchema {
     key: string; // docId (AutomergeUrl)
     value: DocIndexEntry;
   };
-  knocks: {
-    key: string; // id
-    value: KnockRecord;
-  };
   accessGrants: {
     key: string; // nodeId
     value: AccessGrantRecord;
@@ -157,9 +154,6 @@ export async function setupDB(): Promise<IDBPDatabase<PlaylistDB>> {
       }
       if (!db.objectStoreNames.contains(DOC_INDEX_STORE)) {
         db.createObjectStore(DOC_INDEX_STORE, { keyPath: "docId" });
-      }
-      if (!db.objectStoreNames.contains(KNOCKS_STORE)) {
-        db.createObjectStore(KNOCKS_STORE, { keyPath: "id" });
       }
       if (!db.objectStoreNames.contains(ACCESS_GRANTS_STORE)) {
         db.createObjectStore(ACCESS_GRANTS_STORE, { keyPath: "nodeId" });
@@ -213,7 +207,6 @@ export function createLiveQuery<T>({
     LAST_PLAYED_STORE,
     SETTINGS_STORE,
     DOC_INDEX_STORE,
-    KNOCKS_STORE,
     ACCESS_GRANTS_STORE,
   ];
 

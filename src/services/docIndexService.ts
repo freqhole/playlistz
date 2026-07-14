@@ -1,22 +1,16 @@
-// crud helpers for the automerge doc layer stores:
-// docIndex, knocks, and accessGrants.
+// crud helpers for the automerge doc layer stores: docIndex and accessGrants.
 //
-// all three stores live in musicPlaylistDB (same db as the rest of the app).
+// both stores live in musicPlaylistDB (same db as the rest of the app).
 // docIndex entries are broadcast-invalidated for cross-tab reactivity;
-// knocks and accessGrants are lower-traffic and not live-queried from here.
+// accessGrants are lower-traffic and not live-queried from here.
 
 import {
   setupDB,
   DB_NAME,
   DOC_INDEX_STORE,
-  KNOCKS_STORE,
   ACCESS_GRANTS_STORE,
 } from "./indexedDBService.js";
-import type {
-  DocIndexEntry,
-  KnockRecord,
-  AccessGrantRecord,
-} from "./indexedDBService.js";
+import type { DocIndexEntry, AccessGrantRecord } from "./indexedDBService.js";
 import { log } from "../utils/log.js";
 
 // event name for same-page doc index invalidation.
@@ -67,28 +61,6 @@ export async function getDocIndexEntry(
 export async function getAllDocIndexEntries(): Promise<DocIndexEntry[]> {
   const db = await setupDB();
   return db.getAll(DOC_INDEX_STORE);
-}
-
-// --- knocks ---
-
-export async function upsertKnock(knock: KnockRecord): Promise<void> {
-  const db = await setupDB();
-  await db.put(KNOCKS_STORE, knock);
-}
-
-export async function getKnock(id: string): Promise<KnockRecord | undefined> {
-  const db = await setupDB();
-  return db.get(KNOCKS_STORE, id);
-}
-
-export async function getAllKnocks(): Promise<KnockRecord[]> {
-  const db = await setupDB();
-  return db.getAll(KNOCKS_STORE);
-}
-
-export async function deleteKnock(id: string): Promise<void> {
-  const db = await setupDB();
-  await db.delete(KNOCKS_STORE, id);
 }
 
 // --- accessGrants ---
