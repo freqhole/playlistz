@@ -8,7 +8,7 @@ import {
 import { findPlaylistDoc } from "./automergeRepo.js";
 import { parsePlaylistDoc } from "../types/playlistz";
 import JSZip from "jszip";
-import { getBlob } from "@freqhole/api-client/storage";
+import { getBlob } from "./blobStore.js";
 import {
   buildPlaylistZip,
   cleanupOpfsTempFile,

@@ -10,7 +10,7 @@ import {
   saveLastPlayed,
   loadLastPlayed,
 } from "./indexedDBService.js";
-import { getBlobObjectURL } from "@freqhole/api-client/storage";
+import { getBlobObjectURL } from "./blobStore.js";
 import { fetchSongBlob, prefetchUpcoming } from "./blobTransferService.js";
 import { getSongsForPlaylist } from "./playlistDocService.js";
 import { enrichSongsWithStandalonePaths } from "./standaloneService.js";

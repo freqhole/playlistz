@@ -22,7 +22,7 @@ vi.mock("./automergeRepo.js", () => ({
   findPlaylistDoc: vi.fn(async () => ({ doc: () => null })),
 }));
 
-vi.mock("@freqhole/api-client/storage", () => ({
+vi.mock("./blobStore.js", () => ({
   getBlob: vi.fn(),
 }));
 
@@ -60,6 +60,8 @@ Object.defineProperty(global, "window", {
       href: "http://localhost:3000",
       origin: "http://localhost:3000",
     },
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
   },
   writable: true,
 });
@@ -190,7 +192,7 @@ describe("Playlist Download Service", () => {
     const { getSongsForPlaylist, updatePlaylist } = await import(
       "./playlistDocService.js"
     );
-    const { getBlob } = await import("@freqhole/api-client/storage");
+    const { getBlob } = await import("./blobStore.js");
 
     vi.mocked(getSongsForPlaylist).mockResolvedValue(mockSongs);
     vi.mocked(updatePlaylist).mockResolvedValue(undefined);
@@ -261,7 +263,7 @@ describe("Playlist Download Service", () => {
     });
 
     it("should fetch audio from blob store for each song", async () => {
-      const { getBlob } = await import("@freqhole/api-client/storage");
+      const { getBlob } = await import("./blobStore.js");
 
       await downloadPlaylistAsZip(mockPlaylist);
 
@@ -271,7 +273,7 @@ describe("Playlist Download Service", () => {
     });
 
     it("should fetch playlist cover image from blob store", async () => {
-      const { getBlob } = await import("@freqhole/api-client/storage");
+      const { getBlob } = await import("./blobStore.js");
 
       await downloadPlaylistAsZip(mockPlaylist);
 
@@ -279,7 +281,7 @@ describe("Playlist Download Service", () => {
     });
 
     it("should skip image fetching when includeImages is false", async () => {
-      const { getBlob } = await import("@freqhole/api-client/storage");
+      const { getBlob } = await import("./blobStore.js");
 
       await downloadPlaylistAsZip(mockPlaylist, { includeImages: false });
 

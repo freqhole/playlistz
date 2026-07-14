@@ -12,7 +12,7 @@ import {
   parsePlaylistDoc,
   type SongEntry,
 } from "../types/playlistz";
-import { getBlobMetadata } from "@freqhole/api-client/storage";
+import { getBlobMetadata } from "./blobStore.js";
 import { addDocIndexEntry } from "./docIndexService.js";
 import {
   docToPlaylist,

@@ -1,7 +1,7 @@
 // streaming audio service
 // handles efficient audio streaming with parallel caching to the blob store
 
-import { storeBlob } from "@freqhole/api-client/storage";
+import { storeBlob } from "./blobStore.js";
 import type { Song } from "../types/playlist.js";
 
 interface StreamingDownloadResult {
@@ -56,9 +56,7 @@ export async function downloadAndCacheAudio(
     // a failed check is non-fatal - proceed with the download.
     if (song.sha ?? song.sha256) {
       try {
-        const { getBlobMetadata } = await import(
-          "@freqhole/api-client/storage"
-        );
+        const { getBlobMetadata } = await import("./blobStore.js");
         const existing = await getBlobMetadata((song.sha ?? song.sha256)!);
         if (existing) {
           return true; // already cached
@@ -142,7 +140,7 @@ export async function downloadSongIfNeeded(
   // check if already cached in blob store
   if (song.sha ?? song.sha256) {
     try {
-      const { getBlobMetadata } = await import("@freqhole/api-client/storage");
+      const { getBlobMetadata } = await import("./blobStore.js");
       const existing = await getBlobMetadata((song.sha ?? song.sha256)!);
       if (existing) {
         return true;

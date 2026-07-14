@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import type { P2PIdentity } from "@freqhole/api-client/storage";
+import type { P2PIdentity } from "@freqhole/haruspex/identity";
 
 // --- mocks (hoisted before module imports) ---
 
@@ -15,10 +15,14 @@ const {
   mockCreateWithAlpns: vi.fn(),
 }));
 
-vi.mock("@freqhole/api-client/storage", () => ({
+vi.mock("@freqhole/haruspex/identity", () => ({
   resolveIdentity: mockResolveIdentity,
   persistIdentity: mockPersistIdentity,
   acquireNodeLeadership: mockAcquireLeadership,
+  createIdbIdentityStore: vi.fn(() => ({
+    get: async () => null,
+    set: async () => {},
+  })),
 }));
 
 vi.mock("@freqhole/midden", () => ({
@@ -45,7 +49,6 @@ import {
 // --- test helpers ---
 
 const fakeIdentity = (overrides: Partial<P2PIdentity> = {}): P2PIdentity => ({
-  id: "p2p_identity",
   secret_key: new Uint8Array(32).fill(7),
   node_id: "fake-node-id",
   created_at: 1000,
@@ -92,7 +95,6 @@ describe("identity fallback chain", () => {
 
     const identity = getIdentity();
     expect(identity).not.toBeNull();
-    expect(identity!.id).toBe("p2p_identity");
     expect(identity!.secret_key).toBeInstanceOf(Uint8Array);
     expect(identity!.secret_key.length).toBe(32);
     // node_id is empty until midden boots
@@ -182,6 +184,7 @@ describe("leadership gating", () => {
     expect(updatedIdentity!.node_id).toBe("real-node-id");
     expect(mockPersistIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ node_id: "real-node-id" }),
+      expect.anything(),
       expect.anything()
     );
   });

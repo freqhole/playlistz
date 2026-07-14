@@ -49,7 +49,7 @@ const { blobStore } = vi.hoisted(() => ({
   blobStore: new Map<string, { mimeType: string; size: number }>(),
 }));
 
-vi.mock("@freqhole/api-client/storage", () => ({
+vi.mock("./blobStore.js", () => ({
   storeBlob: vi.fn(async (blob: Blob, mimeType: string) => {
     const id = `sha-${blobStore.size + 1}-${blob.size}`;
     blobStore.set(id, { mimeType, size: blob.size });

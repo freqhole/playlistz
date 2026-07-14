@@ -55,7 +55,7 @@ vi.mock("../types/playlistz", () => ({
   }),
 }));
 
-vi.mock("@freqhole/api-client/storage", () => ({
+vi.mock("./blobStore.js", () => ({
   getBlobMetadata: vi.fn().mockResolvedValue(null),
 }));
 
@@ -83,7 +83,7 @@ import { loadSetting, saveSetting } from "./indexedDBService.js";
 import { createPlaylistDoc, findPlaylistDoc } from "./automergeRepo.js";
 import { addDocIndexEntry } from "./docIndexService.js";
 import { getSongsForPlaylist, getSongById } from "./playlistDocService.js";
-import { getBlobMetadata } from "@freqhole/api-client/storage";
+import { getBlobMetadata } from "./blobStore.js";
 import { downloadSongIfNeeded } from "./streamingAudioService.js";
 
 // mock solid-js

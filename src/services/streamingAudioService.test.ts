@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Song } from "../types/playlist.js";
 
 // mock the shared blob store
-vi.mock("@freqhole/api-client/storage", () => ({
+vi.mock("./blobStore.js", () => ({
   storeBlob: vi.fn(),
   getBlobMetadata: vi.fn(),
 }));
@@ -18,7 +18,7 @@ import {
   downloadSongIfNeeded,
   isSongDownloading,
 } from "./streamingAudioService.js";
-import { storeBlob, getBlobMetadata } from "@freqhole/api-client/storage";
+import { storeBlob, getBlobMetadata } from "./blobStore.js";
 
 function makeSong(overrides: Partial<Song> = {}): Song {
   return {
@@ -109,8 +109,6 @@ describe("downloadAndCacheAudio", () => {
   it("returns true without fetching when the sha is already in the blob store", async () => {
     vi.mocked(getBlobMetadata).mockResolvedValue({
       blob_id: "abc",
-      storage_type: "opfs",
-      storage_path: "/blobs/abc",
       mime_type: "audio/mpeg",
       file_size: 4,
       created_at: Date.now(),
@@ -208,8 +206,6 @@ describe("downloadSongIfNeeded", () => {
   it("returns true without downloading when the sha is cached", async () => {
     vi.mocked(getBlobMetadata).mockResolvedValue({
       blob_id: "cached",
-      storage_type: "opfs",
-      storage_path: "/blobs/cached",
       mime_type: "audio/mpeg",
       file_size: 1,
       created_at: Date.now(),

@@ -53,7 +53,7 @@ vi.mock("./playlistDocService.js", () => ({
   ),
 }));
 
-vi.mock("@freqhole/api-client/storage", () => ({
+vi.mock("./blobStore.js", () => ({
   storeBlob: vi.fn(async (blob: Blob) => {
     const id = `mock-${blob.size}`;
     blobStore.set(id, blob.size);
@@ -149,7 +149,7 @@ function makeNode(table: Record<string, { blake3: string; size: number }>) {
     open_bi: vi.fn(async () => makeServingStream(table)),
     import_blob: vi.fn(async () => "blake3-imported"),
     release_blob: vi.fn(),
-    download_verified_streaming: vi.fn(
+    download_verified_streaming_with_ensure: vi.fn(
       async (
         _peer: string,
         _hash: string,
@@ -291,7 +291,7 @@ describe("blobTransferService", () => {
       expect(result).toBe("mock-4");
       expect(blobStore.has("mock-4")).toBe(true);
       expect(node.open_bi).toHaveBeenCalledWith("peer-a", PLAYLISTZ_ALPN);
-      expect(node.download_verified_streaming).toHaveBeenCalledWith(
+      expect(node.download_verified_streaming_with_ensure).toHaveBeenCalledWith(
         "peer-a",
         "b3",
         4,
