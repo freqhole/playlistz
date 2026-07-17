@@ -1,6 +1,6 @@
 // local blob storage for playlistz - audio files, song art, and playlist
 // covers. bytes live in a content-addressed store shared with the rest of
-// the freqhole family; metadata is keyed the way playlistz docs have
+// the freqhole world; metadata is keyed the way playlistz docs have
 // always addressed media: by sha256.
 //
 // the underlying store is blake3-canonical (it hashes and indexes both
