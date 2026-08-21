@@ -7,8 +7,8 @@ export interface M3UZipSong {
   artist: string;
   album: string;
   duration: number;
-  audioPath: string; // relative path written into the m3u8, e.g. "data/song.mp3"
-  imagePath?: string; // relative path for cover, e.g. "data/song-cover.jpg"
+  audioPath: string; // path relative to the m3u8's own folder (data/), e.g. "song.mp3"
+  imagePath?: string; // relative cover path, e.g. "song-cover.jpg"
 }
 
 export interface M3UZipPlaylist {
