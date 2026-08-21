@@ -15,9 +15,7 @@ import {
   type Message,
   type BiStreamLike,
 } from "../types/playlistz";
-import {
-  decodeShareToken,
-} from "@freqhole/haruspex/share";
+import { decodeShareToken } from "@freqhole/haruspex/share";
 import {
   encodeMessage as encodeFriendzMessage,
   decodeMessage as decodeFriendzMessage,
@@ -987,10 +985,7 @@ describe("sharingService", () => {
     });
 
     it("knockOnPeer records a pending knock", async () => {
-      const stream = new MockFriendzPeerStream(
-        "peer-a",
-        replyAck("peer-a")
-      );
+      const stream = new MockFriendzPeerStream("peer-a", replyAck("peer-a"));
       givePeerFriendzNode(stream);
 
       const result = await knockOnPeer("peer-a");
@@ -1025,7 +1020,10 @@ describe("sharingService", () => {
         },
       });
       const outKnock = (await getOutboundKnocks()).find(
-        (k) => k.nodeId === "peer-a" && k.scope.kind === "resource" && k.scope.resourceId === DOC_ID
+        (k) =>
+          k.nodeId === "peer-a" &&
+          k.scope.kind === "resource" &&
+          k.scope.resourceId === DOC_ID
       );
       expect(outKnock).toMatchObject({
         direction: "outbound",
@@ -1038,10 +1036,7 @@ describe("sharingService", () => {
     });
 
     it("knockForDocAccess returns pending when owner queues the request", async () => {
-      const stream = new MockFriendzPeerStream(
-        "peer-a",
-        replyAck("peer-a")
-      );
+      const stream = new MockFriendzPeerStream("peer-a", replyAck("peer-a"));
       givePeerFriendzNode(stream);
 
       const result = await knockForDocAccess("peer-a", DOC_ID, "");

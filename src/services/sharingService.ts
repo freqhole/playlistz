@@ -236,7 +236,8 @@ async function handleInboundKnockRequest(
   const myNodeId = getIdentity()?.node_id ?? "";
   const settings = await getShareSettings();
 
-  const docId = core.scope.kind === "resource" ? core.scope.resourceId : undefined;
+  const docId =
+    core.scope.kind === "resource" ? core.scope.resourceId : undefined;
   const isDocAccessKnock = core.scope.kind === "resource";
   const existing = await getAccessGrant(fromNodeId);
 
@@ -422,7 +423,10 @@ export function handleFriendzStream(stream: BiStreamLike): void {
   getFriendzClient().handleIncomingStream(stream);
 }
 
-function handleFriendzMessage(message: FriendzMessage, fromNodeId: string): void {
+function handleFriendzMessage(
+  message: FriendzMessage,
+  fromNodeId: string
+): void {
   if (message.kind !== "core") return;
   const core = message.message;
 
@@ -452,7 +456,7 @@ function handleFriendzMessage(message: FriendzMessage, fromNodeId: string): void
 
 // playlistz-specific extension of haruspex's KnockRecord for UI compatibility.
 // adds fields the UI expects but haruspex's core record doesn't track.
-export interface PlaylistzKnockRecord extends Omit<KnockRecord, 'status'> {
+export interface PlaylistzKnockRecord extends Omit<KnockRecord, "status"> {
   name: string;
   knockType: "browse" | "doc_access";
   requestedDocId?: string;
@@ -473,17 +477,18 @@ function inboundSenderName(record: KnockRecord): string {
  *  from the same peer are distinct requests, tracked separately. */
 function scopesMatch(a: KnockScope, b: KnockScope): boolean {
   if (a.kind !== b.kind) return false;
-  if (a.kind === "resource" && b.kind === "resource") return a.resourceId === b.resourceId;
-  if (a.kind === "account" && b.kind === "account") return a.requestedUsername === b.requestedUsername;
+  if (a.kind === "resource" && b.kind === "resource")
+    return a.resourceId === b.resourceId;
+  if (a.kind === "account" && b.kind === "account")
+    return a.requestedUsername === b.requestedUsername;
   return true;
 }
 
 // adapt haruspex's KnockRecord to playlistz's UI expectations
 function toPlaylistzKnock(record: KnockRecord): PlaylistzKnockRecord {
   const knockType = record.scope.kind === "browse" ? "browse" : "doc_access";
-  const requestedDocId = record.scope.kind === "resource" 
-    ? record.scope.resourceId 
-    : undefined;
+  const requestedDocId =
+    record.scope.kind === "resource" ? record.scope.resourceId : undefined;
   // map haruspex's "denied" to playlistz's "rejected" for UI compat
   const status = record.status === "denied" ? "rejected" : record.status;
   const name = record.direction === "inbound" ? inboundSenderName(record) : "";
@@ -1008,7 +1013,10 @@ async function openPlaylistzStream(nodeId: string): Promise<BiStreamLike> {
   // discovery lookup entirely.
   const dialTarget = getPeerDialAddr(nodeId) ?? nodeId;
   return await Promise.race([
-    node.open_bi(dialTarget, PLAYLISTZ_ALPN) as unknown as Promise<BiStreamLike>,
+    node.open_bi(
+      dialTarget,
+      PLAYLISTZ_ALPN
+    ) as unknown as Promise<BiStreamLike>,
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("stream open timed out")), 15_000)
     ),
@@ -1084,7 +1092,12 @@ export async function knockOnPeer(
     requesterName: settings.name,
   };
 
-  const record = await sendKnock(getKnockStore(), friendzKnockTransport, nodeId, request);
+  const record = await sendKnock(
+    getKnockStore(),
+    friendzKnockTransport,
+    nodeId,
+    request
+  );
   const docIds = record.grantedResourceIds ?? [];
 
   if (record.status === "accepted" && docIds.length > 0) {
@@ -1137,7 +1150,12 @@ export async function knockForDocAccess(
     requesterName: settings.name,
   };
 
-  const record = await sendKnock(getKnockStore(), friendzKnockTransport, ownerNodeId, request);
+  const record = await sendKnock(
+    getKnockStore(),
+    friendzKnockTransport,
+    ownerNodeId,
+    request
+  );
 
   if (record.status === "accepted") {
     const granted = record.grantedResourceIds ?? [docId];
@@ -1396,8 +1414,6 @@ async function handleProtocolMessage(
       await serveBlobRequest(stream, msg.sha256);
       break;
     }
-
-
 
     case "identity_update": {
       // peer changed their name or avatar - update all our docIndex entries

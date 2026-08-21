@@ -179,8 +179,9 @@ export type BlobDownloadState = "downloading" | "pending" | "error";
 // absence = not currently tracked (either cached or not yet started).
 const blobProgress = createTransferProgress<BlobDownloadState>();
 
-export const blobDownloadStates: Accessor<ReadonlyMap<string, BlobDownloadState>> =
-  blobProgress.states;
+export const blobDownloadStates: Accessor<
+  ReadonlyMap<string, BlobDownloadState>
+> = blobProgress.states;
 
 function setBlobState(sha256: string, state: BlobDownloadState | null): void {
   blobProgress.setState(sha256, state);

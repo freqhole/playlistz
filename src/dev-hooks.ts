@@ -16,7 +16,11 @@ import {
   getAllDocIndexEntries,
   addDocIndexEntry,
 } from "./services/docIndexService.js";
-import { getIdentity, getNodeAddr, seedPeerAddr } from "./services/p2pService.js";
+import {
+  getIdentity,
+  getNodeAddr,
+  seedPeerAddr,
+} from "./services/p2pService.js";
 import type { DocIndexEntry } from "./services/indexedDBService.js";
 
 registerAudioDevHooks();

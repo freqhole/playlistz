@@ -57,7 +57,14 @@ function serveDistAssets() {
 }
 
 export default defineConfig({
-  plugins: [wasm(), topLevelAwait(), solid(), tailwindcss(), serveDistAssets(), middenBareSpecifierPlugin()],
+  plugins: [
+    wasm(),
+    topLevelAwait(),
+    solid(),
+    tailwindcss(),
+    serveDistAssets(),
+    middenBareSpecifierPlugin(),
+  ],
   // reliquary's blob worker pulls in @freqhole/midden (wasm) for blake3 -
   // worker bundles need the same wasm + bare-specifier handling as the
   // main app, via their own separate plugin pipeline.

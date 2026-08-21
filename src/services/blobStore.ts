@@ -48,7 +48,9 @@ export function getBlob(blobId: string): Promise<Blob | null> {
 /**
  * get blob metadata by sha256 id.
  */
-export async function getBlobMetadata(blobId: string): Promise<BlobRecord | null> {
+export async function getBlobMetadata(
+  blobId: string
+): Promise<BlobRecord | null> {
   const record = await store.getBlobMetadata(blobId);
   if (!record) return null;
   return {

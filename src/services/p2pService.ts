@@ -14,7 +14,11 @@ import {
   type IdentityStore,
   type IdentitySource,
 } from "@freqhole/haruspex/identity";
-import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN, FRIENDZ_ALPN } from "../types/playlistz";
+import {
+  AUTOMERGE_ALPN,
+  PLAYLISTZ_ALPN,
+  FRIENDZ_ALPN,
+} from "../types/playlistz";
 import type {
   MiddenStreamNode,
   IrohNetworkAdapterOptions,

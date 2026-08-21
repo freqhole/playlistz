@@ -196,7 +196,9 @@ async function buildStandalone() {
   }
   if (swJs) fs.writeFileSync(path.resolve("dist/sw.js"), swJs, "utf-8");
   console.log(
-    skipClear ? "generated: sw.js (kept vite index.html)" : "generated: index.html, sw.js"
+    skipClear
+      ? "generated: sw.js (kept vite index.html)"
+      : "generated: index.html, sw.js"
   );
 
   console.log("\nbuild completed!");
