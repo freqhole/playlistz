@@ -52,6 +52,14 @@ function getLocalStore(): IdentityStore {
   return _localStore;
 }
 
+// midden's real wasm node exposes node_addr(), which the narrow
+// MiddenStreamNode transport interface doesn't declare (the iroh adapter
+// doesn't need it) - this fills in just that extra bit, optionally, so
+// test doubles that don't implement it still type-check.
+interface NodeWithAddr {
+  node_addr?(): string;
+}
+
 let currentIdentity: P2PIdentity | null = null;
 let currentNode: MiddenStreamNode | null = null;
 let currentNodeAddr: string | null = null;
@@ -179,7 +187,8 @@ export async function startP2P(): Promise<void> {
         // capture our own reachable addr (node id + relay url) so peers we
         // hand a share link to can dial us deterministically when available.
         try {
-          currentNodeAddr = (node as any).node_addr?.() ?? null;
+          currentNodeAddr =
+            (node as MiddenStreamNode & NodeWithAddr).node_addr?.() ?? null;
         } catch {
           currentNodeAddr = null;
         }
