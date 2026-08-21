@@ -39,6 +39,25 @@ function generateIndexHtml() {
 `;
 }
 
+// resolves the bare "midden" specifier that reliquary's blob worker
+// dynamically imports (see @freqhole/reliquary/worker's midden-blake3.ts).
+// this build already externalizes the real "@freqhole/midden" package
+// (rollupOptions.external below), but that externalization only applies
+// to that exact specifier string - the bare "midden" specifier used
+// inside the worker's own module graph needs its own resolution so
+// rollup even recognizes it as the same external module.
+function middenBareSpecifierPlugin() {
+  return {
+    name: "midden-bare-specifier",
+    resolveId(source) {
+      if (source === "midden") {
+        return this.resolve("@freqhole/midden", undefined, { skipSelf: true });
+      }
+      return null;
+    },
+  };
+}
+
 async function buildStandalone() {
   const distDir = path.resolve("dist");
   if (!skipClear) {
@@ -62,6 +81,7 @@ async function buildStandalone() {
       topLevelAwait(),
       solid({ typescript: true, jsx: "preserve" }),
       tailwindcss(),
+      middenBareSpecifierPlugin(),
       {
         name: "capture-browser-bundle",
         enforce: "post",
@@ -93,6 +113,15 @@ async function buildStandalone() {
         },
       },
     ],
+    // reliquary's blob worker (spawned via `new Worker(new URL(...), {type:
+    // "module"})`) is built through vite's own separate worker plugin
+    // pipeline - both the wasm handling and the bare "midden" specifier
+    // resolution above only reach the main graph, so both have to be
+    // re-declared here too.
+    worker: {
+      format: "es",
+      plugins: () => [wasm(), middenBareSpecifierPlugin()],
+    },
     build: {
       outDir: "dist",
       target: "esnext",
@@ -167,7 +196,9 @@ async function buildStandalone() {
   }
   if (swJs) fs.writeFileSync(path.resolve("dist/sw.js"), swJs, "utf-8");
   console.log(
-    skipClear ? "generated: sw.js (kept vite index.html)" : "generated: index.html, sw.js"
+    skipClear
+      ? "generated: sw.js (kept vite index.html)"
+      : "generated: index.html, sw.js"
   );
 
   console.log("\nbuild completed!");

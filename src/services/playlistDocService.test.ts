@@ -14,7 +14,7 @@ import { IDBFactory } from "fake-indexeddb";
 
 // --- mocks (hoisted before module imports) ---
 
-vi.mock("@freqhole/api-client/automerge", async () => {
+vi.mock("@freqhole/reliquary/automerge", async () => {
   const { NetworkAdapter } = await vi.importActual<
     typeof import("@automerge/automerge-repo")
   >("@automerge/automerge-repo");
@@ -49,7 +49,7 @@ const { blobStore } = vi.hoisted(() => ({
   blobStore: new Map<string, { mimeType: string; size: number }>(),
 }));
 
-vi.mock("@freqhole/api-client/storage", () => ({
+vi.mock("./blobStore.js", () => ({
   storeBlob: vi.fn(async (blob: Blob, mimeType: string) => {
     const id = `sha-${blobStore.size + 1}-${blob.size}`;
     blobStore.set(id, { mimeType, size: blob.size });

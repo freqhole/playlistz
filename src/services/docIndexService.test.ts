@@ -9,20 +9,12 @@ import {
   removeDocIndexEntry,
   getDocIndexEntry,
   getAllDocIndexEntries,
-  upsertKnock,
-  getKnock,
-  getAllKnocks,
-  deleteKnock,
   upsertAccessGrant,
   getAccessGrant,
   getAllAccessGrants,
   deleteAccessGrant,
 } from "./docIndexService.js";
-import type {
-  DocIndexEntry,
-  KnockRecord,
-  AccessGrantRecord,
-} from "./indexedDBService.js";
+import type { DocIndexEntry, AccessGrantRecord } from "./indexedDBService.js";
 
 // fresh idb + db connection for each test (avoids data leaking across tests)
 beforeEach(() => {
@@ -38,19 +30,6 @@ function makeEntry(overrides: Partial<DocIndexEntry> = {}): DocIndexEntry {
     title: "test playlist",
     addedAt: 1_000_000,
     source: "local",
-    ...overrides,
-  };
-}
-
-function makeKnock(overrides: Partial<KnockRecord> = {}): KnockRecord {
-  return {
-    id: "knock-1",
-    nodeId: "node-abc",
-    direction: "inbound",
-    name: "alice",
-    message: "let me in",
-    status: "pending",
-    createdAt: 1_000_000,
     ...overrides,
   };
 }
@@ -119,37 +98,6 @@ describe("docIndex CRUD", () => {
       const result = await getDocIndexEntry(`automerge:${source}`);
       expect(result?.source).toBe(source);
     }
-  });
-});
-
-// --- knocks ---
-
-describe("knocks CRUD", () => {
-  it("upsertKnock and getKnock round-trip", async () => {
-    const knock = makeKnock();
-    await upsertKnock(knock);
-    const fetched = await getKnock("knock-1");
-    expect(fetched).toEqual(knock);
-  });
-
-  it("getAllKnocks returns all records", async () => {
-    await upsertKnock(makeKnock({ id: "k1" }));
-    await upsertKnock(makeKnock({ id: "k2", direction: "outbound" }));
-    const all = await getAllKnocks();
-    expect(all).toHaveLength(2);
-  });
-
-  it("deleteKnock removes the record", async () => {
-    await upsertKnock(makeKnock({ id: "k-del" }));
-    await deleteKnock("k-del");
-    expect(await getKnock("k-del")).toBeUndefined();
-  });
-
-  it("upsertKnock updates an existing record", async () => {
-    await upsertKnock(makeKnock({ id: "k-upd", status: "pending" }));
-    await upsertKnock(makeKnock({ id: "k-upd", status: "accepted" }));
-    const result = await getKnock("k-upd");
-    expect(result?.status).toBe("accepted");
   });
 });
 

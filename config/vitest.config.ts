@@ -1,13 +1,34 @@
 import { defineConfig } from "vitest/config";
+import type { Plugin } from "vite";
 import solid from "vite-plugin-solid";
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
 
+// resolves the bare "midden" specifier that reliquary's blob worker
+// dynamically imports (see @freqhole/reliquary/worker's midden-blake3.ts) -
+// a plain `resolve.alias` entry does not reach a worker's own module
+// graph, so this is re-declared as an actual plugin (matching the main
+// app's vite.config.ts) rather than relying on `resolve.alias` alone.
+function middenBareSpecifierPlugin(): Plugin {
+  return {
+    name: "midden-bare-specifier",
+    resolveId(source) {
+      if (source === "midden") {
+        return this.resolve("@freqhole/midden", undefined, { skipSelf: true });
+      }
+      return null;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [wasm(), topLevelAwait(), solid()],
+  plugins: [wasm(), topLevelAwait(), solid(), middenBareSpecifierPlugin()],
   resolve: {
     // use browser build of solid-js in tests so reactive signals/memos work correctly
     conditions: ["browser", "solid", "development"],
+  },
+  optimizeDeps: {
+    exclude: ["@freqhole/midden"],
   },
   test: {
     globals: true,

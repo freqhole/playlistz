@@ -1,58 +1,45 @@
 // p2p bootstrap service for playlistz.
 //
-// wires identity resolution (from freqhole-api-client/storage) with midden
-// node lifecycle and web locks leader election.
+// wires identity resolution and web locks leader election (from
+// @freqhole/haruspex/identity) with midden node lifecycle.
 //
 // nothing wasm-related runs at import time. call startP2P() explicitly.
 
-import { openDB } from "idb";
 import {
   resolveIdentity,
   persistIdentity,
   acquireNodeLeadership,
+  createIdbIdentityStore,
   type P2PIdentity,
   type IdentityStore,
-} from "@freqhole/api-client/storage";
-import { AUTOMERGE_ALPN, PLAYLISTZ_ALPN } from "../types/playlistz";
+  type IdentitySource,
+} from "@freqhole/haruspex/identity";
+import {
+  AUTOMERGE_ALPN,
+  PLAYLISTZ_ALPN,
+  FRIENDZ_ALPN,
+} from "../types/playlistz";
 import type {
   MiddenStreamNode,
   IrohNetworkAdapterOptions,
-} from "@freqhole/api-client/automerge";
+} from "@freqhole/reliquary/automerge";
 
 // --- local settings db for identity fallback ---
 
-const SETTINGS_DB_NAME = "freqhole-playlistz-settings";
-const SETTINGS_STORE = "settings";
-const IDENTITY_KEY = "p2p_identity";
+const LOCAL_IDENTITY_SOURCE: IdentitySource = {
+  databaseName: "freqhole-playlistz-settings",
+  storeName: "settings",
+  key: "p2p_identity",
+};
 
-function createLocalStore(): IdentityStore {
-  let db: Awaited<ReturnType<typeof openDB>> | null = null;
-
-  async function getDb(): Promise<Awaited<ReturnType<typeof openDB>>> {
-    if (!db) {
-      db = await openDB(SETTINGS_DB_NAME, 1, {
-        upgrade(database) {
-          if (!database.objectStoreNames.contains(SETTINGS_STORE)) {
-            database.createObjectStore(SETTINGS_STORE);
-          }
-        },
-      });
-    }
-    return db;
-  }
-
-  return {
-    async get(): Promise<P2PIdentity | null> {
-      const database = await getDb();
-      const result = await database.get(SETTINGS_STORE, IDENTITY_KEY);
-      return (result as P2PIdentity) ?? null;
-    },
-    async set(identity: P2PIdentity): Promise<void> {
-      const database = await getDb();
-      await database.put(SETTINGS_STORE, identity, IDENTITY_KEY);
-    },
-  };
-}
+// a co-hosted spume install's identity database - checked read-only, never
+// created, so a newly-added playlistz install adopts the same node id spume
+// already established for this origin instead of minting a second one.
+const SPUME_IDENTITY_SOURCE: IdentitySource = {
+  databaseName: "freqhole_app",
+  storeName: "app_state",
+  key: "p2p_identity",
+};
 
 // --- module-level singleton state ---
 
@@ -60,9 +47,17 @@ let _localStore: IdentityStore | null = null;
 
 function getLocalStore(): IdentityStore {
   if (!_localStore) {
-    _localStore = createLocalStore();
+    _localStore = createIdbIdentityStore(LOCAL_IDENTITY_SOURCE);
   }
   return _localStore;
+}
+
+// midden's real wasm node exposes node_addr(), which the narrow
+// MiddenStreamNode transport interface doesn't declare (the iroh adapter
+// doesn't need it) - this fills in just that extra bit, optionally, so
+// test doubles that don't implement it still type-check.
+interface NodeWithAddr {
+  node_addr?(): string;
 }
 
 let currentIdentity: P2PIdentity | null = null;
@@ -118,7 +113,9 @@ function notifyLeadershipListeners(): void {
 // --- internal helpers ---
 
 async function resolveOrCreateIdentity(): Promise<P2PIdentity> {
-  const existing = await resolveIdentity(getLocalStore());
+  const existing = await resolveIdentity(getLocalStore(), {
+    fallbackSources: [SPUME_IDENTITY_SOURCE],
+  });
   if (existing) return existing;
 
   // no identity found anywhere - generate a new one.
@@ -126,13 +123,14 @@ async function resolveOrCreateIdentity(): Promise<P2PIdentity> {
   const secretKey = new Uint8Array(32);
   crypto.getRandomValues(secretKey);
   const newIdentity: P2PIdentity = {
-    id: "p2p_identity",
     secret_key: secretKey,
     node_id: "",
     created_at: Date.now(),
   };
 
-  await persistIdentity(newIdentity, getLocalStore());
+  await persistIdentity(newIdentity, getLocalStore(), {
+    fallbackSources: [SPUME_IDENTITY_SOURCE],
+  });
   return newIdentity;
 }
 
@@ -142,10 +140,10 @@ async function bootMidden(
   try {
     // bundler target: wasm init happens at import time via vite-plugin-wasm.
     const midden = await import("@freqhole/midden");
-    const node = await midden.MiddenNode.create_with_alpns(secretKey, [
-      AUTOMERGE_ALPN,
-      PLAYLISTZ_ALPN,
-    ]);
+    const options = new midden.MiddenNodeOptions();
+    options.secret_key = secretKey;
+    options.extra_alpns = [AUTOMERGE_ALPN, PLAYLISTZ_ALPN, FRIENDZ_ALPN];
+    const node = await midden.MiddenNode.create_with_options(options);
     return node as unknown as MiddenStreamNode;
   } catch (err) {
     console.warn("[p2p] midden boot failed - p2p unavailable:", err);
@@ -189,7 +187,8 @@ export async function startP2P(): Promise<void> {
         // capture our own reachable addr (node id + relay url) so peers we
         // hand a share link to can dial us deterministically when available.
         try {
-          currentNodeAddr = node.node_addr?.() ?? null;
+          currentNodeAddr =
+            (node as MiddenStreamNode & NodeWithAddr).node_addr?.() ?? null;
         } catch {
           currentNodeAddr = null;
         }
@@ -199,7 +198,9 @@ export async function startP2P(): Promise<void> {
         if (realNodeId !== identityAtStart.node_id) {
           currentIdentity = { ...identityAtStart, node_id: realNodeId };
           try {
-            await persistIdentity(currentIdentity, getLocalStore());
+            await persistIdentity(currentIdentity, getLocalStore(), {
+              fallbackSources: [SPUME_IDENTITY_SOURCE],
+            });
           } catch {
             // non-fatal: node_id update will be retried on next boot
           }

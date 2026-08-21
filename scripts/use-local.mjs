@@ -13,7 +13,9 @@ const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
 // paths are relative to the playlistz/ directory (adjust if your monorepo layout differs)
 const LOCAL = {
     "@freqhole/api-client": "file:../tomb/client-codegen/freqhole-api-client",
-    "@freqhole/midden": "file:../tomb/client/midden/pkg",
+    "@freqhole/haruspex": "file:../tomb/lib/haruspex/ts",
+    "@freqhole/midden": "file:../midden/pkg",
+    "@freqhole/reliquary": "file:../tomb/lib/reliquary/ts",
 };
 
 let changed = false;

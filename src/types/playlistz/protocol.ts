@@ -1,11 +1,17 @@
-// freqhole-playlistz/1 discovery and knock protocol.
-// zod-validated message envelopes + BiStream encode/decode helpers.
-// no midden or automerge imports.
+// freqhole-playlistz/1 discovery protocol: hello/hello_ok identity exchange,
+// playlist listing, and blob transfer. zod-validated message envelopes +
+// BiStream encode/decode helpers. no midden or automerge imports.
+// knock delivery itself rides on haruspex's shared friendz protocol
+// (freqhole-friendz/1, see sharingService.ts) rather than a message shape
+// defined here.
 import * as z from "zod";
 
 // ALPN strings used when registering iroh endpoints
 export const PLAYLISTZ_ALPN = "freqhole-playlistz/1";
 export const AUTOMERGE_ALPN = "iroh/automerge-repo/1";
+// knock delivery rides on haruspex's shared friendz protocol instead of a
+// playlistz-specific message shape - see sharingService.ts's friendz client.
+export const FRIENDZ_ALPN = "freqhole-friendz/1";
 
 // ---- message schemas ----
 
@@ -43,27 +49,6 @@ const PlaylistsSchema = z.object({
   items: z.array(PlaylistItemSchema),
 });
 
-const KnockSchema = z.object({
-  v: z.literal(1),
-  type: z.literal("knock"),
-  nodeId: z.string(),
-  name: z.string().optional(),
-  message: z.string().optional(),
-  knockType: z.enum(["browse", "doc_access"]).optional(), // default: "browse"
-  docId: z.string().optional(), // present when knockType is "doc_access"
-});
-
-const KnockStatusSchema = z.object({
-  v: z.literal(1),
-  type: z.literal("knock_status"),
-  status: z.union([
-    z.literal("pending"),
-    z.literal("accepted"),
-    z.literal("denied"),
-  ]),
-  grantedDocIds: z.array(z.string()).optional(),
-});
-
 // ask a peer to make a blob available for iroh-blobs verified download.
 // sha256 is the blob store key carried in playlist docs.
 const BlobRequestSchema = z.object({
@@ -89,16 +74,6 @@ const ErrorSchema = z.object({
   message: z.string(),
 });
 
-// proactive acceptance notification: owner opens a stream to the peer and
-// sends this after accepting their knock, so the peer doesn't have to poll.
-const KnockNotifySchema = z.object({
-  v: z.literal(1),
-  type: z.literal("knock_notify"),
-  status: z.literal("accepted"),
-  docIds: z.array(z.string()),
-  ownerNodeId: z.string(),
-});
-
 // proactive identity update: a peer broadcasts their current name/avatar
 // to all peers they have established connections with.
 const IdentityUpdateSchema = z.object({
@@ -114,12 +89,9 @@ export const MessageSchema = z.discriminatedUnion("type", [
   HelloOkSchema,
   ListPlaylistsSchema,
   PlaylistsSchema,
-  KnockSchema,
-  KnockStatusSchema,
   BlobRequestSchema,
   BlobReadySchema,
   ErrorSchema,
-  KnockNotifySchema,
   IdentityUpdateSchema,
 ]);
 export type Message = z.infer<typeof MessageSchema>;
@@ -129,12 +101,9 @@ export type HelloMessage = z.infer<typeof HelloSchema>;
 export type HelloOkMessage = z.infer<typeof HelloOkSchema>;
 export type ListPlaylistsMessage = z.infer<typeof ListPlaylistsSchema>;
 export type PlaylistsMessage = z.infer<typeof PlaylistsSchema>;
-export type KnockMessage = z.infer<typeof KnockSchema>;
-export type KnockStatusMessage = z.infer<typeof KnockStatusSchema>;
 export type BlobRequestMessage = z.infer<typeof BlobRequestSchema>;
 export type BlobReadyMessage = z.infer<typeof BlobReadySchema>;
 export type ErrorMessage = z.infer<typeof ErrorSchema>;
-export type KnockNotifyMessage = z.infer<typeof KnockNotifySchema>;
 
 // ---- BiStream structural interface ----
 // matches the shape provided by midden without importing it

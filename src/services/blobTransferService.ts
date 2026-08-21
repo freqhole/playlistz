@@ -1,4 +1,4 @@
-// p2p blob transfer for playlistz (phase 6).
+// p2p blob transfer service for playlistz.
 //
 // docs carry sha256 hashes; bytes live in the shared blob store. when a
 // blob is missing locally, this service fetches it from a doc's peers
@@ -10,18 +10,27 @@
 //   blob_request { sha256 }   ---->   getBlob(sha256) from blob store
 //                                     import_blob into iroh-blobs store
 //   blob_ready { blake3, size } <----
-//   download_verified_streaming(blake3)  [iroh-blobs ALPN, rust-side]
+//   download_verified_streaming_with_ensure(blake3)  [iroh-blobs ALPN]
 //   assemble chunks -> storeBlob
 //
-// the serving side keeps an import cache with a release timer so repeat
-// requests skip the bao recomputation and memory is bounded.
-
+// staging a blob for a peer to download (the serve side's import cache
+// and release timer) and downloading a blob's verified bytes once its
+// blake3 + size are known (the fetch side) are both generic, blake3-native
+// operations - handled by @freqhole/reliquary/transfer's BlobServer and
+// snatchBlob. the sha256-keyed blob_request/blob_ready handshake that maps
+// a doc's sha256 reference onto a peer's blake3 stays here: it is what
+// lets a peer stage a blob it only knows by sha256 before a verified
+// download can address it by blake3 at all.
+import { getBlob, getBlobMetadata, storeBlob } from "./blobStore.js";
 import {
-  getBlob,
-  getBlobMetadata,
-  storeBlob,
-} from "@freqhole/api-client/storage";
-import { createSignal } from "solid-js";
+  BlobServer,
+  serveBlobRequest as resolveServedBlob,
+  snatchBlob,
+  createPrefetcher,
+  type BlobCapableNode,
+} from "@freqhole/reliquary/transfer";
+import { createTransferProgress } from "@freqhole/reliquary/solid";
+import type { Accessor } from "solid-js";
 import {
   PLAYLISTZ_ALPN,
   sendMessage,
@@ -36,54 +45,72 @@ import { getSongsForPlaylist } from "./playlistDocService.js";
 import type { Playlist, Song } from "../types/playlist.js";
 
 // midden node surface used here, beyond the stream interface declared in
-// freqhole-api-client/automerge. structural cast - midden provides these.
-interface BlobCapableNode {
+// @freqhole/reliquary/automerge. structural cast - midden provides these.
+// `on_chunk`'s buffer type is narrowed to plain ArrayBuffer (never
+// SharedArrayBuffer) to match `BlobCapableNode`'s own contract - midden's
+// wasm-bindgen bindings only ever hand back ArrayBuffer-backed views.
+interface MiddenBlobNode {
   node_id(): string;
   open_bi(peer_addr: string, alpn: string): Promise<unknown>;
   import_blob(data: Uint8Array): Promise<string>;
   release_blob(blake3_hash: string): void;
-  download_verified_streaming(
+  download_verified_streaming_with_ensure(
     peer_addr: string,
     blake3_hash: string,
     total_size: number,
-    on_chunk: (chunk: Uint8Array, offset: number) => void,
+    on_chunk: (chunk: Uint8Array<ArrayBuffer>, offset: number) => void,
     on_progress: (fraction: number) => void
   ): Promise<number>;
 }
 
-function getBlobNode(): BlobCapableNode | null {
-  return getNode() as unknown as BlobCapableNode | null;
+function getBlobNode(): MiddenBlobNode | null {
+  return getNode() as unknown as MiddenBlobNode | null;
 }
+
+// a stable facade over the currently-running midden node: playlistz's node
+// instance can change across a leadership handoff or restart, so every
+// method here resolves the live node at call time rather than closing
+// over one captured at construction. handed to BlobServer/snatchBlob,
+// which are built to hold a single node reference for their lifetime.
+const nodeFacade: BlobCapableNode = {
+  node_id: () => getBlobNode()?.node_id() ?? "",
+  import_blob: (data) => {
+    const node = getBlobNode();
+    if (!node) return Promise.reject(new Error("p2p node is not running"));
+    return node.import_blob(data);
+  },
+  release_blob: (blake3) => {
+    getBlobNode()?.release_blob(blake3);
+  },
+  download_verified_streaming_with_ensure: (
+    peerAddr,
+    blake3Hash,
+    totalSize,
+    onChunk,
+    onProgress,
+    downloadId
+  ) => {
+    const node = getBlobNode();
+    if (!node) return Promise.reject(new Error("p2p node is not running"));
+    void downloadId; // old midden's streaming method has no download id param
+    return node.download_verified_streaming_with_ensure(
+      peerAddr,
+      blake3Hash,
+      totalSize,
+      onChunk,
+      onProgress
+    );
+  },
+};
 
 // --- serving side ---
 
-// sha256 -> blake3 for blobs currently imported into the iroh-blobs store
-const servedBlobs = new Map<
-  string,
-  { blake3: string; releaseTimer: ReturnType<typeof setTimeout> }
->();
-
-// how long an imported blob stays available after the last request
-const RELEASE_AFTER_MS = 10 * 60 * 1000;
+// import cache + release timer for blobs staged for a peer to download,
+// keyed by sha256 (the id playlist docs and blob_request messages use).
+const blobServer = new BlobServer(nodeFacade);
 
 // count of in-progress outbound serve requests (we are serving a blob to a peer)
 let activeServes = 0;
-
-function scheduleRelease(sha256: string, blake3: string): void {
-  const existing = servedBlobs.get(sha256);
-  if (existing) {
-    clearTimeout(existing.releaseTimer);
-  }
-  const releaseTimer = setTimeout(() => {
-    servedBlobs.delete(sha256);
-    try {
-      getBlobNode()?.release_blob(blake3);
-    } catch {
-      // node may be gone
-    }
-  }, RELEASE_AFTER_MS);
-  servedBlobs.set(sha256, { blake3, releaseTimer });
-}
 
 /**
  * answer a blob_request on an open protocol stream: import the local
@@ -119,8 +146,13 @@ async function _serveBlobRequest(
     return;
   }
 
-  const blob = await getBlob(sha256);
-  if (!blob) {
+  const info = await resolveServedBlob(blobServer, sha256, async (id) => {
+    const blob = await getBlob(id);
+    if (!blob) return null;
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), size: blob.size };
+  });
+
+  if (!info) {
     await sendMessage(stream, {
       v: 1,
       type: "error",
@@ -130,19 +162,12 @@ async function _serveBlobRequest(
     return;
   }
 
-  let blake3 = servedBlobs.get(sha256)?.blake3;
-  if (!blake3) {
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    blake3 = await node.import_blob(bytes);
-  }
-  scheduleRelease(sha256, blake3);
-
   await sendMessage(stream, {
     v: 1,
     type: "blob_ready",
     sha256,
-    blake3,
-    size: blob.size,
+    blake3: info.blake3,
+    size: info.size,
   });
 }
 
@@ -152,19 +177,22 @@ export type BlobDownloadState = "downloading" | "pending" | "error";
 
 // sha256 -> current download state for in-progress or failed fetches.
 // absence = not currently tracked (either cached or not yet started).
-const [_blobDownloadStates, _setBlobDownloadStates] = createSignal<
-  ReadonlyMap<string, BlobDownloadState>
->(new Map(), { equals: false });
+const blobProgress = createTransferProgress<BlobDownloadState>();
 
-export const blobDownloadStates = _blobDownloadStates;
+export const blobDownloadStates: Accessor<
+  ReadonlyMap<string, BlobDownloadState>
+> = blobProgress.states;
 
 function setBlobState(sha256: string, state: BlobDownloadState | null): void {
-  _setBlobDownloadStates((prev) => {
-    const next = new Map(prev);
-    if (state === null) next.delete(sha256);
-    else next.set(sha256, state);
-    return next;
-  });
+  blobProgress.setState(sha256, state);
+}
+
+// clear a tracked key only while it still holds a specific state, so this
+// never clobbers a different state something else already moved it to.
+function clearIfState(sha256: string, state: BlobDownloadState): void {
+  if (blobProgress.states().get(sha256) === state) {
+    setBlobState(sha256, null);
+  }
 }
 
 // --- fetching side ---
@@ -287,22 +315,17 @@ async function fetchBlobFromPeer(
     releasePeerStream(peerNodeId);
   }
 
-  // verified streaming download over the iroh-blobs ALPN
-  const parts: Uint8Array[] = [];
-  await node.download_verified_streaming(
-    peerNodeId,
-    blake3,
-    size,
-    (chunk) => {
-      // copy: the wasm-side buffer may be reused
-      parts.push(chunk.slice());
-    },
-    (fraction) => {
-      onProgress?.({ sha256, fraction });
-    }
+  // the peer has staged the blob and told us its blake3 + size; the
+  // actual verified download no longer needs the app-level protocol -
+  // it addresses the peer directly by hash.
+  const result = await snatchBlob(
+    nodeFacade,
+    [peerNodeId],
+    { blake3, size, mime: mimeType },
+    { onProgress: (fraction) => onProgress?.({ sha256, fraction }) }
   );
 
-  const blob = new Blob(parts as BlobPart[], { type: mimeType });
+  const blob = new Blob([result.bytes as BlobPart], { type: mimeType });
   const storedId = await storeBlob(blob, mimeType);
   if (storedId !== sha256) {
     console.warn(
@@ -347,14 +370,7 @@ export async function fetchBlobForDoc(
     const task = Promise.race([devTask, withTimeout]).then(
       (r) => {
         inflight.delete(sha256);
-        _setBlobDownloadStates((prev) => {
-          if (prev.get(sha256) === "downloading") {
-            const next = new Map(prev);
-            next.delete(sha256);
-            return next;
-          }
-          return prev;
-        });
+        clearIfState(sha256, "downloading");
         notifyTransferListeners();
         return r as string | null;
       },
@@ -438,14 +454,7 @@ export async function fetchBlobForDoc(
   } finally {
     inflight.delete(sha256);
     // clear downloading state on success (error state stays until next attempt)
-    _setBlobDownloadStates((prev) => {
-      if (prev.get(sha256) === "downloading") {
-        const next = new Map(prev);
-        next.delete(sha256);
-        return next;
-      }
-      return prev;
-    });
+    clearIfState(sha256, "downloading");
     notifyTransferListeners();
   }
 }
@@ -474,7 +483,11 @@ export async function fetchSongBlob(
 const PREFETCH_WINDOW_SECONDS = 30 * 60;
 const PREFETCH_CONCURRENCY = 3;
 
-let prefetchRun = 0;
+const prefetcher = createPrefetcher<Song>();
+
+function songSha(song: Song): string | undefined {
+  return song.sha ?? song.sha256;
+}
 
 /**
  * prefetch audio blobs for upcoming songs in a playlist, starting after
@@ -482,14 +495,13 @@ let prefetchRun = 0;
  * currentSongRemaining: seconds left in the currently-playing song - this
  * is included in the budget so the window is always relative to now, not
  * the start of the next song.
- * fire-and-forget; a new call cancels the previous run.
+ * fire-and-forget; a new call supersedes the previous run.
  */
 export function prefetchUpcoming(
   playlist: Playlist,
   currentSongId: string,
   currentSongRemaining = 0
 ): void {
-  const run = ++prefetchRun;
   void (async () => {
     const songs = await getSongsForPlaylist(playlist.id).catch(
       () => [] as Song[]
@@ -497,51 +509,22 @@ export function prefetchUpcoming(
     const startIdx = songs.findIndex((s) => s.id === currentSongId);
     if (startIdx === -1) return;
 
-    // collect songs within the budget window that need fetching
-    let budget = PREFETCH_WINDOW_SECONDS - currentSongRemaining;
-    const toFetch: Song[] = [];
-    const pendingShas: string[] = [];
-
-    const clearPending = () => {
-      for (const sha of pendingShas) {
-        _setBlobDownloadStates((prev) => {
-          if (prev.get(sha) === "pending") {
-            const next = new Map(prev);
-            next.delete(sha);
-            return next;
-          }
-          return prev;
-        });
-      }
-    };
-
-    for (let i = startIdx + 1; i < songs.length && budget > 0; i++) {
-      if (run !== prefetchRun) {
-        clearPending();
-        return;
-      }
-      const song = songs[i]!;
-      budget -= song.duration || 0;
-      const sha = song.sha ?? song.sha256;
-      if (!sha) continue;
-      if (await getBlobMetadata(sha)) continue; // already local
-      setBlobState(sha, "pending");
-      pendingShas.push(sha);
-      toFetch.push(song);
-    }
-
-    // fetch in concurrent batches
-    for (let i = 0; i < toFetch.length; i += PREFETCH_CONCURRENCY) {
-      if (run !== prefetchRun) {
-        clearPending();
-        return;
-      }
-      const batch = toFetch.slice(i, i + PREFETCH_CONCURRENCY);
-      await Promise.allSettled(batch.map((s) => fetchSongBlob(s)));
-    }
-
-    // clear any remaining pending states after normal completion
-    clearPending();
+    prefetcher.run(songs.slice(startIdx + 1), {
+      budget: PREFETCH_WINDOW_SECONDS - currentSongRemaining,
+      costOf: (song) => song.duration || 0,
+      concurrency: PREFETCH_CONCURRENCY,
+      fetchItem: async (song) => {
+        await fetchSongBlob(song);
+      },
+      onPending: (song) => {
+        const sha = songSha(song);
+        if (sha) setBlobState(sha, "pending");
+      },
+      onSettled: (song) => {
+        const sha = songSha(song);
+        if (sha) clearIfState(sha, "pending");
+      },
+    });
   })();
 }
 
@@ -670,13 +653,10 @@ async function collectMissingBlobs(
 
 /** reset module state. for use in tests only. */
 export function _resetBlobTransferForTests(): void {
-  for (const { releaseTimer } of servedBlobs.values()) {
-    clearTimeout(releaseTimer);
-  }
-  servedBlobs.clear();
+  blobServer.dispose();
   inflight.clear();
-  _setBlobDownloadStates(new Map());
-  prefetchRun++;
+  blobProgress.reset();
+  prefetcher.run([], { budget: 0, costOf: () => 0, fetchItem: async () => {} });
   _devFetchOverride = null;
   BLOB_FETCH_TIMEOUT_MS = 30_000;
 }
@@ -700,7 +680,7 @@ export function _devSetFetchOverride(fn: typeof _devFetchOverride): void {
 
 // evict a blob from local store - for simulating cache misses in tests
 export async function _devEvictBlob(sha256: string): Promise<void> {
-  const { deleteBlob } = await import("@freqhole/api-client/storage");
+  const { deleteBlob } = await import("./blobStore.js");
   await deleteBlob(sha256).catch(() => {});
 }
 

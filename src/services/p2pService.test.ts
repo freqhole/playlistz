@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import type { P2PIdentity } from "@freqhole/api-client/storage";
+import type { P2PIdentity } from "@freqhole/haruspex/identity";
 
 // --- mocks (hoisted before module imports) ---
 
@@ -7,24 +7,29 @@ const {
   mockResolveIdentity,
   mockPersistIdentity,
   mockAcquireLeadership,
-  mockCreateWithAlpns,
+  mockCreateWithOptions,
 } = vi.hoisted(() => ({
   mockResolveIdentity: vi.fn(),
   mockPersistIdentity: vi.fn(),
   mockAcquireLeadership: vi.fn(),
-  mockCreateWithAlpns: vi.fn(),
+  mockCreateWithOptions: vi.fn(),
 }));
 
-vi.mock("@freqhole/api-client/storage", () => ({
+vi.mock("@freqhole/haruspex/identity", () => ({
   resolveIdentity: mockResolveIdentity,
   persistIdentity: mockPersistIdentity,
   acquireNodeLeadership: mockAcquireLeadership,
+  createIdbIdentityStore: vi.fn(() => ({
+    get: async () => null,
+    set: async () => {},
+  })),
 }));
 
 vi.mock("@freqhole/midden", () => ({
   MiddenNode: {
-    create_with_alpns: mockCreateWithAlpns,
+    create_with_options: mockCreateWithOptions,
   },
+  MiddenNodeOptions: vi.fn().mockImplementation(() => ({})),
 }));
 
 // automerge types are type-only imports in the service; no runtime mock needed.
@@ -45,7 +50,6 @@ import {
 // --- test helpers ---
 
 const fakeIdentity = (overrides: Partial<P2PIdentity> = {}): P2PIdentity => ({
-  id: "p2p_identity",
   secret_key: new Uint8Array(32).fill(7),
   node_id: "fake-node-id",
   created_at: 1000,
@@ -92,7 +96,6 @@ describe("identity fallback chain", () => {
 
     const identity = getIdentity();
     expect(identity).not.toBeNull();
-    expect(identity!.id).toBe("p2p_identity");
     expect(identity!.secret_key).toBeInstanceOf(Uint8Array);
     expect(identity!.secret_key.length).toBe(32);
     // node_id is empty until midden boots
@@ -161,7 +164,7 @@ describe("leadership gating", () => {
 
   it("boots midden and exposes the node when this tab wins the lock", async () => {
     mockResolveIdentity.mockResolvedValue(fakeIdentity({ node_id: "" }));
-    mockCreateWithAlpns.mockResolvedValue(fakeMockNode);
+    mockCreateWithOptions.mockResolvedValue(fakeMockNode);
 
     await startP2P();
     await triggerLeader();
@@ -172,7 +175,7 @@ describe("leadership gating", () => {
 
   it("updates node_id in the stored identity after midden boots", async () => {
     mockResolveIdentity.mockResolvedValue(fakeIdentity({ node_id: "old-id" }));
-    mockCreateWithAlpns.mockResolvedValue(fakeMockNode);
+    mockCreateWithOptions.mockResolvedValue(fakeMockNode);
 
     await startP2P();
     await triggerLeader();
@@ -182,13 +185,14 @@ describe("leadership gating", () => {
     expect(updatedIdentity!.node_id).toBe("real-node-id");
     expect(mockPersistIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ node_id: "real-node-id" }),
+      expect.anything(),
       expect.anything()
     );
   });
 
   it("notifies leadership listeners when acquiring leadership", async () => {
     mockResolveIdentity.mockResolvedValue(fakeIdentity());
-    mockCreateWithAlpns.mockResolvedValue(fakeMockNode);
+    mockCreateWithOptions.mockResolvedValue(fakeMockNode);
 
     const listener = vi.fn();
     onLeadershipChange(listener);
@@ -204,7 +208,7 @@ describe("leadership gating", () => {
 
   it("releases leadership and clears node on stopP2P", async () => {
     mockResolveIdentity.mockResolvedValue(fakeIdentity());
-    mockCreateWithAlpns.mockResolvedValue(fakeMockNode);
+    mockCreateWithOptions.mockResolvedValue(fakeMockNode);
 
     await startP2P();
     await triggerLeader();
@@ -222,7 +226,7 @@ describe("leadership gating", () => {
 describe("graceful degradation when wasm import fails", () => {
   it("does not throw when midden import fails", async () => {
     mockResolveIdentity.mockResolvedValue(fakeIdentity());
-    mockCreateWithAlpns.mockRejectedValue(new Error("wasm not available"));
+    mockCreateWithOptions.mockRejectedValue(new Error("wasm not available"));
 
     await startP2P();
     await triggerLeader();
@@ -237,7 +241,7 @@ describe("graceful degradation when wasm import fails", () => {
   it("does not throw when midden module is missing entirely", async () => {
     mockResolveIdentity.mockResolvedValue(fakeIdentity());
     // simulate dynamic import("@freqhole/midden") rejecting with module-not-found
-    mockCreateWithAlpns.mockImplementation(() => {
+    mockCreateWithOptions.mockImplementation(() => {
       throw new TypeError("cannot find module 'midden'");
     });
 
@@ -275,7 +279,7 @@ describe("getAdapterOptions", () => {
 
   it("getNode resolves the midden node after boot", async () => {
     mockResolveIdentity.mockResolvedValue(fakeIdentity());
-    mockCreateWithAlpns.mockResolvedValue(fakeMockNode);
+    mockCreateWithOptions.mockResolvedValue(fakeMockNode);
 
     await startP2P();
     await triggerLeader();

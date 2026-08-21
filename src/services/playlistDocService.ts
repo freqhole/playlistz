@@ -26,7 +26,7 @@ import {
   getBlobObjectURL,
   getBlobMetadata,
   deleteBlob,
-} from "@freqhole/api-client/storage";
+} from "./blobStore.js";
 import {
   addDocIndexEntry,
   removeDocIndexEntry,

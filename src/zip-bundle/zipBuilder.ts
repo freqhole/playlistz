@@ -278,21 +278,24 @@ export async function buildPlaylistZip(
 
   // ---- m3u8 file ----
   if (generateM3U) {
+    // the m3u8 lives inside data/ itself, so paths within it are relative
+    // to that folder - strip the "data/" prefix used elsewhere in the zip.
+    const relativeToData = (p: string) => p.replace(/^data\//, "");
     const m3uContent = generateM3UContent(
       {
         id: entry.playlist.id,
         title: entry.playlist.title,
         description: entry.playlist.description,
         rev: entry.playlist.rev,
-        imagePath: playlistImagePath,
+        imagePath: playlistImagePath && relativeToData(playlistImagePath),
       },
       resolvedSongs.map((r) => ({
         title: r.song.title,
         artist: r.song.artist ?? "",
         album: r.song.album ?? "",
         duration: r.song.duration,
-        audioPath: r.audioPath,
-        imagePath: r.imagePath,
+        audioPath: relativeToData(r.audioPath),
+        imagePath: r.imagePath && relativeToData(r.imagePath),
       }))
     );
     await builder.addFile(

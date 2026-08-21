@@ -1,4 +1,6 @@
 {
-    "@freqhole/api-client": "0.1.31",
-    "@freqhole/midden": "0.1.31"
+    "@freqhole/api-client": "0.2.14",
+    "@freqhole/haruspex": "0.2.14",
+    "@freqhole/midden": "0.2.14",
+    "@freqhole/reliquary": "0.2.14"
 }
