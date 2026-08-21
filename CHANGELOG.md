@@ -1,5 +1,11 @@
 # @freqhole/playlistz
 
+## 0.0.6
+
+### Patch Changes
+
+- 3c30101: reliquary + yank data dir from songs in .m3u8 playlist file
+
 ## 0.0.5
 
 ### Patch Changes
